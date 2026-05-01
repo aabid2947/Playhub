@@ -16,24 +16,25 @@ class PickedDocument {
   final int sizeBytes;
 }
 
-/// Thin wrapper around `supabase.storage` for the `avatars` bucket.
-/// Path layout: `<academyId>/<entity>/<uuid>.<ext>`.
+/// Thin wrapper around `supabase.storage`. Knows three buckets:
+///   avatars            (public)
+///   student_documents  (private, signed URLs)
+///   coach_documents    (private, signed URLs)
 class StorageService {
   StorageService(this._client);
 
   final SupabaseClient _client;
-  static const _bucket = 'avatars';
+  static const _avatarBucket = 'avatars';
   static final _picker = ImagePicker();
 
-  /// Lets the user pick an image, uploads it, and returns the public URL.
-  /// Returns null if the user cancels.
+  // ---------------- Avatars ----------------
+
   Future<String?> pickAndUploadAvatar({
     required String academyId,
     required String entity, // 'students' | 'coaches' | 'academy'
   }) async {
     // `source` is non-default-required by image_picker but the lint
-    // (avoid_redundant_argument_values) misreports it. Hardcoded to gallery
-    // — camera support comes with the biometric/attendance flow later.
+    // (avoid_redundant_argument_values) misreports it.
     // ignore: avoid_redundant_argument_values
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -47,21 +48,30 @@ class StorageService {
     final ext = _extensionOf(picked.name);
     final path = '$academyId/$entity/${const Uuid().v4()}$ext';
 
-    await _client.storage.from(_bucket).uploadBinary(
+    await _client.storage.from(_avatarBucket).uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
         );
 
-    return _client.storage.from(_bucket).getPublicUrl(path);
+    return _client.storage.from(_avatarBucket).getPublicUrl(path);
   }
 
-  /// Lets the user pick any file (PDF, image, doc) and uploads it to the
-  /// private `student_documents` bucket. Returns metadata the caller can
-  /// persist to the `student_documents` table. Returns null if cancelled.
-  Future<PickedDocument?> pickAndUploadStudentDocument({
-    required String academyId,
-    required String studentId,
+  Future<void> deleteByPublicUrl(String publicUrl) async {
+    final path = _pathFromPublicUrl(publicUrl);
+    if (path == null) return;
+    try {
+      await _client.storage.from(_avatarBucket).remove([path]);
+    } on Object {
+      // best effort
+    }
+  }
+
+  // ---------------- Document buckets (shared) ----------------
+
+  Future<PickedDocument?> _pickAndUploadDocument({
+    required String bucket,
+    required String folder, // e.g. "<academyId>/students/<id>"
   }) async {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
@@ -72,14 +82,14 @@ class StorageService {
     final file = result.files.single;
     final bytes = file.bytes;
     if (bytes == null) {
-      throw StateError('Picked file had no bytes (web requires withData: true)');
+      throw StateError(
+          'Picked file had no bytes (web requires withData: true)');
     }
 
     final ext = _extensionOf(file.name);
-    final path =
-        '$academyId/students/$studentId/${const Uuid().v4()}$ext';
+    final path = '$folder/${const Uuid().v4()}$ext';
 
-    await _client.storage.from('student_documents').uploadBinary(
+    await _client.storage.from(bucket).uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
@@ -93,39 +103,70 @@ class StorageService {
     );
   }
 
-  /// Generates a short-lived signed URL for a private student-document path.
-  Future<String> signedDocumentUrl(String path,
+  Future<String> _signedUrl(String bucket, String path,
       {int expiresInSeconds = 300}) {
     return _client.storage
-        .from('student_documents')
+        .from(bucket)
         .createSignedUrl(path, expiresInSeconds);
   }
 
-  /// Removes a file from the private documents bucket. Used when an admin
-  /// deletes the row.
-  Future<void> deleteStudentDocument(String path) async {
+  Future<void> _deleteFromBucket(String bucket, String path) async {
     try {
-      await _client.storage.from('student_documents').remove([path]);
+      await _client.storage.from(bucket).remove([path]);
     } on Object {
-      // Best effort — table row removal still happens.
+      // best effort
     }
   }
 
-  /// Best-effort delete of a previously uploaded avatar URL.
-  /// Failures are swallowed — orphaned files are cleaned up by a later
-  /// scheduled job.
-  Future<void> deleteByPublicUrl(String publicUrl) async {
-    final path = _pathFromPublicUrl(publicUrl);
-    if (path == null) return;
-    try {
-      await _client.storage.from(_bucket).remove([path]);
-    } on Object {
-      // ignore
-    }
-  }
+  // ---------------- Student documents ----------------
+
+  Future<PickedDocument?> pickAndUploadStudentDocument({
+    required String academyId,
+    required String studentId,
+  }) =>
+      _pickAndUploadDocument(
+        bucket: 'student_documents',
+        folder: '$academyId/students/$studentId',
+      );
+
+  Future<String> signedStudentDocumentUrl(String path,
+          {int expiresInSeconds = 300}) =>
+      _signedUrl('student_documents', path,
+          expiresInSeconds: expiresInSeconds);
+
+  Future<void> deleteStudentDocument(String path) =>
+      _deleteFromBucket('student_documents', path);
+
+  // ---------------- Coach documents ----------------
+
+  Future<PickedDocument?> pickAndUploadCoachDocument({
+    required String academyId,
+    required String coachId,
+  }) =>
+      _pickAndUploadDocument(
+        bucket: 'coach_documents',
+        folder: '$academyId/coaches/$coachId',
+      );
+
+  Future<String> signedCoachDocumentUrl(String path,
+          {int expiresInSeconds = 300}) =>
+      _signedUrl('coach_documents', path,
+          expiresInSeconds: expiresInSeconds);
+
+  Future<void> deleteCoachDocument(String path) =>
+      _deleteFromBucket('coach_documents', path);
+
+  // ---------------- Compatibility shim ----------------
+
+  /// Old name kept for the existing student-documents callers.
+  Future<String> signedDocumentUrl(String path,
+          {int expiresInSeconds = 300}) =>
+      signedStudentDocumentUrl(path, expiresInSeconds: expiresInSeconds);
+
+  // ---------------- Helpers ----------------
 
   String? _pathFromPublicUrl(String url) {
-    const marker = '/storage/v1/object/public/$_bucket/';
+    const marker = '/storage/v1/object/public/$_avatarBucket/';
     final i = url.indexOf(marker);
     if (i == -1) return null;
     return url.substring(i + marker.length);

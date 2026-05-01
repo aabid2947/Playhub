@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/coaches/presentation/coach_documents_section.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 
 class CoachFormPage extends ConsumerStatefulWidget {
@@ -271,6 +272,12 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   ),
                 ],
               ),
+              if (isEdit) ...[
+                const SizedBox(height: 32),
+                const Divider(),
+                const SizedBox(height: 16),
+                CoachDocumentsSection(coachId: widget.existing!.id),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 Text(_error!, style: const TextStyle(color: Colors.red)),

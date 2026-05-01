@@ -105,6 +105,25 @@ Future<void> promoteEnrollment(
     ..invalidate(batchesProvider);
 }
 
+/// Atomically move an enrollment from one batch to another via the
+/// `transfer_enrollment` Postgres function.
+Future<void> transferEnrollment(
+  WidgetRef ref, {
+  required String enrollmentId,
+  required String fromBatchId,
+  required String toBatchId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  await client.rpc<dynamic>('transfer_enrollment', params: {
+    'p_enrollment_id': enrollmentId,
+    'p_target_batch_id': toBatchId,
+  });
+  ref
+    ..invalidate(batchEnrollmentsProvider(fromBatchId))
+    ..invalidate(batchEnrollmentsProvider(toBatchId))
+    ..invalidate(batchesProvider);
+}
+
 Future<void> withdrawEnrollment(
   WidgetRef ref, {
   required String enrollmentId,

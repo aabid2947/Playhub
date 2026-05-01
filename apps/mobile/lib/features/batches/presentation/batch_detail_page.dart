@@ -145,6 +145,8 @@ class BatchDetailPage extends ConsumerWidget {
                           batchId: batch.id,
                         );
                       },
+                      onTransfer: (e) =>
+                          _showTransferSheet(context, ref, e),
                     ),
                   if (waitlisted.isNotEmpty) ...[
                     const SizedBox(height: 16),
@@ -185,6 +187,67 @@ class BatchDetailPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showTransferSheet(
+    BuildContext context,
+    WidgetRef ref,
+    Enrollment enrollment,
+  ) async {
+    final batches = ref.read(batchesProvider).valueOrNull ?? const <Batch>[];
+    final targets = batches.where((b) => b.id != batch.id).toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other batches to transfer to.')),
+      );
+      return;
+    }
+    final picked = await showModalBottomSheet<Batch>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView.separated(
+          shrinkWrap: true,
+          itemCount: targets.length + 1,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (_, i) {
+            if (i == 0) {
+              return const ListTile(
+                dense: true,
+                title: Text('Transfer to which batch?'),
+              );
+            }
+            final b = targets[i - 1];
+            final cap = b.capacity;
+            final atCap = cap != null && b.enrolledCount >= cap;
+            return ListTile(
+              title: Text(b.name),
+              subtitle: Text(
+                '${b.schedule.summary}'
+                '${atCap ? '  •  at capacity (will go on waitlist)' : ''}',
+              ),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () => Navigator.of(ctx).pop(b),
+            );
+          },
+        ),
+      ),
+    );
+    if (picked == null) return;
+    try {
+      await transferEnrollment(
+        ref,
+        enrollmentId: enrollment.id,
+        fromBatchId: batch.id,
+        toBatchId: picked.id,
+      );
+    } on Object catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Transfer failed: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _showEnrollSheet(
@@ -250,6 +313,7 @@ class _EnrollmentSection extends StatelessWidget {
     required this.byStudent,
     this.onWithdraw,
     this.onPromote,
+    this.onTransfer,
   });
 
   final String title;
@@ -257,6 +321,7 @@ class _EnrollmentSection extends StatelessWidget {
   final Map<String, Student> byStudent;
   final Future<void> Function(Enrollment)? onWithdraw;
   final Future<void> Function(Enrollment)? onPromote;
+  final Future<void> Function(Enrollment)? onTransfer;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +352,12 @@ class _EnrollmentSection extends StatelessWidget {
                           tooltip: 'Promote to active',
                           icon: const Icon(Icons.upgrade),
                           onPressed: () => onPromote!(e),
+                        ),
+                      if (onTransfer != null)
+                        IconButton(
+                          tooltip: 'Transfer to another batch',
+                          icon: const Icon(Icons.swap_horiz),
+                          onPressed: () => onTransfer!(e),
                         ),
                       if (onWithdraw != null)
                         IconButton(
