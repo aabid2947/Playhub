@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
@@ -26,6 +27,21 @@ class BatchDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: Text(batch.name),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.fact_check_outlined),
+            tooltip: 'Mark attendance',
+            onPressed: () {
+              final today = DateTime.now();
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => AttendanceMarkingPage(
+                    batch: batch,
+                    date: DateTime(today.year, today.month, today.day),
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit batch',

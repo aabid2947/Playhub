@@ -156,6 +156,74 @@ class StorageService {
   Future<void> deleteCoachDocument(String path) =>
       _deleteFromBucket('coach_documents', path);
 
+  // ---------------- Performance media ----------------
+  // Photo or video evidence attached to a `performance_assessments` row.
+  // Path layout: <academyId>/assessments/<assessmentId>/<uuid>.<ext>
+
+  Future<PickedDocument?> pickAndUploadPerformancePhoto({
+    required String academyId,
+    required String assessmentId,
+  }) async {
+    // image_picker requires `source`; lint flags it as redundant default.
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 80,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/assessments/$assessmentId/${const Uuid().v4()}$ext';
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: picked.name,
+      mimeType: _contentTypeOf(ext),
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<PickedDocument?> pickAndUploadPerformanceVideo({
+    required String academyId,
+    required String assessmentId,
+  }) async {
+    final picked = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 5),
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final name = picked.name;
+    final ext = _extensionOf(name);
+    final path = '$academyId/assessments/$assessmentId/${const Uuid().v4()}$ext';
+    final mime = _videoContentTypeOf(ext);
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: name,
+      mimeType: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<String> signedPerformanceMediaUrl(String path,
+          {int expiresInSeconds = 300}) =>
+      _signedUrl('performance_media', path,
+          expiresInSeconds: expiresInSeconds);
+
+  Future<void> deletePerformanceMedia(String path) =>
+      _deleteFromBucket('performance_media', path);
+
   // ---------------- Compatibility shim ----------------
 
   /// Old name kept for the existing student-documents callers.
@@ -185,6 +253,16 @@ class StorageService {
       '.gif' => 'image/gif',
       '.heic' || '.heif' => 'image/heic',
       _ => 'image/jpeg',
+    };
+  }
+
+  String _videoContentTypeOf(String ext) {
+    return switch (ext) {
+      '.mp4' => 'video/mp4',
+      '.mov' => 'video/quicktime',
+      '.webm' => 'video/webm',
+      '.m4v' => 'video/x-m4v',
+      _ => 'video/mp4',
     };
   }
 }

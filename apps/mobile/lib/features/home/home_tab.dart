@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
+import 'package:playhub/features/attendance/data/attendance_providers.dart';
+import 'package:playhub/features/attendance/presentation/admin_attendance_overview.dart';
+import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
@@ -18,12 +21,14 @@ class HomeTab extends ConsumerWidget {
     final students = ref.watch(studentsProvider).valueOrNull ?? [];
     final coaches = ref.watch(coachesProvider).valueOrNull ?? [];
     final batches = ref.watch(batchesProvider).valueOrNull ?? [];
+    final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? [];
 
     return RefreshIndicator(
       onRefresh: () async {
         ref
           ..invalidate(currentProfileProvider)
           ..invalidate(myAcademyProvider)
+          ..invalidate(todaysBatchesProvider)
           ..invalidate(centersProvider);
       },
       child: ListView(
@@ -75,6 +80,8 @@ class HomeTab extends ConsumerWidget {
               ),
             ),
           const SizedBox(height: 12),
+          _ActionsCard(todaysCount: todays.length),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -113,6 +120,46 @@ class HomeTab extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionsCard extends StatelessWidget {
+  const _ActionsCard({required this.todaysCount});
+  final int todaysCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.event_available_outlined),
+            title: const Text("Today's sessions"),
+            subtitle: Text(
+              todaysCount == 0
+                  ? 'No batches scheduled today'
+                  : '$todaysCount ${todaysCount == 1 ? 'batch' : 'batches'} to mark',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const TodaysSessionsPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.dashboard_outlined),
+            title: const Text('Live attendance overview'),
+            subtitle: const Text('Realtime view across all batches'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const AdminAttendanceOverview(),
+              ),
+            ),
           ),
         ],
       ),

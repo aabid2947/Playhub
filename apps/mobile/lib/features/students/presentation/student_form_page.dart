@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/performance/presentation/performance_history_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
@@ -312,6 +314,10 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 const SizedBox(height: 32),
                 const Divider(),
                 const SizedBox(height: 16),
+                _AttendanceSummaryCard(student: widget.existing!),
+                const SizedBox(height: 12),
+                _PerformanceShortcut(student: widget.existing!),
+                const SizedBox(height: 24),
                 StudentDocumentsSection(studentId: widget.existing!.id),
               ],
               if (_error != null) ...[
@@ -347,6 +353,71 @@ class _SectionLabel extends StatelessWidget {
       child: Text(
         text,
         style: Theme.of(context).textTheme.titleMedium,
+      ),
+    );
+  }
+}
+
+class _AttendanceSummaryCard extends ConsumerWidget {
+  const _AttendanceSummaryCard({required this.student});
+  final Student student;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summaryAsync = ref.watch(attendanceSummaryProvider(student.id));
+    return summaryAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (e, _) => Text('Error: $e'),
+      data: (s) {
+        if (s == null || s.totalSessions == 0) {
+          return const Card(
+            child: ListTile(
+              leading: Icon(Icons.event_available_outlined),
+              title: Text('Attendance'),
+              subtitle: Text(
+                'No sessions in the last 30 days yet.',
+              ),
+            ),
+          );
+        }
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.event_available_outlined),
+            title: Text(
+              '${s.attendancePct?.toStringAsFixed(0) ?? '—'}% attendance',
+            ),
+            subtitle: Text(
+              '${s.presentCount + s.lateCount}/${s.totalSessions} sessions '
+              '(last 30 days)',
+            ),
+            trailing: s.attendancePct != null && s.attendancePct! < 60
+                ? const Icon(Icons.warning_amber_outlined,
+                    color: Colors.orange)
+                : null,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PerformanceShortcut extends StatelessWidget {
+  const _PerformanceShortcut({required this.student});
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.insights_outlined),
+        title: const Text('Performance assessments'),
+        subtitle: const Text('View history or record a new assessment'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => PerformanceHistoryPage(student: student),
+          ),
+        ),
       ),
     );
   }
