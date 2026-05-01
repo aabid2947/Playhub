@@ -93,6 +93,16 @@ begin
   from public.batches b
   join public.students s on s.academy_id = b.academy_id;
 
+  -- Storage objects in each bucket, one per academy. Path layout matches
+  -- what StorageService writes from Flutter: <academy_id>/<entity>/...
+  insert into storage.objects (bucket_id, name, metadata) values
+    ('avatars',           v_academy_a::text || '/students/aaa.jpg', '{}'),
+    ('avatars',           v_academy_b::text || '/students/bbb.jpg', '{}'),
+    ('student_documents', v_academy_a::text || '/students/sa/aaa.pdf', '{}'),
+    ('student_documents', v_academy_b::text || '/students/sb/bbb.pdf', '{}'),
+    ('coach_documents',   v_academy_a::text || '/coaches/ca/aaa.pdf', '{}'),
+    ('coach_documents',   v_academy_b::text || '/coaches/cb/bbb.pdf', '{}');
+
   -- Stash IDs in session-local config so the test phase can read them.
   perform set_config('test.user_a', v_user_a::text, true);
   perform set_config('test.user_b', v_user_b::text, true);
@@ -297,7 +307,120 @@ begin
   raise notice 'PASS: audit_logs app-layer writes blocked';
 end $$;
 
--- ---------- Test 10: cross-tenant batch insert blocked ---------------------
+-- ---------- Test 10: storage — avatars bucket -------------------------------
+-- avatars is public, so SELECT is unrestricted. INSERT is the gate: the
+-- top-level folder of the path must equal current_user_academy_id() AND
+-- the user must be admin-or-higher.
+
+do $$
+declare
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+begin
+  -- Insert into own academy folder — should succeed.
+  begin
+    insert into storage.objects (bucket_id, name, metadata)
+    values ('avatars', v_academy_a::text || '/students/own.jpg', '{}');
+  exception when others then
+    raise exception 'FAIL: user A could not insert avatar in own academy: %',
+      SQLERRM;
+  end;
+
+  -- Insert into other academy folder — must fail.
+  begin
+    insert into storage.objects (bucket_id, name, metadata)
+    values ('avatars', v_academy_b::text || '/students/sneaky.jpg', '{}');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted avatar into academy B folder';
+  end if;
+  raise notice 'PASS: avatars bucket — own write allowed, cross-tenant blocked';
+end $$;
+
+-- ---------- Test 11: storage — student_documents (private bucket) ----------
+-- Private bucket: SELECT is itself gated by the same-academy policy.
+
+do $$
+declare
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_own int;
+  v_other int;
+  v_caught boolean := false;
+begin
+  select count(*) into v_own from storage.objects
+    where bucket_id = 'student_documents'
+      and name like v_academy_a::text || '/%';
+  select count(*) into v_other from storage.objects
+    where bucket_id = 'student_documents'
+      and name like v_academy_b::text || '/%';
+
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own student_documents';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % student_documents from academy B',
+      v_other;
+  end if;
+
+  -- INSERT into other-academy folder must fail.
+  begin
+    insert into storage.objects (bucket_id, name, metadata)
+    values ('student_documents',
+            v_academy_b::text || '/students/sb/sneaky.pdf', '{}');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted student_doc into academy B folder';
+  end if;
+
+  raise notice 'PASS: student_documents — read isolation + cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 12: storage — coach_documents (private bucket) ------------
+
+do $$
+declare
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_own int;
+  v_other int;
+  v_caught boolean := false;
+begin
+  select count(*) into v_own from storage.objects
+    where bucket_id = 'coach_documents'
+      and name like v_academy_a::text || '/%';
+  select count(*) into v_other from storage.objects
+    where bucket_id = 'coach_documents'
+      and name like v_academy_b::text || '/%';
+
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own coach_documents';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % coach_documents from academy B',
+      v_other;
+  end if;
+
+  begin
+    insert into storage.objects (bucket_id, name, metadata)
+    values ('coach_documents',
+            v_academy_b::text || '/coaches/cb/sneaky.pdf', '{}');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted coach_doc into academy B folder';
+  end if;
+
+  raise notice 'PASS: coach_documents — read isolation + cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 13: cross-tenant batch insert blocked ---------------------
 
 do $$
 declare
