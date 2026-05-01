@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,7 +39,16 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
       _isError = false;
     });
     try {
-      await ref.read(supabaseClientProvider).auth.resetPasswordForEmail(email);
+      // Web bounces back to the current origin; native opens the app via
+      // the `ai.ghostmap.playhub://login-callback` URL scheme registered
+      // in iOS Info.plist + Android manifest.
+      final redirectTo = kIsWeb
+          ? Uri.base.origin
+          : 'ai.ghostmap.playhub://login-callback';
+      await ref.read(supabaseClientProvider).auth.resetPasswordForEmail(
+            email,
+            redirectTo: redirectTo,
+          );
       setState(() => _message =
           'If an account exists for $email, a reset link has been sent.');
     } on AuthException catch (e) {

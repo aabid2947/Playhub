@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/auth_recovery.dart';
 import 'package:playhub/core/env.dart';
 import 'package:playhub/core/router.dart';
 import 'package:playhub/core/theme.dart';
@@ -26,6 +27,9 @@ class PlayHubApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Boot the auth-state listener (its provider has side effects).
+    ref.watch(authRecoveryListenerProvider);
+
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'PlayHub',
