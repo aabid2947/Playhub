@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/presentation/academy_settings_page.dart';
+import 'package:playhub/features/audit/presentation/audit_log_page.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
 
 class SettingsTab extends ConsumerWidget {
@@ -29,6 +30,16 @@ class SettingsTab extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push<void>(
             MaterialPageRoute(builder: (_) => const CentersPage()),
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.history_outlined),
+          title: const Text('Activity log'),
+          subtitle: const Text('Who changed what, recently'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => const AuditLogPage()),
           ),
         ),
         const Divider(height: 1),

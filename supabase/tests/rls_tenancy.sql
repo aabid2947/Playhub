@@ -252,7 +252,52 @@ begin
   raise notice 'PASS: enrollments read isolation';
 end $$;
 
--- ---------- Test 8: cross-tenant batch insert blocked ----------------------
+-- ---------- Test 8: audit_logs read isolation -----------------------------
+-- The setup phase generated audit rows for academies A and B; user A may
+-- only see those tagged with academy_a.
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.audit_logs where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.audit_logs where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own academy audit logs';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % audit_logs from academy B', v_other;
+  end if;
+  raise notice 'PASS: audit_logs read isolation';
+end $$;
+
+-- ---------- Test 9: audit_logs cannot be written from app layer ------------
+-- There are no INSERT/UPDATE/DELETE policies; only the SECURITY DEFINER
+-- trigger writes. So a direct insert from the app must fail.
+
+do $$
+declare
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_caught boolean := false;
+begin
+  begin
+    insert into public.audit_logs (academy_id, action, entity_type)
+    values (v_academy_a, 'insert', 'students');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: app-layer insert into audit_logs was allowed';
+  end if;
+  raise notice 'PASS: audit_logs app-layer writes blocked';
+end $$;
+
+-- ---------- Test 10: cross-tenant batch insert blocked ---------------------
 
 do $$
 declare

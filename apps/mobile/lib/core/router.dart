@@ -24,6 +24,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onSplash = loc == '/splash';
       final onResetPassword = loc == '/reset-password';
 
+      // Browser-refresh on the root URL has no route to match. Bounce
+      // into the right place based on auth state.
+      if (loc == '/' || loc.isEmpty) {
+        if (inRecovery) return '/reset-password';
+        return session == null ? '/login' : '/home';
+      }
+
       // Recovery deep link: route to set-password regardless of where we
       // initially landed.
       if (inRecovery && !onResetPassword) return '/reset-password';
@@ -35,6 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(path: '/', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
       GoRoute(path: '/signup', builder: (_, __) => const SignupPage()),
