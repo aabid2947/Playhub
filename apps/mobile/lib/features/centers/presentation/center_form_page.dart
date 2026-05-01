@@ -1,0 +1,133 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:playhub/features/centers/data/center.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
+
+class CenterFormPage extends ConsumerStatefulWidget {
+  const CenterFormPage({super.key, this.existing});
+
+  final Centre? existing;
+
+  @override
+  ConsumerState<CenterFormPage> createState() => _CenterFormPageState();
+}
+
+class _CenterFormPageState extends ConsumerState<CenterFormPage> {
+  late final _name = TextEditingController(text: widget.existing?.name ?? '');
+  late final _address =
+      TextEditingController(text: widget.existing?.address ?? '');
+  late final _city = TextEditingController(text: widget.existing?.city ?? '');
+  late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
+  late final _capacity = TextEditingController(
+      text: widget.existing?.capacity?.toString() ?? '');
+  final _formKey = GlobalKey<FormState>();
+  bool _busy = false;
+  String? _error;
+
+  bool get isEdit => widget.existing != null;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _address.dispose();
+    _city.dispose();
+    _phone.dispose();
+    _capacity.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final patch = <String, dynamic>{
+        'name': _name.text.trim(),
+        'address': _address.text.trim().isEmpty ? null : _address.text.trim(),
+        'city': _city.text.trim().isEmpty ? null : _city.text.trim(),
+        'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        'capacity': _capacity.text.trim().isEmpty
+            ? null
+            : int.tryParse(_capacity.text.trim()),
+      };
+      if (isEdit) {
+        await updateCenter(ref, widget.existing!.id, patch);
+      } else {
+        await createCenter(ref, patch);
+      }
+      if (mounted) context.pop();
+    } on Object catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(isEdit ? 'Edit center' : 'New center')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Name *'),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _address,
+                decoration: const InputDecoration(labelText: 'Address'),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _city,
+                decoration: const InputDecoration(labelText: 'City'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'Phone'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _capacity,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Capacity',
+                  hintText: 'Max students at this center',
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ],
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _busy ? null : _save,
+                child: _busy
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(isEdit ? 'Save changes' : 'Create center'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

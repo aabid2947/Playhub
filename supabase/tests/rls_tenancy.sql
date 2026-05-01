@@ -1,0 +1,179 @@
+-- ============================================================================
+-- Tenant-isolation regression test
+--
+-- Asserts that an authenticated user from Academy A cannot read or write
+-- data belonging to Academy B. The whole script runs in a transaction and
+-- rolls back at the end, so re-running is idempotent.
+--
+-- Run locally:
+--   supabase db reset                           # apply all migrations fresh
+--   psql "$(supabase status -o env | grep DB_URL | cut -d= -f2 | tr -d \")" \
+--        -f supabase/tests/rls_tenancy.sql
+--
+-- Run against staging (read-only via rollback):
+--   psql "$DATABASE_URL" -f supabase/tests/rls_tenancy.sql
+--
+-- Output: a series of NOTICE lines. Any 'FAIL' raises an exception and
+-- aborts the transaction; otherwise you'll see 'PASS' lines.
+-- ============================================================================
+
+\set ON_ERROR_STOP on
+\set ECHO none
+
+begin;
+
+-- ---------- Setup (as service role / superuser) -----------------------------
+
+-- Use deterministic UUIDs for the two test users / academies.
+do $$
+declare
+  v_user_a constant uuid := '00000000-aaaa-0000-0000-000000000001';
+  v_user_b constant uuid := '00000000-bbbb-0000-0000-000000000002';
+  v_academy_a uuid;
+  v_academy_b uuid;
+begin
+  -- auth.users entries (minimum columns required by the schema)
+  insert into auth.users (
+    id, instance_id, email, role, aud,
+    email_confirmed_at, created_at, updated_at
+  )
+  values
+    (v_user_a, '00000000-0000-0000-0000-000000000000',
+     'rls-test-a@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now()),
+    (v_user_b, '00000000-0000-0000-0000-000000000000',
+     'rls-test-b@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now())
+  on conflict (id) do nothing;
+
+  -- public.users — the auth trigger creates stub rows; upsert to set role.
+  insert into public.users (id, role, first_name, last_name, email)
+  values
+    (v_user_a, 'academy_owner', 'Test', 'A', 'rls-test-a@example.invalid'),
+    (v_user_b, 'academy_owner', 'Test', 'B', 'rls-test-b@example.invalid')
+  on conflict (id) do update
+    set role = excluded.role,
+        first_name = excluded.first_name,
+        last_name = excluded.last_name;
+
+  -- Academies (one per user)
+  insert into public.academies (name, owner_id)
+  values ('RLS Test Academy A', v_user_a)
+  returning id into v_academy_a;
+
+  insert into public.academies (name, owner_id)
+  values ('RLS Test Academy B', v_user_b)
+  returning id into v_academy_b;
+
+  -- Link users to their academies
+  update public.users set academy_id = v_academy_a where id = v_user_a;
+  update public.users set academy_id = v_academy_b where id = v_user_b;
+
+  -- A center + a student in each academy
+  insert into public.centers (academy_id, name)
+  values (v_academy_a, 'Centre A1'), (v_academy_b, 'Centre B1');
+
+  insert into public.students (academy_id, first_name, last_name, parent_name)
+  values
+    (v_academy_a, 'Aarav', 'A', 'Parent A'),
+    (v_academy_b, 'Bhavya', 'B', 'Parent B');
+
+  -- Stash IDs in session-local config so the test phase can read them.
+  perform set_config('test.user_a', v_user_a::text, true);
+  perform set_config('test.user_b', v_user_b::text, true);
+  perform set_config('test.academy_a', v_academy_a::text, true);
+  perform set_config('test.academy_b', v_academy_b::text, true);
+
+  raise notice '[setup] users: % %, academies: % %',
+    v_user_a, v_user_b, v_academy_a, v_academy_b;
+end $$;
+
+-- ---------- Test 1: user A reads from public.students -----------------------
+
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-aaaa-0000-0000-000000000001';
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.students where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.students where academy_id = v_academy_b;
+
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read their own academy''s students';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % rows from academy B', v_other;
+  end if;
+  raise notice 'PASS: students read isolation (% own, % other)', v_own, v_other;
+end $$;
+
+-- ---------- Test 2: user A reads from public.centers ------------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.centers where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.centers where academy_id = v_academy_b;
+
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read their own academy''s centers';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % rows from centers in academy B', v_other;
+  end if;
+  raise notice 'PASS: centers read isolation';
+end $$;
+
+-- ---------- Test 3: user A cannot insert into academy B ---------------------
+
+do $$
+declare
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+begin
+  begin
+    insert into public.students (academy_id, first_name, last_name, parent_name)
+    values (v_academy_b, 'Sneaky', 'Insert', 'Should Fail');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A was able to insert into academy B';
+  end if;
+  raise notice 'PASS: cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 4: user A cannot read other user's profile -----------------
+
+do $$
+declare
+  v_user_b uuid := current_setting('test.user_b')::uuid;
+  v_count int;
+begin
+  select count(*) into v_count
+    from public.users where id = v_user_b;
+  if v_count > 0 then
+    raise exception 'FAIL: user A read user B''s profile row';
+  end if;
+  raise notice 'PASS: cross-tenant user-profile read blocked';
+end $$;
+
+-- ---------- Reset and roll back --------------------------------------------
+
+reset role;
+rollback;
+
+\echo 'All RLS isolation tests passed.'

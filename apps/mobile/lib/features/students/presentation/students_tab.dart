@@ -1,0 +1,211 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
+import 'package:playhub/features/students/presentation/student_form_page.dart';
+import 'package:playhub/shared/widgets/avatar_picker.dart';
+
+class StudentsTab extends ConsumerStatefulWidget {
+  const StudentsTab({super.key});
+
+  @override
+  ConsumerState<StudentsTab> createState() => _StudentsTabState();
+}
+
+class _StudentsTabState extends ConsumerState<StudentsTab> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _applySearch() {
+    final f = ref.read(studentsFilterProvider);
+    ref.read(studentsFilterProvider.notifier).state =
+        StudentsFilter(search: _search.text, status: f.status, centerId: f.centerId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final studentsAsync = ref.watch(studentsProvider);
+    final filter = ref.watch(studentsFilterProvider);
+
+    return Scaffold(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _search,
+                    onSubmitted: (_) => _applySearch(),
+                    decoration: InputDecoration(
+                      hintText: 'Search name, parent…',
+                      prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      suffixIcon: _search.text.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                _search.clear();
+                                _applySearch();
+                              },
+                            ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<String?>(
+                  tooltip: 'Filter status',
+                  icon: const Icon(Icons.filter_list),
+                  initialValue: filter.status,
+                  onSelected: (v) {
+                    ref.read(studentsFilterProvider.notifier).state =
+                        StudentsFilter(
+                      search: filter.search,
+                      status: v,
+                      centerId: filter.centerId,
+                    );
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem<String?>(child: Text('All')),
+                    PopupMenuItem(value: 'active', child: Text('Active')),
+                    PopupMenuItem(value: 'paused', child: Text('Paused')),
+                    PopupMenuItem(value: 'inactive', child: Text('Inactive')),
+                    PopupMenuItem(
+                        value: 'graduated', child: Text('Graduated')),
+                  ],
+                ),
+                IconButton(
+                  tooltip: 'Import CSV',
+                  icon: const Icon(Icons.upload_file_outlined),
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const StudentBulkImportPage(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: studentsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (students) {
+                if (students.isEmpty) {
+                  return const _EmptyState();
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(studentsProvider),
+                  child: ListView.separated(
+                    itemCount: students.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) =>
+                        _StudentTile(student: students[i]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => const StudentFormPage()),
+        ),
+        icon: const Icon(Icons.person_add),
+        label: const Text('New student'),
+      ),
+    );
+  }
+}
+
+class _StudentTile extends StatelessWidget {
+  const _StudentTile({required this.student});
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = (student.firstName.isNotEmpty
+            ? student.firstName[0]
+            : '?') +
+        (student.lastName.isNotEmpty ? student.lastName[0] : '');
+    return ListTile(
+      leading: AvatarView(url: student.photo, fallbackInitials: initials),
+      title: Text(student.fullName),
+      subtitle: Text(
+        [
+          if (student.sport != null) student.sport,
+          if (student.skillLevel != null) student.skillLevel,
+          'parent: ${student.parentName}',
+        ].whereType<String>().join(' • '),
+      ),
+      trailing: _StatusChip(status: student.status),
+      onTap: () => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => StudentFormPage(existing: student),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.status});
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'active' => Colors.green,
+      'paused' => Colors.orange,
+      'inactive' => Colors.grey,
+      'graduated' => Colors.blue,
+      _ => Colors.grey,
+    };
+    return Chip(
+      label: Text(status, style: const TextStyle(fontSize: 11)),
+      backgroundColor: color.withValues(alpha: 0.15),
+      side: BorderSide(color: color.withValues(alpha: 0.4)),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.group_outlined, size: 48),
+            const SizedBox(height: 12),
+            Text(
+              'No students yet',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Tap "New student" to enroll your first one.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

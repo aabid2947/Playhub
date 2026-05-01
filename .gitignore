@@ -1,0 +1,61 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/
+
+# Editors
+.vscode/
+.idea/
+*.iml
+*.swp
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Flutter
+apps/mobile/build/
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/.packages
+apps/mobile/.pub-cache/
+apps/mobile/.pub/
+apps/mobile/coverage/
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/ios/Flutter/Flutter.framework
+apps/mobile/ios/Flutter/Flutter.podspec
+apps/mobile/ios/Runner/GeneratedPluginRegistrant.*
+apps/mobile/ios/.generated/
+apps/mobile/ios/Flutter/App.framework
+apps/mobile/ios/Flutter/Generated.xcconfig
+apps/mobile/ios/Flutter/app.flx
+apps/mobile/ios/Flutter/flutter_assets/
+apps/mobile/android/.gradle/
+apps/mobile/android/captures/
+apps/mobile/android/local.properties
+apps/mobile/android/**/GeneratedPluginRegistrant.java
+apps/mobile/android/key.properties
+apps/mobile/android/app/release/
+
+# Generated Dart code (freezed/json_serializable/riverpod/drift)
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Node (for future Edge Function deps if any)
+node_modules/
+
+# Sentry
+.sentryclirc
