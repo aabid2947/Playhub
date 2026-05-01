@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/features/centers/data/center.dart';
-import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/centers/data/center_providers.dart'
+    show createCenter, deactivateCenter, reactivateCenter, updateCenter;
 
 class CenterFormPage extends ConsumerStatefulWidget {
   const CenterFormPage({super.key, this.existing});
@@ -124,10 +125,74 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
                       )
                     : Text(isEdit ? 'Save changes' : 'Create center'),
               ),
+              if (isEdit && widget.existing!.isActive) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.archive_outlined, color: Colors.red),
+                  label: const Text(
+                    'Deactivate center',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onPressed: _busy ? null : _confirmDeactivate,
+                ),
+              ],
+              if (isEdit && !widget.existing!.isActive) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.unarchive_outlined),
+                  label: const Text('Reactivate center'),
+                  onPressed: _busy ? null : _reactivate,
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _confirmDeactivate() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Deactivate this center?'),
+        content: const Text(
+          'It will be hidden from new assignments. Existing batches and '
+          'students stay linked. You can reactivate later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Deactivate'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await deactivateCenter(ref, widget.existing!.id);
+      if (mounted) context.pop();
+    } on Object catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reactivate() async {
+    setState(() => _busy = true);
+    try {
+      await reactivateCenter(ref, widget.existing!.id);
+      if (mounted) context.pop();
+    } on Object catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }

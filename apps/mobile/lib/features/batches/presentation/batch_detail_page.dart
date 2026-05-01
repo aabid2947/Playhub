@@ -11,6 +11,12 @@ class BatchDetailPage extends ConsumerWidget {
 
   final Batch batch;
 
+  bool _atCapacity() {
+    final cap = batch.capacity;
+    if (cap == null) return false;
+    return batch.enrolledCount >= cap;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final enrollmentsAsync = ref.watch(batchEnrollmentsProvider(batch.id));
@@ -54,7 +60,8 @@ class BatchDetailPage extends ConsumerWidget {
                         '${batch.enrolledCount}/${batch.capacity} enrolled'
                       else
                         '${batch.enrolledCount} enrolled',
-                      if (batch.fees != null) '₹${batch.fees!.toStringAsFixed(0)}',
+                      if (batch.fees != null)
+                        '₹${batch.fees!.toStringAsFixed(0)}',
                     ].join(' • '),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -66,23 +73,35 @@ class BatchDetailPage extends ConsumerWidget {
           Row(
             children: [
               Text(
-                'Enrolled students',
+                _atCapacity() ? 'At capacity' : 'Enrolled students',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const Spacer(),
               FilledButton.tonalIcon(
-                icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: const Text('Enroll'),
+                icon: Icon(
+                  _atCapacity()
+                      ? Icons.queue_outlined
+                      : Icons.person_add_outlined,
+                  size: 18,
+                ),
+                label: Text(_atCapacity() ? 'Add to waitlist' : 'Enroll'),
                 onPressed: () async {
                   final students = studentsAsync.valueOrNull ?? const [];
                   final enrolled =
                       enrollmentsAsync.valueOrNull ?? const [];
-                  final enrolledIds =
-                      enrolled.map((e) => e.studentId).toSet();
+                  final activeIds = enrolled
+                      .where((e) => e.status != 'withdrawn')
+                      .map((e) => e.studentId)
+                      .toSet();
                   final candidates = students
-                      .where((s) => !enrolledIds.contains(s.id))
+                      .where((s) => !activeIds.contains(s.id))
                       .toList();
-                  await _showEnrollSheet(context, ref, candidates);
+                  await _showEnrollSheet(
+                    context,
+                    ref,
+                    candidates,
+                    waitlist: _atCapacity(),
+                  );
                 },
               ),
             ],
@@ -99,26 +118,67 @@ class BatchDetailPage extends ConsumerWidget {
                 );
               }
               final byId = {
-                for (final s in (studentsAsync.valueOrNull ?? const <Student>[]))
+                for (final s
+                    in (studentsAsync.valueOrNull ?? const <Student>[]))
                   s.id: s,
               };
-              return Card(
-                child: Column(
-                  children: [
-                    for (final e in enrollments)
-                      _EnrollmentTile(
-                        enrollment: e,
-                        student: byId[e.studentId],
-                        onWithdraw: () async {
-                          await withdrawEnrollment(
-                            ref,
-                            enrollmentId: e.id,
-                            batchId: batch.id,
-                          );
-                        },
-                      ),
+              final active =
+                  enrollments.where((e) => e.status == 'active').toList();
+              final waitlisted = enrollments
+                  .where((e) => e.status == 'waitlisted')
+                  .toList();
+              final withdrawn = enrollments
+                  .where((e) => e.status == 'withdrawn')
+                  .toList();
+
+              return Column(
+                children: [
+                  if (active.isNotEmpty)
+                    _EnrollmentSection(
+                      title: 'Active',
+                      enrollments: active,
+                      byStudent: byId,
+                      onWithdraw: (e) async {
+                        await withdrawEnrollment(
+                          ref,
+                          enrollmentId: e.id,
+                          batchId: batch.id,
+                        );
+                      },
+                    ),
+                  if (waitlisted.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _EnrollmentSection(
+                      title: 'Waitlist (${waitlisted.length})',
+                      enrollments: waitlisted,
+                      byStudent: byId,
+                      onWithdraw: (e) async {
+                        await withdrawEnrollment(
+                          ref,
+                          enrollmentId: e.id,
+                          batchId: batch.id,
+                        );
+                      },
+                      onPromote: _atCapacity()
+                          ? null
+                          : (e) async {
+                              await promoteEnrollment(
+                                ref,
+                                enrollmentId: e.id,
+                                batchId: batch.id,
+                              );
+                            },
+                    ),
                   ],
-                ),
+                  if (withdrawn.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    _EnrollmentSection(
+                      title: 'Withdrawn (${withdrawn.length})',
+                      enrollments: withdrawn,
+                      byStudent: byId,
+                    ),
+                  ],
+                ],
               );
             },
           ),
@@ -130,11 +190,14 @@ class BatchDetailPage extends ConsumerWidget {
   Future<void> _showEnrollSheet(
     BuildContext context,
     WidgetRef ref,
-    List<Student> candidates,
-  ) async {
+    List<Student> candidates, {
+    required bool waitlist,
+  }) async {
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('All your students are already enrolled.')),
+        const SnackBar(
+          content: Text('All your students are already enrolled.'),
+        ),
       );
       return;
     }
@@ -144,19 +207,31 @@ class BatchDetailPage extends ConsumerWidget {
       builder: (ctx) => SafeArea(
         child: ListView.separated(
           shrinkWrap: true,
-          itemCount: candidates.length,
+          itemCount: candidates.length + 1,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (_, i) {
-            final s = candidates[i];
+            if (i == 0) {
+              return ListTile(
+                dense: true,
+                title: Text(
+                  waitlist
+                      ? 'Batch is at capacity — students will be added to the waitlist.'
+                      : 'Pick a student to enroll',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
+              );
+            }
+            final s = candidates[i - 1];
             return ListTile(
               title: Text(s.fullName),
               subtitle: Text(s.parentName),
-              trailing: const Icon(Icons.add),
+              trailing: Icon(waitlist ? Icons.queue_outlined : Icons.add),
               onTap: () async {
                 await enrollStudent(
                   ref,
                   batchId: batch.id,
                   studentId: s.id,
+                  status: waitlist ? 'waitlisted' : 'active',
                 );
                 if (ctx.mounted) Navigator.of(ctx).pop();
               },
@@ -168,31 +243,64 @@ class BatchDetailPage extends ConsumerWidget {
   }
 }
 
-class _EnrollmentTile extends StatelessWidget {
-  const _EnrollmentTile({
-    required this.enrollment,
-    required this.student,
-    required this.onWithdraw,
+class _EnrollmentSection extends StatelessWidget {
+  const _EnrollmentSection({
+    required this.title,
+    required this.enrollments,
+    required this.byStudent,
+    this.onWithdraw,
+    this.onPromote,
   });
 
-  final Enrollment enrollment;
-  final Student? student;
-  final VoidCallback onWithdraw;
+  final String title;
+  final List<Enrollment> enrollments;
+  final Map<String, Student> byStudent;
+  final Future<void> Function(Enrollment)? onWithdraw;
+  final Future<void> Function(Enrollment)? onPromote;
 
   @override
   Widget build(BuildContext context) {
-    final name = student?.fullName ?? '(unknown student)';
-    return ListTile(
-      leading: const Icon(Icons.person_outline),
-      title: Text(name),
-      subtitle: Text(enrollment.status),
-      trailing: enrollment.status == 'withdrawn'
-          ? null
-          : IconButton(
-              tooltip: 'Withdraw',
-              icon: const Icon(Icons.remove_circle_outline),
-              onPressed: onWithdraw,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+        ),
+        Card(
+          child: Column(
+            children: [
+              for (final e in enrollments)
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(byStudent[e.studentId]?.fullName ??
+                      '(unknown student)'),
+                  subtitle: Text(e.status),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onPromote != null)
+                        IconButton(
+                          tooltip: 'Promote to active',
+                          icon: const Icon(Icons.upgrade),
+                          onPressed: () => onPromote!(e),
+                        ),
+                      if (onWithdraw != null)
+                        IconButton(
+                          tooltip: 'Withdraw',
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: () => onWithdraw!(e),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

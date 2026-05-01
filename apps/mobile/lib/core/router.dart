@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/presentation/forgot_password_page.dart';
 import 'package:playhub/features/auth/presentation/login_page.dart';
 import 'package:playhub/features/auth/presentation/signup_page.dart';
 import 'package:playhub/features/auth/presentation/splash_page.dart';
@@ -14,7 +15,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final session = ref.read(sessionProvider);
       final loggingIn = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/signup';
+          state.matchedLocation == '/signup' ||
+          state.matchedLocation == '/forgot-password';
       final onSplash = state.matchedLocation == '/splash';
 
       if (onSplash) return null;
@@ -26,6 +28,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/splash', builder: (_, __) => const SplashPage()),
       GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
       GoRoute(path: '/signup', builder: (_, __) => const SignupPage()),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (_, __) => const ForgotPasswordPage(),
+      ),
       GoRoute(path: '/home', builder: (_, __) => const RoleDashboard()),
     ],
   );

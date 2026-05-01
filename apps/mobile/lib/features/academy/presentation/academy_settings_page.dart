@@ -19,11 +19,16 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   final _address = TextEditingController();
   final _city = TextEditingController();
   final _website = TextEditingController();
+  final _newSport = TextEditingController();
   bool _busy = false;
   String? _message;
   bool _isError = false;
   Academy? _loaded;
   String? _logo;
+  List<String> _sports = const [];
+  TimeOfDay? _open;
+  TimeOfDay? _close;
+  List<DateTime> _holidays = const [];
 
   @override
   void dispose() {
@@ -33,6 +38,7 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _address.dispose();
     _city.dispose();
     _website.dispose();
+    _newSport.dispose();
     super.dispose();
   }
 
@@ -46,7 +52,26 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _city.text = a.city ?? '';
     _website.text = a.website ?? '';
     _logo = a.logo;
+    _sports = List.of(a.sportsOffered);
+    _open = _parseTime(a.hoursOpen);
+    _close = _parseTime(a.hoursClose);
+    _holidays = List.of(a.holidays);
   }
+
+  static TimeOfDay? _parseTime(String? s) {
+    if (s == null || s.isEmpty) return null;
+    final parts = s.split(':');
+    if (parts.length < 2) return null;
+    return TimeOfDay(
+      hour: int.tryParse(parts[0]) ?? 0,
+      minute: int.tryParse(parts[1]) ?? 0,
+    );
+  }
+
+  static String _fmtTime(TimeOfDay t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static String _fmtDate(DateTime d) => d.toIso8601String().substring(0, 10);
 
   Future<void> _save() async {
     setState(() {
@@ -63,6 +88,10 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
         'city': _city.text.trim().isEmpty ? null : _city.text.trim(),
         'website': _website.text.trim().isEmpty ? null : _website.text.trim(),
         'logo': _logo,
+        'sports_offered': _sports,
+        'hours_open': _open == null ? null : _fmtTime(_open!),
+        'hours_close': _close == null ? null : _fmtTime(_close!),
+        'holidays': _holidays.map(_fmtDate).toList(),
       });
       setState(() => _message = 'Saved');
     } on Object catch (e) {
@@ -73,6 +102,49 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _addSport() {
+    final s = _newSport.text.trim();
+    if (s.isEmpty) return;
+    if (_sports.any((x) => x.toLowerCase() == s.toLowerCase())) {
+      _newSport.clear();
+      return;
+    }
+    setState(() {
+      _sports = [..._sports, s];
+      _newSport.clear();
+    });
+  }
+
+  Future<void> _pickTime({required bool open}) async {
+    final initial = (open ? _open : _close) ??
+        const TimeOfDay(hour: 6, minute: 0);
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (picked != null) {
+      setState(() {
+        if (open) {
+          _open = picked;
+        } else {
+          _close = picked;
+        }
+      });
+    }
+  }
+
+  Future<void> _addHoliday() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked == null) return;
+    final iso = _fmtDate(picked);
+    if (_holidays.any((d) => _fmtDate(d) == iso)) return;
+    setState(() {
+      _holidays = [..._holidays, picked]..sort();
+    });
   }
 
   @override
@@ -137,6 +209,108 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                   keyboardType: TextInputType.url,
                   decoration: const InputDecoration(labelText: 'Website'),
                 ),
+                const SizedBox(height: 24),
+                const _SectionLabel(label: 'Sports offered'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final s in _sports)
+                      Chip(
+                        label: Text(s),
+                        onDeleted: () => setState(() {
+                          _sports = _sports.where((x) => x != s).toList();
+                        }),
+                      ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newSport,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _addSport(),
+                        decoration: const InputDecoration(
+                          labelText: 'Add a sport',
+                          hintText: 'Cricket, Badminton, Swimming…',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline),
+                      onPressed: _addSport,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const _SectionLabel(label: 'Operating hours'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _pickTime(open: true),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Open'),
+                          child: Text(_open == null
+                              ? 'Tap to pick'
+                              : _fmtTime(_open!)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => _pickTime(open: false),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Close'),
+                          child: Text(_close == null
+                              ? 'Tap to pick'
+                              : _fmtTime(_close!)),
+                        ),
+                      ),
+                    ),
+                    if (_open != null || _close != null)
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        tooltip: 'Clear hours',
+                        onPressed: () => setState(() {
+                          _open = null;
+                          _close = null;
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const _SectionLabel(label: 'Holidays'),
+                if (_holidays.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('No holidays scheduled.'),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final d in _holidays)
+                        Chip(
+                          label: Text(_fmtDate(d)),
+                          onDeleted: () => setState(() {
+                            _holidays = _holidays
+                                .where((x) => _fmtDate(x) != _fmtDate(d))
+                                .toList();
+                          }),
+                        ),
+                    ],
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add_outlined),
+                  label: const Text('Add holiday'),
+                  onPressed: _addHoliday,
+                ),
                 if (_message != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -157,11 +331,24 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                         )
                       : const Text('Save changes'),
                 ),
+                const SizedBox(height: 32),
               ],
             ),
           );
         },
       ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label});
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(label, style: Theme.of(context).textTheme.titleMedium),
     );
   }
 }

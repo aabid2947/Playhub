@@ -4,6 +4,7 @@ import 'package:playhub/features/coaches/presentation/coaches_tab.dart';
 import 'package:playhub/features/home/home_tab.dart';
 import 'package:playhub/features/settings/settings_tab.dart';
 import 'package:playhub/features/students/presentation/students_tab.dart';
+import 'package:playhub/shared/widgets/verification_banner.dart';
 
 /// Bottom-nav scaffold for academy owners (and later, admins).
 /// Each tab keeps its own state via IndexedStack.
@@ -31,14 +32,21 @@ class _OwnerHomeShellState extends State<OwnerHomeShell> {
 
     return Scaffold(
       appBar: AppBar(title: Text(titles[_index])),
-      body: IndexedStack(
-        index: _index,
-        children: const [
-          HomeTab(),
-          StudentsTab(),
-          CoachesTab(),
-          BatchesTab(),
-          SettingsTab(),
+      body: Column(
+        children: [
+          const VerificationBanner(),
+          Expanded(
+            child: IndexedStack(
+              index: _index,
+              children: const [
+                HomeTab(),
+                StudentsTab(),
+                CoachesTab(),
+                BatchesTab(),
+                SettingsTab(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

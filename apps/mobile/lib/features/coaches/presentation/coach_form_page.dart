@@ -212,7 +212,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                         items: [
                           const DropdownMenuItem<String>(
                               child: Text('— none —')),
-                          for (final c in centres)
+                          for (final c in centres.where((c) => c.isActive))
                             DropdownMenuItem(
                                 value: c.id, child: Text(c.name)),
                         ],

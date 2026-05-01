@@ -80,7 +80,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     )
                   : const Text('Sign in'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => context.go('/forgot-password'),
+              child: const Text('Forgot password?'),
+            ),
             TextButton(
               onPressed: () => context.go('/signup'),
               child: const Text("Don't have an account? Sign up"),

@@ -70,6 +70,7 @@ Future<void> enrollStudent(
   WidgetRef ref, {
   required String batchId,
   required String studentId,
+  String status = 'active',
 }) async {
   final client = ref.read(supabaseClientProvider);
   final profile = await ref.read(currentProfileProvider.future);
@@ -81,7 +82,24 @@ Future<void> enrollStudent(
     'academy_id': academyId,
     'batch_id': batchId,
     'student_id': studentId,
+    'enrollment_status': status,
   });
+  ref
+    ..invalidate(batchEnrollmentsProvider(batchId))
+    ..invalidate(batchesProvider);
+}
+
+/// Promote a waitlisted enrollment to active.
+Future<void> promoteEnrollment(
+  WidgetRef ref, {
+  required String enrollmentId,
+  required String batchId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  await client
+      .from('batch_enrollments')
+      .update({'enrollment_status': 'active'})
+      .eq('id', enrollmentId);
   ref
     ..invalidate(batchEnrollmentsProvider(batchId))
     ..invalidate(batchesProvider);

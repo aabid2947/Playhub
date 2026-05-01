@@ -69,7 +69,7 @@ begin
   update public.users set academy_id = v_academy_a where id = v_user_a;
   update public.users set academy_id = v_academy_b where id = v_user_b;
 
-  -- A center + a student in each academy
+  -- A center + a student + a coach + a batch + an enrollment in each academy
   insert into public.centers (academy_id, name)
   values (v_academy_a, 'Centre A1'), (v_academy_b, 'Centre B1');
 
@@ -77,6 +77,21 @@ begin
   values
     (v_academy_a, 'Aarav', 'A', 'Parent A'),
     (v_academy_b, 'Bhavya', 'B', 'Parent B');
+
+  insert into public.coaches (academy_id, first_name, last_name)
+  values
+    (v_academy_a, 'Coach', 'A1'),
+    (v_academy_b, 'Coach', 'B1');
+
+  insert into public.batches (academy_id, name)
+  values
+    (v_academy_a, 'Batch A1'),
+    (v_academy_b, 'Batch B1');
+
+  insert into public.batch_enrollments (academy_id, batch_id, student_id)
+  select b.academy_id, b.id, s.id
+  from public.batches b
+  join public.students s on s.academy_id = b.academy_id;
 
   -- Stash IDs in session-local config so the test phase can read them.
   perform set_config('test.user_a', v_user_a::text, true);
@@ -169,6 +184,91 @@ begin
     raise exception 'FAIL: user A read user B''s profile row';
   end if;
   raise notice 'PASS: cross-tenant user-profile read blocked';
+end $$;
+
+-- ---------- Test 5: coaches read isolation ---------------------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.coaches where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.coaches where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own academy coaches';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % rows from academy B coaches', v_other;
+  end if;
+  raise notice 'PASS: coaches read isolation';
+end $$;
+
+-- ---------- Test 6: batches read isolation ---------------------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.batches where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.batches where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own academy batches';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % rows from academy B batches', v_other;
+  end if;
+  raise notice 'PASS: batches read isolation';
+end $$;
+
+-- ---------- Test 7: batch_enrollments read isolation -----------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.batch_enrollments where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.batch_enrollments where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own academy enrollments';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % enrollments from academy B', v_other;
+  end if;
+  raise notice 'PASS: enrollments read isolation';
+end $$;
+
+-- ---------- Test 8: cross-tenant batch insert blocked ----------------------
+
+do $$
+declare
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+begin
+  begin
+    insert into public.batches (academy_id, name)
+    values (v_academy_b, 'Sneaky cross-tenant batch');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted a batch into academy B';
+  end if;
+  raise notice 'PASS: cross-tenant batch insert blocked';
 end $$;
 
 -- ---------- Reset and roll back --------------------------------------------

@@ -11,6 +11,9 @@ class Academy {
     this.pincode,
     this.website,
     this.sportsOffered = const [],
+    this.hoursOpen,
+    this.hoursClose,
+    this.holidays = const [],
   });
 
   factory Academy.fromMap(Map<String, dynamic> m) => Academy(
@@ -27,6 +30,11 @@ class Academy {
         sportsOffered: ((m['sports_offered'] as List?) ?? const [])
             .map((e) => e.toString())
             .toList(),
+        hoursOpen: m['hours_open'] as String?,
+        hoursClose: m['hours_close'] as String?,
+        holidays: ((m['holidays'] as List?) ?? const [])
+            .map((e) => DateTime.parse(e.toString()))
+            .toList(),
       );
 
   final String id;
@@ -40,4 +48,7 @@ class Academy {
   final String? pincode;
   final String? website;
   final List<String> sportsOffered;
+  final String? hoursOpen;  // 'HH:mm:ss' as Postgres returns
+  final String? hoursClose;
+  final List<DateTime> holidays;
 }

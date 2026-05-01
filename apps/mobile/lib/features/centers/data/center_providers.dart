@@ -59,3 +59,12 @@ Future<void> deactivateCenter(WidgetRef ref, String centerId) async {
       .eq('id', centerId);
   ref.invalidate(centersProvider);
 }
+
+Future<void> reactivateCenter(WidgetRef ref, String centerId) async {
+  final client = ref.read(supabaseClientProvider);
+  await client
+      .from('centers')
+      .update({'is_active': true})
+      .eq('id', centerId);
+  ref.invalidate(centersProvider);
+}
