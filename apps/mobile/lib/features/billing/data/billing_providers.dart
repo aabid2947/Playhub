@@ -59,6 +59,97 @@ Future<FeeStructure> updateFeeStructure(
 }
 
 // =============================================================================
+// Student fee assignments
+// =============================================================================
+
+class StudentFeeAssignment {
+  const StudentFeeAssignment({
+    required this.id,
+    required this.academyId,
+    required this.studentId,
+    required this.feeStructureId,
+    required this.startDate,
+    required this.isActive,
+    this.endDate,
+    this.billingDay,
+  });
+
+  factory StudentFeeAssignment.fromMap(Map<String, dynamic> m) =>
+      StudentFeeAssignment(
+        id: m['id'] as String,
+        academyId: m['academy_id'] as String,
+        studentId: m['student_id'] as String,
+        feeStructureId: m['fee_structure_id'] as String,
+        startDate: DateTime.parse(m['start_date'] as String),
+        endDate: m['end_date'] == null
+            ? null
+            : DateTime.parse(m['end_date'] as String),
+        billingDay: (m['billing_day'] as num?)?.toInt(),
+        isActive: (m['is_active'] as bool?) ?? true,
+      );
+
+  final String id;
+  final String academyId;
+  final String studentId;
+  final String feeStructureId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final int? billingDay;
+  final bool isActive;
+}
+
+final assignmentsForStudentProvider = FutureProvider.family<
+    List<StudentFeeAssignment>, String>((ref, studentId) async {
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('student_fee_assignments')
+      .select()
+      .eq('student_id', studentId)
+      .order('created_at', ascending: false);
+  return (rows as List)
+      .map((r) =>
+          StudentFeeAssignment.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
+Future<void> assignFee(
+  WidgetRef ref, {
+  required String studentId,
+  required String feeStructureId,
+  required DateTime startDate,
+  int? billingDay,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final profile = await ref.read(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) throw StateError('No academy linked');
+  await client.from('student_fee_assignments').insert({
+    'academy_id': academyId,
+    'student_id': studentId,
+    'fee_structure_id': feeStructureId,
+    'start_date': startDate.toIso8601String().substring(0, 10),
+    if (billingDay != null) 'billing_day': billingDay,
+  });
+  ref.invalidate(assignmentsForStudentProvider(studentId));
+}
+
+Future<void> deactivateAssignment(
+  WidgetRef ref, {
+  required String assignmentId,
+  required String studentId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  await client
+      .from('student_fee_assignments')
+      .update({
+        'is_active': false,
+        'end_date': DateTime.now().toIso8601String().substring(0, 10),
+      })
+      .eq('id', assignmentId);
+  ref.invalidate(assignmentsForStudentProvider(studentId));
+}
+
+// =============================================================================
 // Invoices
 // =============================================================================
 

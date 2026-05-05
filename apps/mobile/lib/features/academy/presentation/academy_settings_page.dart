@@ -20,6 +20,9 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   final _city = TextEditingController();
   final _website = TextEditingController();
   final _newSport = TextEditingController();
+  final _grace = TextEditingController();
+  final _prefix = TextEditingController();
+  String _latePolicy = 'one_time';
   bool _busy = false;
   String? _message;
   bool _isError = false;
@@ -39,6 +42,8 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _city.dispose();
     _website.dispose();
     _newSport.dispose();
+    _grace.dispose();
+    _prefix.dispose();
     super.dispose();
   }
 
@@ -56,6 +61,9 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _open = _parseTime(a.hoursOpen);
     _close = _parseTime(a.hoursClose);
     _holidays = List.of(a.holidays);
+    _grace.text = a.lateFeeGraceDays.toString();
+    _prefix.text = a.invoicePrefix;
+    _latePolicy = a.lateFeePolicy;
   }
 
   static TimeOfDay? _parseTime(String? s) {
@@ -92,6 +100,11 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
         'hours_open': _open == null ? null : _fmtTime(_open!),
         'hours_close': _close == null ? null : _fmtTime(_close!),
         'holidays': _holidays.map(_fmtDate).toList(),
+        'late_fee_grace_days':
+            int.tryParse(_grace.text.trim()) ?? 5,
+        'late_fee_policy': _latePolicy,
+        'invoice_prefix':
+            _prefix.text.trim().isEmpty ? 'INV' : _prefix.text.trim(),
       });
       setState(() => _message = 'Saved');
     } on Object catch (e) {
@@ -310,6 +323,52 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                   icon: const Icon(Icons.add_outlined),
                   label: const Text('Add holiday'),
                   onPressed: _addHoliday,
+                ),
+                const SizedBox(height: 24),
+                const _SectionLabel(label: 'Billing defaults'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _prefix,
+                        decoration: const InputDecoration(
+                          labelText: 'Invoice prefix',
+                          hintText: 'INV',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _grace,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Grace days',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _latePolicy,
+                  items: const [
+                    DropdownMenuItem(value: 'none', child: Text('No late fee')),
+                    DropdownMenuItem(
+                        value: 'one_time', child: Text('One-time fee')),
+                    DropdownMenuItem(
+                        value: 'daily', child: Text('Per-day after grace')),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => _latePolicy = v ?? 'one_time'),
+                  decoration: const InputDecoration(
+                    labelText: 'Default late-fee policy',
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Per-fee overrides on a fee structure win over these defaults.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (_message != null) ...[
                   const SizedBox(height: 12),
