@@ -11,7 +11,6 @@ class Centre {
     this.phone,
     this.email,
     this.facilities = const [],
-    this.capacity,
     this.adminId,
   });
 
@@ -29,7 +28,6 @@ class Centre {
         facilities: ((m['facilities'] as List?) ?? const [])
             .map((e) => e.toString())
             .toList(),
-        capacity: m['capacity'] as int?,
         adminId: m['admin_id'] as String?,
       );
 
@@ -44,6 +42,5 @@ class Centre {
   final String? phone;
   final String? email;
   final List<String> facilities;
-  final int? capacity;
   final String? adminId;
 }

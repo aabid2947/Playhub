@@ -20,8 +20,6 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
       TextEditingController(text: widget.existing?.address ?? '');
   late final _city = TextEditingController(text: widget.existing?.city ?? '');
   late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
-  late final _capacity = TextEditingController(
-      text: widget.existing?.capacity?.toString() ?? '');
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
   String? _error;
@@ -34,7 +32,6 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
     _address.dispose();
     _city.dispose();
     _phone.dispose();
-    _capacity.dispose();
     super.dispose();
   }
 
@@ -50,9 +47,6 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
         'address': _address.text.trim().isEmpty ? null : _address.text.trim(),
         'city': _city.text.trim().isEmpty ? null : _city.text.trim(),
         'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-        'capacity': _capacity.text.trim().isEmpty
-            ? null
-            : int.tryParse(_capacity.text.trim()),
       };
       if (isEdit) {
         await updateCenter(ref, widget.existing!.id, patch);
@@ -100,15 +94,6 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
                 controller: _phone,
                 keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(labelText: 'Phone'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _capacity,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Capacity',
-                  hintText: 'Max students at this center',
-                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

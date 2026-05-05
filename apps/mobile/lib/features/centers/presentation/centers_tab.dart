@@ -32,7 +32,6 @@ class CentersTab extends ConsumerWidget {
                   subtitle: Text(
                     [
                       if (c.city != null) c.city,
-                      if (c.capacity != null) 'cap ${c.capacity}',
                       if (!c.isActive) 'inactive',
                     ].whereType<String>().join(' • '),
                   ),
