@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
+import 'package:playhub/features/billing/presentation/student_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/student_fees_section.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_history_page.dart';
@@ -320,6 +321,8 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 _PerformanceShortcut(student: widget.existing!),
                 const SizedBox(height: 24),
                 StudentFeesSection(studentId: widget.existing!.id),
+                const SizedBox(height: 24),
+                StudentDiscountsSection(studentId: widget.existing!.id),
                 const SizedBox(height: 24),
                 StudentDocumentsSection(studentId: widget.existing!.id),
               ],

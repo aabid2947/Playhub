@@ -30,6 +30,7 @@ class Invoice {
     required this.baseAmount,
     required this.taxAmount,
     required this.lateFeeAmount,
+    required this.discountAmount,
     required this.amount,
     required this.amountPaid,
     required this.issuedAt,
@@ -57,6 +58,8 @@ class Invoice {
         baseAmount: (m['base_amount'] as num).toDouble(),
         taxAmount: (m['tax_amount'] as num).toDouble(),
         lateFeeAmount: (m['late_fee_amount'] as num).toDouble(),
+        discountAmount:
+            (m['discount_amount'] as num?)?.toDouble() ?? 0,
         amount: (m['amount'] as num).toDouble(),
         amountPaid: (m['amount_paid'] as num).toDouble(),
         notes: m['notes'] as String?,
@@ -75,6 +78,7 @@ class Invoice {
   final double baseAmount;
   final double taxAmount;
   final double lateFeeAmount;
+  final double discountAmount;
   final double amount;
   final double amountPaid;
   final String? notes;

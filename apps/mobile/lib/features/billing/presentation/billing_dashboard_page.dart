@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:playhub/features/billing/presentation/discount_structures_page.dart';
 import 'package:playhub/features/billing/presentation/fee_structures_page.dart';
 import 'package:playhub/features/billing/presentation/financial_reports_page.dart';
 import 'package:playhub/features/billing/presentation/invoice_list_page.dart';
@@ -10,7 +11,7 @@ class BillingDashboardPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Billing'),
@@ -19,6 +20,7 @@ class BillingDashboardPage extends StatelessWidget {
             tabs: [
               Tab(text: 'Invoices'),
               Tab(text: 'Fees'),
+              Tab(text: 'Discounts'),
               Tab(text: 'Payments'),
               Tab(text: 'Reports'),
             ],
@@ -28,6 +30,7 @@ class BillingDashboardPage extends StatelessWidget {
           children: [
             InvoiceListPage(),
             FeeStructuresPage(),
+            DiscountStructuresPage(),
             PaymentsListPage(),
             FinancialReportsPage(),
           ],

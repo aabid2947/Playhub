@@ -132,6 +132,26 @@ begin
   from public.batches b
   join public.fee_structures fs on fs.academy_id = b.academy_id;
 
+  -- Discounts seed: one structure + one student-level + one batch-level
+  -- assignment per academy.
+  insert into public.discount_structures
+    (academy_id, name, type, value)
+  values
+    (v_academy_a, 'Sibling A', 'percentage', 10),
+    (v_academy_b, 'Sibling B', 'percentage', 10);
+
+  insert into public.student_discount_assignments
+    (academy_id, student_id, discount_structure_id)
+  select s.academy_id, s.id, ds.id
+  from public.students s
+  join public.discount_structures ds on ds.academy_id = s.academy_id;
+
+  insert into public.batch_discount_assignments
+    (academy_id, batch_id, discount_structure_id)
+  select b.academy_id, b.id, ds.id
+  from public.batches b
+  join public.discount_structures ds on ds.academy_id = b.academy_id;
+
   insert into public.invoices
     (academy_id, student_id, invoice_number, due_date, base_amount, tax_amount)
   select s.academy_id,
@@ -835,7 +855,59 @@ begin
   raise notice 'PASS: batch_fee_assignments read + cross-tenant insert blocked';
 end $$;
 
--- ---------- Test 24: refresh_attendance_aggregates is callable ------------
+-- ---------- Test 24: discount_structures + assignment isolation -----------
+
+do $$
+declare
+  v_own_d int;
+  v_other_d int;
+  v_own_sd int;
+  v_other_sd int;
+  v_own_bd int;
+  v_other_bd int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own_d
+    from public.discount_structures where academy_id = v_academy_a;
+  select count(*) into v_other_d
+    from public.discount_structures where academy_id = v_academy_b;
+  if v_own_d = 0 then
+    raise exception 'FAIL: user A could not read own discount_structures';
+  end if;
+  if v_other_d > 0 then
+    raise exception 'FAIL: user A read % discount_structures from academy B',
+      v_other_d;
+  end if;
+
+  select count(*) into v_own_sd
+    from public.student_discount_assignments where academy_id = v_academy_a;
+  select count(*) into v_other_sd
+    from public.student_discount_assignments where academy_id = v_academy_b;
+  if v_own_sd = 0 then
+    raise exception 'FAIL: user A could not read own student_discount_assignments';
+  end if;
+  if v_other_sd > 0 then
+    raise exception 'FAIL: user A read % student_discount_assignments from academy B',
+      v_other_sd;
+  end if;
+
+  select count(*) into v_own_bd
+    from public.batch_discount_assignments where academy_id = v_academy_a;
+  select count(*) into v_other_bd
+    from public.batch_discount_assignments where academy_id = v_academy_b;
+  if v_own_bd = 0 then
+    raise exception 'FAIL: user A could not read own batch_discount_assignments';
+  end if;
+  if v_other_bd > 0 then
+    raise exception 'FAIL: user A read % batch_discount_assignments from academy B',
+      v_other_bd;
+  end if;
+
+  raise notice 'PASS: discount_structures + student/batch_discount_assignments isolation';
+end $$;
+
+-- ---------- Test 25: refresh_attendance_aggregates is callable ------------
 -- The materialized views are not RLS-able directly, but the wrapper views
 -- (`*_view`) re-apply tenant filtering. Verify user A only sees their own
 -- academy's rows through the wrappers, and that the refresh RPC is callable.

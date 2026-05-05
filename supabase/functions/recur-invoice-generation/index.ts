@@ -117,6 +117,17 @@ Deno.serve(async (req) => {
           }]
         : []),
     ]);
+
+    // Apply discounts (student-level + optional batch-level).
+    await applyDiscounts(admin, {
+      invoiceId: invoice.id,
+      academyId: a.academy_id,
+      studentId: a.student_id,
+      baseAmount: Number(a.fee.base_amount),
+      taxAmount,
+      periodStart,
+    });
+
     created++;
   }
 
@@ -128,6 +139,119 @@ Deno.serve(async (req) => {
     created,
   });
 });
+
+interface DiscountStructure {
+  id: string;
+  name: string;
+  type: 'percentage' | 'flat';
+  value: number;
+}
+
+async function applyDiscounts(
+  admin: ReturnType<typeof createClient>,
+  args: {
+    invoiceId: string;
+    academyId: string;
+    studentId: string;
+    baseAmount: number;
+    taxAmount: number;
+    periodStart: Date;
+  },
+): Promise<void> {
+  const periodStartStr = isoDate(args.periodStart);
+
+  // Student-level: rows active for this period.
+  const { data: studentRows } = await admin
+    .from('student_discount_assignments')
+    .select('discount_structure_id, stack_with_batch, start_date, end_date, '
+        + 'discount:discount_structure_id(id, name, type, value)')
+    .eq('student_id', args.studentId)
+    .eq('is_active', true)
+    .lte('start_date', periodStartStr);
+
+  const studentActive = (studentRows ?? [])
+    .filter((r: { end_date: string | null }) =>
+      r.end_date === null || r.end_date >= periodStartStr,
+    ) as unknown as Array<{
+      stack_with_batch: boolean;
+      discount: DiscountStructure | null;
+    }>;
+
+  const hasNonStacking = studentActive.some(
+    (r) => r.stack_with_batch === false && r.discount !== null,
+  );
+
+  type Applied = { source: 'student' | 'batch'; discount: DiscountStructure };
+  const applied: Applied[] = [];
+  for (const r of studentActive) {
+    if (r.discount) applied.push({ source: 'student', discount: r.discount });
+  }
+
+  if (!hasNonStacking) {
+    // Batch-level: discounts attached to the student's active batches.
+    const { data: enrolls } = await admin
+      .from('batch_enrollments')
+      .select('batch_id')
+      .eq('student_id', args.studentId)
+      .eq('enrollment_status', 'active');
+    const batchIds = ((enrolls ?? []) as Array<{ batch_id: string }>)
+      .map((e) => e.batch_id);
+    if (batchIds.length > 0) {
+      const { data: batchRows } = await admin
+        .from('batch_discount_assignments')
+        .select('discount_structure_id, start_date, end_date, '
+            + 'discount:discount_structure_id(id, name, type, value)')
+        .in('batch_id', batchIds)
+        .eq('is_active', true)
+        .lte('start_date', periodStartStr);
+      const batchActive = (batchRows ?? []).filter(
+        (r: { end_date: string | null }) =>
+          r.end_date === null || r.end_date >= periodStartStr,
+      ) as unknown as Array<{ discount: DiscountStructure | null }>;
+      for (const r of batchActive) {
+        if (r.discount) applied.push({ source: 'batch', discount: r.discount });
+      }
+    }
+  }
+
+  if (applied.length === 0) return;
+
+  // Compute each discount's amount, clamping the running total at base+tax.
+  const cap = round2(args.baseAmount + args.taxAmount);
+  let used = 0;
+  const lines: Array<{ description: string; amount: number }> = [];
+  for (const a of applied) {
+    const nominal = a.discount.type === 'percentage'
+      ? round2(args.baseAmount * Number(a.discount.value) / 100)
+      : Number(a.discount.value);
+    const remaining = round2(cap - used);
+    const applyAmt = Math.min(nominal, Math.max(remaining, 0));
+    if (applyAmt <= 0) continue;
+    used = round2(used + applyAmt);
+    const valueLabel = a.discount.type === 'percentage'
+      ? `${a.discount.value}%`
+      : `₹${a.discount.value}`;
+    lines.push({
+      description: `Discount: ${a.discount.name} (${valueLabel}, ${a.source})`,
+      amount: applyAmt,
+    });
+  }
+
+  if (used > 0) {
+    await admin.from('invoices').update({ discount_amount: used })
+      .eq('id', args.invoiceId);
+    await admin.from('invoice_line_items').insert(
+      lines.map((l) => ({
+        invoice_id: args.invoiceId,
+        academy_id: args.academyId,
+        kind: 'discount',
+        description: l.description,
+        quantity: 1,
+        unit_amount: -l.amount,
+      })),
+    );
+  }
+}
 
 async function collectStudentLevel(
   admin: ReturnType<typeof createClient>,

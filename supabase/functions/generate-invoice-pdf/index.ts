@@ -34,8 +34,8 @@ Deno.serve(async (req) => {
   const { data: invoice, error } = await caller
     .from('invoices')
     .select('id, academy_id, student_id, invoice_number, due_date, '
-        + 'status, base_amount, tax_amount, late_fee_amount, amount, '
-        + 'amount_paid, period_start, period_end')
+        + 'status, base_amount, tax_amount, late_fee_amount, '
+        + 'discount_amount, amount, amount_paid, period_start, period_end')
     .eq('id', body.invoice_id)
     .single();
   if (error || !invoice) return j({ error: 'invoice not found' }, 404);
@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
     `Subtotal,${invoice.base_amount}`,
     `Tax,${invoice.tax_amount}`,
     `Late fee,${invoice.late_fee_amount}`,
+    `Discount,-${invoice.discount_amount}`,
     `Total,${invoice.amount}`,
     `Paid,${invoice.amount_paid}`,
     `Balance,${(Number(invoice.amount) - Number(invoice.amount_paid)).toFixed(2)}`,
