@@ -6,6 +6,7 @@ import 'package:playhub/features/attendance/presentation/admin_attendance_overvi
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
+import 'package:playhub/features/billing/presentation/billing_dashboard_page.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
@@ -158,6 +159,18 @@ class _ActionsCard extends StatelessWidget {
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
                 builder: (_) => const AdminAttendanceOverview(),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Billing'),
+            subtitle: const Text('Invoices, fees, payments, reports'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const BillingDashboardPage(),
               ),
             ),
           ),

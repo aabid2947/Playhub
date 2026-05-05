@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/billing/data/billing_providers.dart';
+import 'package:playhub/features/billing/data/fee_structure.dart';
+import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
+
+class FeeStructuresPage extends ConsumerWidget {
+  const FeeStructuresPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final feesAsync = ref.watch(feeStructuresProvider);
+    return Scaffold(
+      body: feesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (fees) {
+          if (fees.isEmpty) return const _EmptyState();
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(feeStructuresProvider),
+            child: ListView.separated(
+              itemCount: fees.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) => _FeeTile(fee: fees[i]),
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => const FeeStructureFormPage()),
+        ),
+        icon: const Icon(Icons.add),
+        label: const Text('New fee'),
+      ),
+    );
+  }
+}
+
+class _FeeTile extends StatelessWidget {
+  const _FeeTile({required this.fee});
+  final FeeStructure fee;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.receipt_long_outlined),
+      title: Text(fee.name),
+      subtitle: Text(
+        [
+          fee.type.label,
+          if (fee.sport != null) fee.sport,
+          '₹${fee.baseAmount.toStringAsFixed(0)}${fee.taxPct > 0 ? ' + ${fee.taxPct.toStringAsFixed(0)}% tax' : ''}',
+        ].whereType<String>().join(' • '),
+      ),
+      trailing: !fee.isActive
+          ? const Chip(
+              label: Text('inactive'),
+              visualDensity: VisualDensity.compact,
+            )
+          : null,
+      onTap: () => Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => FeeStructureFormPage(existing: fee),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.receipt_long_outlined, size: 48),
+            const SizedBox(height: 12),
+            Text('No fee structures yet',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            const Text(
+              'Create one to start billing students.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
