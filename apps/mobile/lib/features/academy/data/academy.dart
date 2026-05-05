@@ -14,8 +14,6 @@ class Academy {
     this.hoursOpen,
     this.hoursClose,
     this.holidays = const [],
-    this.lateFeeGraceDays = 5,
-    this.lateFeePolicy = 'one_time',
     this.invoicePrefix = 'INV',
   });
 
@@ -38,8 +36,6 @@ class Academy {
         holidays: ((m['holidays'] as List?) ?? const [])
             .map((e) => DateTime.parse(e.toString()))
             .toList(),
-        lateFeeGraceDays: (m['late_fee_grace_days'] as num?)?.toInt() ?? 5,
-        lateFeePolicy: (m['late_fee_policy'] as String?) ?? 'one_time',
         invoicePrefix: (m['invoice_prefix'] as String?) ?? 'INV',
       );
 
@@ -57,7 +53,5 @@ class Academy {
   final String? hoursOpen;  // 'HH:mm:ss' as Postgres returns
   final String? hoursClose;
   final List<DateTime> holidays;
-  final int lateFeeGraceDays;
-  final String lateFeePolicy; // 'none' | 'one_time' | 'daily'
   final String invoicePrefix;
 }

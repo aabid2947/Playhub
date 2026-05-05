@@ -30,10 +30,10 @@ class _FeeStructureFormPageState
   late final _latePct = TextEditingController(
       text: widget.existing?.lateFeePct?.toStringAsFixed(2) ?? '');
   late final _grace = TextEditingController(
-      text: widget.existing?.lateFeeGraceDays?.toString() ?? '');
+      text: (widget.existing?.lateFeeGraceDays ?? 5).toString());
 
   late FeeType _type = widget.existing?.type ?? FeeType.monthly;
-  late String? _latePolicy = widget.existing?.lateFeePolicy;
+  late String _latePolicy = widget.existing?.lateFeePolicy ?? 'one_time';
   late bool _isActive = widget.existing?.isActive ?? true;
 
   final _formKey = GlobalKey<FormState>();
@@ -73,9 +73,8 @@ class _FeeStructureFormPageState
         'late_fee_pct': _latePct.text.trim().isEmpty
             ? null
             : double.tryParse(_latePct.text.trim()),
-        'late_fee_grace_days': _grace.text.trim().isEmpty
-            ? null
-            : int.tryParse(_grace.text.trim()),
+        'late_fee_grace_days':
+            int.tryParse(_grace.text.trim()) ?? 5,
         'late_fee_policy': _latePolicy,
         'is_active': _isActive,
       };
@@ -169,20 +168,20 @@ class _FeeStructureFormPageState
               ],
             ),
             const SizedBox(height: 24),
-            Text('Late fee override',
+            Text('Late fee',
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String?>(
+            DropdownButtonFormField<String>(
               initialValue: _latePolicy,
               items: const [
-                DropdownMenuItem(child: Text('Inherit from academy')),
                 DropdownMenuItem(value: 'none', child: Text('No late fee')),
                 DropdownMenuItem(
                     value: 'one_time', child: Text('One-time fee')),
                 DropdownMenuItem(
                     value: 'daily', child: Text('Per-day after grace')),
               ],
-              onChanged: (v) => setState(() => _latePolicy = v),
+              onChanged: (v) =>
+                  setState(() => _latePolicy = v ?? 'one_time'),
               decoration: const InputDecoration(
                 labelText: 'Policy',
                 border: OutlineInputBorder(),
@@ -221,7 +220,8 @@ class _FeeStructureFormPageState
               controller: _grace,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Grace days override',
+                labelText: 'Grace days',
+                hintText: 'Days after due date before fee applies',
                 border: OutlineInputBorder(),
               ),
             ),

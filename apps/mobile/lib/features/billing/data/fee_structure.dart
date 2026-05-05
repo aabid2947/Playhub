@@ -25,14 +25,14 @@ class FeeStructure {
     required this.type,
     required this.baseAmount,
     required this.taxPct,
+    required this.lateFeeGraceDays,
+    required this.lateFeePolicy,
     required this.isActive,
     this.description,
     this.sport,
     this.batchId,
     this.lateFeePct,
     this.lateFeeFlat,
-    this.lateFeeGraceDays,
-    this.lateFeePolicy,
   });
 
   factory FeeStructure.fromMap(Map<String, dynamic> m) => FeeStructure(
@@ -47,8 +47,10 @@ class FeeStructure {
         taxPct: (m['tax_pct'] as num).toDouble(),
         lateFeePct: (m['late_fee_pct'] as num?)?.toDouble(),
         lateFeeFlat: (m['late_fee_flat'] as num?)?.toDouble(),
-        lateFeeGraceDays: (m['late_fee_grace_days'] as num?)?.toInt(),
-        lateFeePolicy: m['late_fee_policy'] as String?,
+        lateFeeGraceDays:
+            (m['late_fee_grace_days'] as num?)?.toInt() ?? 5,
+        lateFeePolicy:
+            (m['late_fee_policy'] as String?) ?? 'one_time',
         isActive: (m['is_active'] as bool?) ?? true,
       );
 
@@ -63,8 +65,8 @@ class FeeStructure {
   final double taxPct;
   final double? lateFeePct;
   final double? lateFeeFlat;
-  final int? lateFeeGraceDays;
-  final String? lateFeePolicy; // 'none' | 'one_time' | 'daily'
+  final int lateFeeGraceDays;
+  final String lateFeePolicy; // 'none' | 'one_time' | 'daily'
   final bool isActive;
 
   double get totalAmount => baseAmount + (baseAmount * taxPct / 100);
