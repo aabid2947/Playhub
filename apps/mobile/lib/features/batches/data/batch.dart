@@ -46,7 +46,6 @@ class Batch {
     this.capacity,
     this.ageGroup,
     this.skillLevel,
-    this.fees,
     this.startDate,
     this.endDate,
     this.enrolledCount = 0,
@@ -65,7 +64,6 @@ class Batch {
         capacity: m['capacity'] as int?,
         ageGroup: m['age_group'] as String?,
         skillLevel: m['skill_level'] as String?,
-        fees: (m['fees'] as num?)?.toDouble(),
         startDate: m['start_date'] == null
             ? null
             : DateTime.parse(m['start_date'] as String),
@@ -87,7 +85,6 @@ class Batch {
   final int? capacity;
   final String? ageGroup;
   final String? skillLevel;
-  final double? fees;
   final DateTime? startDate;
   final DateTime? endDate;
   final bool isActive;

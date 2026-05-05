@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 
@@ -244,9 +246,95 @@ class _FeeStructureFormPageState
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(isEdit ? 'Save changes' : 'Create fee'),
             ),
+            if (isEdit) ...[
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 12),
+              Text('Bulk-assign',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Assign this fee to every active enrollment in a batch. '
+                'Already-assigned students are skipped.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.group_add_outlined),
+                label: const Text('Apply to batch…'),
+                onPressed: () =>
+                    _showBatchPicker(context, widget.existing!.id),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _showBatchPicker(
+    BuildContext context,
+    String feeStructureId,
+  ) async {
+    final batches = ref.read(batchesProvider).valueOrNull ?? const <Batch>[];
+    final active = batches.where((b) => b.isActive).toList();
+    if (active.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active batches.')),
+      );
+      return;
+    }
+    final picked = await showModalBottomSheet<Batch>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView.separated(
+          shrinkWrap: true,
+          itemCount: active.length + 1,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (_, i) {
+            if (i == 0) {
+              return const ListTile(
+                dense: true,
+                title: Text('Pick a batch'),
+              );
+            }
+            final b = active[i - 1];
+            return ListTile(
+              title: Text(b.name),
+              subtitle: Text(
+                '${b.schedule.summary} · ${b.enrolledCount} enrolled',
+              ),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () => Navigator.of(ctx).pop(b),
+            );
+          },
+        ),
+      ),
+    );
+    if (picked == null) return;
+    try {
+      final n = await assignFeeToBatch(
+        ref,
+        feeStructureId: feeStructureId,
+        batchId: picked.id,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            n == 0
+                ? 'No new assignments — all students already had this fee.'
+                : 'Assigned to $n student${n == 1 ? '' : 's'}.',
+          ),
+        ),
+      );
+    } on Object catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Bulk-assign failed: $e')),
+        );
+      }
+    }
   }
 }

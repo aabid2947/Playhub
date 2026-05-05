@@ -23,8 +23,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
       TextEditingController(text: widget.existing?.ageGroup ?? '');
   late final _capacity = TextEditingController(
       text: widget.existing?.capacity?.toString() ?? '');
-  late final _fees = TextEditingController(
-      text: widget.existing?.fees?.toStringAsFixed(0) ?? '');
 
   String? _centerId;
   String? _coachId;
@@ -52,7 +50,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     _sport.dispose();
     _ageGroup.dispose();
     _capacity.dispose();
-    _fees.dispose();
     super.dispose();
   }
 
@@ -71,9 +68,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
         'capacity': _capacity.text.trim().isEmpty
             ? null
             : int.tryParse(_capacity.text.trim()),
-        'fees': _fees.text.trim().isEmpty
-            ? null
-            : double.tryParse(_fees.text.trim()),
         'center_id': _centerId,
         'coach_id': _coachId,
         'skill_level': _skillLevel,
@@ -184,27 +178,10 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                 onChanged: (s) => _schedule = s,
               ),
               const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _capacity,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Capacity'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _fees,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Fees (₹)',
-                        prefixText: '₹ ',
-                      ),
-                    ),
-                  ),
-                ],
+              TextFormField(
+                controller: _capacity,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Capacity'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

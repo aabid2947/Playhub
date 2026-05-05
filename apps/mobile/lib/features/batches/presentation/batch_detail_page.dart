@@ -76,8 +76,6 @@ class BatchDetailPage extends ConsumerWidget {
                         '${batch.enrolledCount}/${batch.capacity} enrolled'
                       else
                         '${batch.enrolledCount} enrolled',
-                      if (batch.fees != null)
-                        '₹${batch.fees!.toStringAsFixed(0)}',
                     ].join(' • '),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),

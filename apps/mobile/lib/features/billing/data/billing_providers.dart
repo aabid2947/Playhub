@@ -149,6 +149,30 @@ Future<void> deactivateAssignment(
   ref.invalidate(assignmentsForStudentProvider(studentId));
 }
 
+/// Bulk-assign a fee to every active enrollment in a batch via the
+/// `assign_fee_to_batch` Postgres function. Returns the number of new
+/// assignments created (existing duplicates are skipped via ON CONFLICT).
+Future<int> assignFeeToBatch(
+  WidgetRef ref, {
+  required String feeStructureId,
+  required String batchId,
+  DateTime? startDate,
+  int? billingDay,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final result = await client.rpc<dynamic>(
+    'assign_fee_to_batch',
+    params: {
+      'p_fee_id': feeStructureId,
+      'p_batch_id': batchId,
+      if (startDate != null)
+        'p_start_date': startDate.toIso8601String().substring(0, 10),
+      if (billingDay != null) 'p_billing_day': billingDay,
+    },
+  );
+  return (result as num?)?.toInt() ?? 0;
+}
+
 // =============================================================================
 // Invoices
 // =============================================================================
