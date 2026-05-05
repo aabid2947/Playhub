@@ -1,20 +1,22 @@
-// Cron daily ~02:00 IST: for every active student_fee_assignment whose
-// fee_structure.type is recurring (monthly/quarterly/annual), generate
-// the next invoice if today is the billing day and an invoice for the
-// current period doesn't already exist.
+// Cron daily ~02:00 IST: union of two sources →
+//   - student_fee_assignments (per-student, overrides + one-offs)
+//   - batch_fee_assignments × active enrollments (batch-wide fees)
+//
+// Generates one invoice per (student, fee_structure, period_start). The
+// existing per-student dedupe check ensures a student covered by both
+// sources gets a single invoice per period.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
 
-interface SfaRow {
-  id: string;
+interface Assignment {
   academy_id: string;
   student_id: string;
   fee_structure_id: string;
   start_date: string;
   end_date: string | null;
   billing_day: number | null;
-  fee_structures: {
+  fee: {
     type: 'monthly' | 'quarterly' | 'annual' | 'one_time';
     base_amount: number;
     tax_pct: number;
@@ -38,60 +40,57 @@ Deno.serve(async (req) => {
     today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(),
   ));
 
-  const { data: assignments, error } = await admin
-    .from('student_fee_assignments')
-    .select('id, academy_id, student_id, fee_structure_id, start_date, '
-        + 'end_date, billing_day, '
-        + 'fee_structures:fee_structure_id(type, base_amount, tax_pct, name)')
-    .eq('is_active', true);
-  if (error) return j({ error: error.message }, 500);
+  const studentLevel = await collectStudentLevel(admin);
+  const batchLevel = await collectBatchLevel(admin);
+  const all: Assignment[] = [...studentLevel, ...batchLevel];
 
+  let scanned = all.length;
   let created = 0;
-  for (const sfa of (assignments ?? []) as unknown as SfaRow[]) {
-    const fs = sfa.fee_structures;
-    if (!fs || fs.type === 'one_time') continue;
-    if (sfa.end_date && new Date(sfa.end_date) < todayUtc) continue;
+  for (const a of all) {
+    if (a.fee.type === 'one_time') continue;
+    if (a.end_date && new Date(a.end_date) < todayUtc) continue;
 
-    const start = new Date(sfa.start_date + 'T00:00:00Z');
-    const billingDay = sfa.billing_day ?? start.getUTCDate();
+    const start = new Date(a.start_date + 'T00:00:00Z');
+    const billingDay = a.billing_day ?? start.getUTCDate();
 
-    // Compute current period start/end from frequency.
-    const periodStart = anchorPeriodStart(todayUtc, fs.type, billingDay);
+    const periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
     if (todayUtc.getUTCDate() !== billingDay) continue;
     if (periodStart < start) continue;
 
-    const periodEnd = nextPeriodStart(periodStart, fs.type);
+    const periodEnd = nextPeriodStart(periodStart, a.fee.type);
     periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
 
-    // Skip if already issued for this period.
+    // Skip if invoice already exists for this (student, fee, period_start) —
+    // dedupes across both assignment sources.
     const { count } = await admin
       .from('invoices')
       .select('id', { count: 'exact', head: true })
-      .eq('student_id', sfa.student_id)
-      .eq('fee_structure_id', sfa.fee_structure_id)
+      .eq('student_id', a.student_id)
+      .eq('fee_structure_id', a.fee_structure_id)
       .eq('period_start', isoDate(periodStart));
     if ((count ?? 0) > 0) continue;
 
-    const taxAmount = round2(Number(fs.base_amount) * Number(fs.tax_pct) / 100);
+    const taxAmount =
+      round2(Number(a.fee.base_amount) * Number(a.fee.tax_pct) / 100);
     const dueDate = new Date(periodStart);
-    dueDate.setUTCDate(dueDate.getUTCDate() + 7); // default 7-day window
+    dueDate.setUTCDate(dueDate.getUTCDate() + 7);
 
     const { data: number } = await admin
-      .rpc('next_invoice_number', { p_academy_id: sfa.academy_id });
+      .rpc('next_invoice_number', { p_academy_id: a.academy_id });
     if (!number) continue;
 
     const { data: invoice, error: iErr } = await admin
       .from('invoices')
       .insert({
-        academy_id: sfa.academy_id,
-        student_id: sfa.student_id,
-        fee_structure_id: sfa.fee_structure_id,
+        academy_id: a.academy_id,
+        student_id: a.student_id,
+        fee_structure_id: a.fee_structure_id,
         invoice_number: number,
         status: 'issued',
         period_start: isoDate(periodStart),
         period_end: isoDate(periodEnd),
         due_date: isoDate(dueDate),
-        base_amount: fs.base_amount,
+        base_amount: a.fee.base_amount,
         tax_amount: taxAmount,
       })
       .select('id')
@@ -101,18 +100,18 @@ Deno.serve(async (req) => {
     await admin.from('invoice_line_items').insert([
       {
         invoice_id: invoice.id,
-        academy_id: sfa.academy_id,
+        academy_id: a.academy_id,
         kind: 'base',
-        description: fs.name,
+        description: a.fee.name,
         quantity: 1,
-        unit_amount: fs.base_amount,
+        unit_amount: a.fee.base_amount,
       },
       ...(taxAmount > 0
         ? [{
             invoice_id: invoice.id,
-            academy_id: sfa.academy_id,
+            academy_id: a.academy_id,
             kind: 'tax' as const,
-            description: `Tax (${fs.tax_pct}%)`,
+            description: `Tax (${a.fee.tax_pct}%)`,
             quantity: 1,
             unit_amount: taxAmount,
           }]
@@ -121,8 +120,70 @@ Deno.serve(async (req) => {
     created++;
   }
 
-  return j({ ok: true, scanned: (assignments ?? []).length, created });
+  return j({
+    ok: true,
+    scanned,
+    student_level: studentLevel.length,
+    batch_level: batchLevel.length,
+    created,
+  });
 });
+
+async function collectStudentLevel(
+  admin: ReturnType<typeof createClient>,
+): Promise<Assignment[]> {
+  const { data } = await admin
+    .from('student_fee_assignments')
+    .select('academy_id, student_id, fee_structure_id, start_date, '
+        + 'end_date, billing_day, '
+        + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
+    .eq('is_active', true);
+  return ((data ?? []) as unknown as Assignment[])
+    .filter((r) => r.fee !== null);
+}
+
+async function collectBatchLevel(
+  admin: ReturnType<typeof createClient>,
+): Promise<Assignment[]> {
+  // Batch-level fee assignments + active enrollments → expand to per-student
+  // pseudo-assignments that share the per-student code path.
+  const { data: bfas } = await admin
+    .from('batch_fee_assignments')
+    .select('academy_id, batch_id, fee_structure_id, start_date, '
+        + 'end_date, billing_day, '
+        + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
+    .eq('is_active', true);
+
+  const out: Assignment[] = [];
+  for (const bfa of (bfas ?? []) as unknown as Array<{
+    academy_id: string;
+    batch_id: string;
+    fee_structure_id: string;
+    start_date: string;
+    end_date: string | null;
+    billing_day: number | null;
+    fee: Assignment['fee'] | null;
+  }>) {
+    if (!bfa.fee) continue;
+    const { data: enrolls } = await admin
+      .from('batch_enrollments')
+      .select('student_id')
+      .eq('batch_id', bfa.batch_id)
+      .eq('enrollment_status', 'active');
+    for (const e of (enrolls ?? []) as Array<{ student_id: string }>) {
+      out.push({
+        academy_id: bfa.academy_id,
+        student_id: e.student_id,
+        fee_structure_id: bfa.fee_structure_id,
+        start_date: bfa.start_date,
+        end_date: bfa.end_date,
+        billing_day: bfa.billing_day,
+        fee: bfa.fee,
+      });
+    }
+  }
+  return out;
+}
 
 function anchorPeriodStart(
   today: Date,
@@ -135,7 +196,6 @@ function anchorPeriodStart(
     const q = Math.floor(today.getUTCMonth() / 3) * 3;
     return new Date(Date.UTC(today.getUTCFullYear(), q, billingDay));
   }
-  // annual
   return new Date(Date.UTC(today.getUTCFullYear(), 0, billingDay));
 }
 

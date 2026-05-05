@@ -126,6 +126,12 @@ begin
   from public.students s
   join public.fee_structures fs on fs.academy_id = s.academy_id;
 
+  insert into public.batch_fee_assignments
+    (academy_id, batch_id, fee_structure_id)
+  select b.academy_id, b.id, fs.id
+  from public.batches b
+  join public.fee_structures fs on fs.academy_id = b.academy_id;
+
   insert into public.invoices
     (academy_id, student_id, invoice_number, due_date, base_amount, tax_amount)
   select s.academy_id,
@@ -784,7 +790,52 @@ begin
     v_first, v_second;
 end $$;
 
--- ---------- Test 23: refresh_attendance_aggregates is callable ------------
+-- ---------- Test 23: batch_fee_assignments isolation + cross-tenant block --
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_batch_b uuid;
+  v_fee_b uuid;
+  v_caught boolean := false;
+begin
+  select count(*) into v_own
+    from public.batch_fee_assignments where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.batch_fee_assignments where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own batch_fee_assignments';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % batch_fee_assignments from academy B',
+      v_other;
+  end if;
+
+  reset role;
+  select id into v_batch_b from public.batches
+    where academy_id = v_academy_b limit 1;
+  select id into v_fee_b from public.fee_structures
+    where academy_id = v_academy_b limit 1;
+  set local role authenticated;
+  set local request.jwt.claim.sub = '00000000-aaaa-0000-0000-000000000001';
+
+  begin
+    insert into public.batch_fee_assignments
+      (academy_id, batch_id, fee_structure_id)
+    values (v_academy_b, v_batch_b, v_fee_b);
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted batch_fee_assignment into academy B';
+  end if;
+  raise notice 'PASS: batch_fee_assignments read + cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 24: refresh_attendance_aggregates is callable ------------
 -- The materialized views are not RLS-able directly, but the wrapper views
 -- (`*_view`) re-apply tenant filtering. Verify user A only sees their own
 -- academy's rows through the wrappers, and that the refresh RPC is callable.

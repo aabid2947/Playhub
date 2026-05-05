@@ -149,28 +149,92 @@ Future<void> deactivateAssignment(
   ref.invalidate(assignmentsForStudentProvider(studentId));
 }
 
-/// Bulk-assign a fee to every active enrollment in a batch via the
-/// `assign_fee_to_batch` Postgres function. Returns the number of new
-/// assignments created (existing duplicates are skipped via ON CONFLICT).
-Future<int> assignFeeToBatch(
+// ---- Batch-level fee assignments ----------------------------------------
+
+class BatchFeeAssignment {
+  const BatchFeeAssignment({
+    required this.id,
+    required this.academyId,
+    required this.batchId,
+    required this.feeStructureId,
+    required this.startDate,
+    required this.isActive,
+    this.endDate,
+    this.billingDay,
+  });
+
+  factory BatchFeeAssignment.fromMap(Map<String, dynamic> m) =>
+      BatchFeeAssignment(
+        id: m['id'] as String,
+        academyId: m['academy_id'] as String,
+        batchId: m['batch_id'] as String,
+        feeStructureId: m['fee_structure_id'] as String,
+        startDate: DateTime.parse(m['start_date'] as String),
+        endDate: m['end_date'] == null
+            ? null
+            : DateTime.parse(m['end_date'] as String),
+        billingDay: (m['billing_day'] as num?)?.toInt(),
+        isActive: (m['is_active'] as bool?) ?? true,
+      );
+
+  final String id;
+  final String academyId;
+  final String batchId;
+  final String feeStructureId;
+  final DateTime startDate;
+  final DateTime? endDate;
+  final int? billingDay;
+  final bool isActive;
+}
+
+final assignmentsForBatchProvider = FutureProvider.family<
+    List<BatchFeeAssignment>, String>((ref, batchId) async {
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('batch_fee_assignments')
+      .select()
+      .eq('batch_id', batchId)
+      .order('created_at', ascending: false);
+  return (rows as List)
+      .map((r) => BatchFeeAssignment.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
+Future<void> assignFeeToBatch(
   WidgetRef ref, {
-  required String feeStructureId,
   required String batchId,
-  DateTime? startDate,
+  required String feeStructureId,
+  required DateTime startDate,
   int? billingDay,
 }) async {
   final client = ref.read(supabaseClientProvider);
-  final result = await client.rpc<dynamic>(
-    'assign_fee_to_batch',
-    params: {
-      'p_fee_id': feeStructureId,
-      'p_batch_id': batchId,
-      if (startDate != null)
-        'p_start_date': startDate.toIso8601String().substring(0, 10),
-      if (billingDay != null) 'p_billing_day': billingDay,
-    },
-  );
-  return (result as num?)?.toInt() ?? 0;
+  final profile = await ref.read(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) throw StateError('No academy linked');
+  await client.from('batch_fee_assignments').insert({
+    'academy_id': academyId,
+    'batch_id': batchId,
+    'fee_structure_id': feeStructureId,
+    'start_date': startDate.toIso8601String().substring(0, 10),
+    if (billingDay != null) 'billing_day': billingDay,
+  });
+  ref.invalidate(assignmentsForBatchProvider(batchId));
+}
+
+Future<void> deactivateBatchAssignment(
+  WidgetRef ref, {
+  required String assignmentId,
+  required String batchId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  await client
+      .from('batch_fee_assignments')
+      .update({
+        'is_active': false,
+        'end_date': DateTime.now().toIso8601String().substring(0, 10),
+      })
+      .eq('id', assignmentId);
+  ref.invalidate(assignmentsForBatchProvider(batchId));
 }
 
 // =============================================================================

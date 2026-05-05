@@ -4,6 +4,7 @@ import 'package:playhub/features/attendance/presentation/attendance_marking_page
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
+import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
@@ -121,6 +122,8 @@ class BatchDetailPage extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
+          BatchFeesSection(batchId: batch.id),
+          const SizedBox(height: 16),
           enrollmentsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('Error: $e'),
