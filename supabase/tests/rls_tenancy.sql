@@ -184,6 +184,89 @@ begin
     ('performance_media', v_academy_a::text || '/assessments/aa/clip.mp4', '{}'),
     ('performance_media', v_academy_b::text || '/assessments/bb/clip.mp4', '{}');
 
+  -- Sprint-4 seed: a lead, an announcement (+ recipient), a direct thread
+  -- + message, a notification, a device token, a parent_link per academy.
+  insert into public.leads
+    (academy_id, first_name, last_name, phone, source)
+  values
+    (v_academy_a, 'Lead', 'A', '+910000000001', 'website'),
+    (v_academy_b, 'Lead', 'B', '+910000000002', 'website');
+
+  insert into public.announcements (academy_id, subject, body, created_by)
+  values
+    (v_academy_a, 'Welcome A', 'Hello academy A', v_user_a),
+    (v_academy_b, 'Welcome B', 'Hello academy B', v_user_b);
+
+  insert into public.announcement_recipients (academy_id, announcement_id, user_id)
+  select a.academy_id, a.id,
+         case when a.academy_id = v_academy_a then v_user_a else v_user_b end
+  from public.announcements a;
+
+  -- Synthetic peer users (for direct-thread participant FKs).
+  insert into auth.users (id, instance_id, email, role, aud,
+                          email_confirmed_at, created_at, updated_at)
+  values
+    ('00000000-cccc-0000-0000-000000000003',
+     '00000000-0000-0000-0000-000000000000',
+     'rls-peer-a@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now()),
+    ('00000000-dddd-0000-0000-000000000004',
+     '00000000-0000-0000-0000-000000000000',
+     'rls-peer-b@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.users (id, role, academy_id, first_name, last_name, email)
+  values
+    ('00000000-cccc-0000-0000-000000000003', 'parent', v_academy_a,
+       'Peer', 'A', 'rls-peer-a@example.invalid'),
+    ('00000000-dddd-0000-0000-000000000004', 'parent', v_academy_b,
+       'Peer', 'B', 'rls-peer-b@example.invalid')
+  on conflict (id) do update
+    set role = excluded.role, academy_id = excluded.academy_id;
+
+  -- Direct thread per academy with the user + their peer.
+  insert into public.message_threads
+    (academy_id, kind, direct_user_a, direct_user_b, created_by)
+  values
+    (v_academy_a, 'direct',
+       least(v_user_a, '00000000-cccc-0000-0000-000000000003'::uuid),
+       greatest(v_user_a, '00000000-cccc-0000-0000-000000000003'::uuid),
+       v_user_a),
+    (v_academy_b, 'direct',
+       least(v_user_b, '00000000-dddd-0000-0000-000000000004'::uuid),
+       greatest(v_user_b, '00000000-dddd-0000-0000-000000000004'::uuid),
+       v_user_b);
+
+  insert into public.thread_participants (thread_id, user_id, academy_id)
+  select t.id, t.direct_user_a, t.academy_id from public.message_threads t
+  union
+  select t.id, t.direct_user_b, t.academy_id from public.message_threads t;
+
+  insert into public.messages (thread_id, academy_id, sender_id, content)
+  select t.id, t.academy_id,
+         case when t.academy_id = v_academy_a then v_user_a else v_user_b end,
+         'hello'
+  from public.message_threads t;
+
+  insert into public.notifications
+    (user_id, academy_id, category, title, body)
+  values
+    (v_user_a, v_academy_a, 'system', 'Welcome A', 'body A'),
+    (v_user_b, v_academy_b, 'system', 'Welcome B', 'body B');
+
+  insert into public.device_tokens (user_id, academy_id, fcm_token, platform)
+  values
+    (v_user_a, v_academy_a, 'fcm-token-a', 'android'),
+    (v_user_b, v_academy_b, 'fcm-token-b', 'android');
+
+  insert into public.parent_links
+    (academy_id, parent_user_id, student_id)
+  select s.academy_id,
+         case when s.academy_id = v_academy_a then v_user_a else v_user_b end,
+         s.id
+  from public.students s;
+
   -- Stash IDs in session-local config so the test phase can read them.
   perform set_config('test.user_a', v_user_a::text, true);
   perform set_config('test.user_b', v_user_b::text, true);
@@ -931,6 +1014,186 @@ begin
   end if;
   raise notice 'PASS: student_attendance_summary_view tenant filter (% own, % other)',
     v_own, v_other;
+end $$;
+
+-- ---------- Test 26: leads + lead_activities isolation -------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+begin
+  select count(*) into v_own from public.leads where academy_id = v_academy_a;
+  select count(*) into v_other from public.leads where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own leads';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % leads from academy B', v_other;
+  end if;
+
+  begin
+    insert into public.leads (academy_id, first_name, phone)
+    values (v_academy_b, 'Sneaky', '+919999999999');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted lead into academy B';
+  end if;
+
+  raise notice 'PASS: leads read + cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 27: announcements + recipients isolation ----------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_own_r int;
+  v_other_r int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.announcements where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.announcements where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own announcements';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % announcements from academy B', v_other;
+  end if;
+
+  -- Recipients: user A is owner so academy-admin path applies; only own rows.
+  select count(*) into v_own_r
+    from public.announcement_recipients where academy_id = v_academy_a;
+  select count(*) into v_other_r
+    from public.announcement_recipients where academy_id = v_academy_b;
+  if v_own_r = 0 then
+    raise exception 'FAIL: user A could not read own announcement_recipients';
+  end if;
+  if v_other_r > 0 then
+    raise exception 'FAIL: user A read % announcement_recipients from academy B',
+      v_other_r;
+  end if;
+
+  raise notice 'PASS: announcements + recipients isolation';
+end $$;
+
+-- ---------- Test 28: message_threads + messages isolation ----------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_own_m int;
+  v_other_m int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.message_threads where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.message_threads where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own threads (admin path)';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % threads from academy B', v_other;
+  end if;
+
+  select count(*) into v_own_m
+    from public.messages where academy_id = v_academy_a;
+  select count(*) into v_other_m
+    from public.messages where academy_id = v_academy_b;
+  if v_own_m = 0 then
+    raise exception 'FAIL: user A could not read own messages';
+  end if;
+  if v_other_m > 0 then
+    raise exception 'FAIL: user A read % messages from academy B', v_other_m;
+  end if;
+
+  raise notice 'PASS: message_threads + messages isolation';
+end $$;
+
+-- ---------- Test 29: notifications + device_tokens self-only -------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_other_dev int;
+  v_user_a uuid := current_setting('test.user_a')::uuid;
+  v_user_b uuid := current_setting('test.user_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.notifications where user_id = v_user_a;
+  select count(*) into v_other
+    from public.notifications where user_id = v_user_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own notifications';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % notifications belonging to user B',
+      v_other;
+  end if;
+
+  select count(*) into v_other_dev
+    from public.device_tokens where user_id = v_user_b;
+  if v_other_dev > 0 then
+    raise exception 'FAIL: user A read user B''s device_tokens';
+  end if;
+
+  raise notice 'PASS: notifications + device_tokens self-only isolation';
+end $$;
+
+-- ---------- Test 30: parent_links isolation ------------------------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+  v_student_b uuid;
+  v_user_b uuid := current_setting('test.user_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.parent_links where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.parent_links where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own parent_links';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % parent_links from academy B', v_other;
+  end if;
+
+  reset role;
+  select id into v_student_b from public.students
+    where academy_id = v_academy_b limit 1;
+  set local role authenticated;
+  set local request.jwt.claim.sub = '00000000-aaaa-0000-0000-000000000001';
+
+  begin
+    insert into public.parent_links
+      (academy_id, parent_user_id, student_id)
+    values (v_academy_b, v_user_b, v_student_b);
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: user A inserted parent_link into academy B';
+  end if;
+
+  raise notice 'PASS: parent_links read + cross-tenant insert blocked';
 end $$;
 
 -- ---------- Reset and roll back --------------------------------------------
