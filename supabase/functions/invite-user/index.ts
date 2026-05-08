@@ -68,17 +68,36 @@ Deno.serve(async (req) => {
     return j({ error: `role ${body.role} not invitable via this endpoint` }, 400);
   }
 
-  // Caller-scoped client: check authorization + extract academy_id.
+  // Verify the caller via the documented Edge-Function pattern: pass the
+  // JWT directly to getUser so it doesn't try to read a non-existent
+  // local session. Then re-create a callerClient with the auth header
+  // set for downstream RLS-respecting queries.
+  const verifier = createClient(url, anon);
+  const { data: ures, error: uerr } =
+    await verifier.auth.getUser(token);
+  if (uerr || !ures.user) {
+    console.log('[invite-user] getUser failed', uerr?.message,
+      'token-len', token.length);
+    return j({
+      error: 'unauthorised',
+      detail: uerr?.message ?? 'no user from token',
+    }, 401);
+  }
+  const callerId = ures.user.id;
+
   const callerClient = createClient(url, anon, {
     global: { headers: { authorization: `Bearer ${token}` } },
   });
-  const { data: ures } = await callerClient.auth.getUser();
-  const callerId = ures.user?.id;
-  if (!callerId) return j({ error: 'unauthorised' }, 401);
-
-  const { data: caller } = await callerClient.from('users')
+  const { data: caller, error: cerr } = await callerClient.from('users')
     .select('id, role, academy_id').eq('id', callerId).single();
-  if (!caller?.academy_id) return j({ error: 'no academy' }, 403);
+  if (cerr || !caller?.academy_id) {
+    console.log('[invite-user] caller lookup failed', cerr?.message,
+      'callerId', callerId);
+    return j({
+      error: 'no academy',
+      detail: cerr?.message ?? 'no users row',
+    }, 403);
+  }
 
   if (!['super_admin', 'academy_owner', 'academy_admin']
         .includes(caller.role as string)) {
