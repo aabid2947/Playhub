@@ -4,6 +4,7 @@ import 'package:playhub/core/push_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/auth/presentation/set_new_password_page.dart';
 import 'package:playhub/features/dashboards/setup_academy_page.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
@@ -27,6 +28,10 @@ class RoleDashboard extends ConsumerWidget {
       data: (profile) {
         if (profile == null) {
           return const _Centered(child: Text('No profile row found.'));
+        }
+        // Invited users must set a password before entering the app.
+        if (profile.mustChangePassword) {
+          return const SetNewPasswordPage();
         }
         if (profile.needsAcademySetup) {
           return Scaffold(

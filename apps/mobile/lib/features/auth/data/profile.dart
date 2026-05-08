@@ -10,6 +10,7 @@ class Profile {
     this.lastName,
     this.academyId,
     this.centerId,
+    this.mustChangePassword = false,
   });
 
   factory Profile.fromMap(Map<String, dynamic> m) => Profile(
@@ -21,6 +22,7 @@ class Profile {
         lastName: m['last_name'] as String?,
         academyId: m['academy_id'] as String?,
         centerId: m['center_id'] as String?,
+        mustChangePassword: m['must_change_password'] as bool? ?? false,
       );
 
   final String id;
@@ -31,6 +33,7 @@ class Profile {
   final String? lastName;
   final String? academyId;
   final String? centerId;
+  final bool mustChangePassword;
 
   bool get needsAcademySetup =>
       role == 'academy_owner' && academyId == null;

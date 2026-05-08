@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/auth_recovery.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Reached only via the password-recovery deep link. The Supabase SDK
@@ -52,15 +53,24 @@ class _SetNewPasswordPageState extends ConsumerState<SetNewPasswordPage> {
       _isError = false;
     });
     try {
-      await ref
-          .read(supabaseClientProvider)
-          .auth
-          .updateUser(UserAttributes(password: _password.text));
+      final client = ref.read(supabaseClientProvider);
+      await client.auth.updateUser(UserAttributes(password: _password.text));
+
+      // Clear the must_change_password flag for invitees. Self-update RLS
+      // policy on users allows id = auth.uid() updates.
+      final uid = client.auth.currentUser?.id;
+      if (uid != null) {
+        await client.from('users').update(
+          {'must_change_password': false},
+        ).eq('id', uid);
+        ref.invalidate(currentProfileProvider);
+      }
+
       if (!mounted) return;
       ref.read(recoveryActiveProvider.notifier).state = false;
       setState(() => _message = 'Password updated. Sign in to continue.');
       // Sign out so the user re-authenticates with the new password.
-      await ref.read(supabaseClientProvider).auth.signOut();
+      await client.auth.signOut();
       if (mounted) context.go('/login');
     } on AuthException catch (e) {
       setState(() {
