@@ -5,6 +5,7 @@ import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/auth/presentation/set_new_password_page.dart';
+import 'package:playhub/features/coach/presentation/coach_home_shell.dart';
 import 'package:playhub/features/dashboards/setup_academy_page.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
@@ -39,14 +40,24 @@ class RoleDashboard extends ConsumerWidget {
             body: const SetupAcademyPage(),
           );
         }
+        // Owners + admins + (for now) center_admin all share the full
+        // OwnerHomeShell. Center-narrowed RLS lands later; until then a
+        // center_admin sees the whole academy.
         if (profile.role == 'academy_owner' ||
-            profile.role == 'academy_admin') {
+            profile.role == 'academy_admin' ||
+            profile.role == 'center_admin') {
           return const OwnerHomeShell();
         }
         if (profile.role == 'parent') return const ParentHomeShell();
         if (profile.role == 'student') return const StudentHomeShell();
-        // Other roles get the Sprint-0 stub for now; full per-role shells in
-        // later sprints.
+        // Coach, head_coach, and trainer share the same shell — the
+        // queries are scoped via coaches.user_id = auth.uid().
+        if (profile.role == 'coach' ||
+            profile.role == 'head_coach' ||
+            profile.role == 'trainer') {
+          return const CoachHomeShell();
+        }
+        // super_admin still has no shell — that module ships in Sprint 5.
         return _RoleStub(profile: profile);
       },
     );
