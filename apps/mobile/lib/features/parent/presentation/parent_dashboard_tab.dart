@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/academy/data/academy_providers.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Parent / student dashboard. Shows linked-students switcher, attendance
 /// calendar (last 60 days), performance line, and outstanding dues.
@@ -346,34 +348,33 @@ class _OutstandingCard extends ConsumerWidget {
   Future<void> _payInvoice(
       BuildContext context, WidgetRef ref, String invoiceId) async {
     final client = ref.read(supabaseClientProvider);
+    final profile = ref.read(currentProfileProvider).valueOrNull;
+    final academy = ref.read(myAcademyProvider).valueOrNull;
+    final checkout = RazorpayCheckout(client);
     try {
-      final res = await client.functions
-          .invoke('create-razorpay-order', body: {'invoice_id': invoiceId});
-      final body = res.data as Map<String, dynamic>;
-      if (body['ok'] != true) throw StateError(body['error']?.toString() ?? '');
-      // For v0.8 we just hand the order back to the user; the Razorpay
-      // Checkout SDK integration lands once razorpay_flutter is added.
-      if (context.mounted) {
-        showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Payment ready'),
-            content: Text(
-                'Order ${body['order_id']} created. Open the Razorpay '
-                'checkout flow to complete payment.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
-      }
-    } on PostgrestException catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed: ${e.message}')));
+      final result = await checkout.payInvoice(
+        invoiceId: invoiceId,
+        academyName: academy?.name ?? 'PlayHub',
+        prefillEmail: profile?.email,
+        prefillContact: profile?.phone,
+      );
+      if (!context.mounted) return;
+      switch (result) {
+        case CheckoutSuccess():
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Payment received')),
+          );
+          // Webhook will update the invoice; refresh the dues list so the
+          // row drops out without waiting for the user to pull-to-refresh.
+          ref.invalidate(studentOutstandingDuesProvider(studentId));
+        case CheckoutExternalWallet(:final walletName):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Continuing in $walletName…')),
+          );
+        case CheckoutFailure(:final message):
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Payment failed: $message')),
+          );
       }
     } catch (e) {
       if (context.mounted) {
