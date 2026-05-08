@@ -79,7 +79,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
     });
     try {
       final repo = ref.read(inviteRepoProvider);
-      await repo.invite(
+      final result = await repo.invite(
         email: _email.text.trim(),
         role: _role,
         firstName: _first.text.trim(),
@@ -91,8 +91,15 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         linkStudentLoginId: widget.preset?.linkStudentLoginId,
       );
       if (mounted) {
+        final email = _email.text.trim();
+        final msg = result.resent
+            ? (result.hasSignedIn
+                ? '$email has already signed in once. A fresh invite link '
+                    'was sent — they can use it as a magic-link login.'
+                : 'Resent invite to $email')
+            : 'Invite sent to $email';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invite sent to ${_email.text.trim()}')),
+          SnackBar(content: Text(msg)),
         );
         Navigator.of(context).pop(true);
       }

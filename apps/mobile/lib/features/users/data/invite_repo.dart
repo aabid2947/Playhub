@@ -2,14 +2,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+class InviteResult {
+  const InviteResult({
+    required this.userId,
+    required this.resent,
+    required this.hasSignedIn,
+  });
+  final String? userId;
+  final bool resent;
+  final bool hasSignedIn;
+}
+
 class InviteRepo {
   InviteRepo(this._client);
   final SupabaseClient _client;
 
-  /// Calls the invite-user Edge Function. Returns the invited user's id
-  /// (which exists from the moment the invite is created — it just isn't
-  /// confirmed until they accept).
-  Future<String?> invite({
+  /// Calls the invite-user Edge Function. New users get an invite email;
+  /// already-registered emails get a fresh invite link via generateLink.
+  Future<InviteResult> invite({
     required String email,
     required String role,
     String? firstName,
@@ -36,7 +46,11 @@ class InviteRepo {
     if (body['ok'] != true) {
       throw StateError(body['error']?.toString() ?? 'invite failed');
     }
-    return body['user_id'] as String?;
+    return InviteResult(
+      userId: body['user_id'] as String?,
+      resent: body['resent'] as bool? ?? false,
+      hasSignedIn: body['has_signed_in'] as bool? ?? false,
+    );
   }
 }
 

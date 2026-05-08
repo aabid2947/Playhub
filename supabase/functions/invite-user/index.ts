@@ -153,18 +153,63 @@ Deno.serve(async (req) => {
       ? { link_student_login_id: body.link_student_login_id } : {}),
   };
 
-  const { data: invite, error: invErr } = await admin.auth.admin
-    .inviteUserByEmail(body.email, {
-      data: metadata,
-      ...(body.redirect_to ? { redirectTo: body.redirect_to } : {}),
-    });
+  const inviteOpts = {
+    data: metadata,
+    ...(body.redirect_to ? { redirectTo: body.redirect_to } : {}),
+  };
 
-  if (invErr) return j({ error: invErr.message }, 400);
+  // First try a fresh invite. If the email already exists, Supabase
+  // returns "User already registered" — fall through to a resend path
+  // (generateLink type=invite) which works whether or not they've
+  // accepted yet, as long as they haven't completed signup.
+  const { data: invite, error: invErr } = await admin.auth.admin
+    .inviteUserByEmail(body.email, inviteOpts);
+
+  if (!invErr) {
+    return j({
+      ok: true,
+      resent: false,
+      user_id: invite.user?.id ?? null,
+      email: body.email,
+      role: body.role,
+    });
+  }
+
+  const isAlreadyRegistered = /already.*(registered|exists)/i.test(invErr.message);
+  if (!isAlreadyRegistered) return j({ error: invErr.message }, 400);
+
+  // Detect whether the existing account has actually signed in. If they
+  // have, they should use password-reset instead — resending an invite
+  // would be confusing.
+  const { data: existing } = await admin.from('users')
+    .select('id, last_login').eq('email', body.email).maybeSingle();
+
+  // Generate a fresh invite link for the existing account. On Supabase
+  // hosted projects this also dispatches the invite email via the
+  // configured mailer; on self-hosted without SMTP it returns the link
+  // in the response so the caller can email it themselves.
+  const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email: body.email,
+    options: inviteOpts,
+  });
+
+  if (linkErr) {
+    return j({
+      error: 'resend failed',
+      detail: linkErr.message,
+    }, 400);
+  }
+
   return j({
     ok: true,
-    user_id: invite.user?.id ?? null,
+    resent: true,
+    user_id: existing?.id ?? null,
     email: body.email,
     role: body.role,
+    has_signed_in: existing?.last_login != null,
+    // For dev / debugging only — exposed when SMTP delivery is unreliable.
+    action_link: link.properties?.action_link ?? null,
   });
 });
 
