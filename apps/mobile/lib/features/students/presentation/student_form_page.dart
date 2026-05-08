@@ -9,6 +9,7 @@ import 'package:playhub/features/performance/presentation/performance_history_pa
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
+import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 
 class StudentFormPage extends ConsumerStatefulWidget {
@@ -325,6 +326,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 StudentDiscountsSection(studentId: widget.existing!.id),
                 const SizedBox(height: 24),
                 StudentDocumentsSection(studentId: widget.existing!.id),
+                const SizedBox(height: 24),
+                _SectionLabel('Logins & access'),
+                _InviteAccessRow(student: widget.existing!),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -424,6 +428,63 @@ class _PerformanceShortcut extends StatelessWidget {
             builder: (_) => PerformanceHistoryPage(student: student),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InviteAccessRow extends StatelessWidget {
+  const _InviteAccessRow({required this.student});
+  final Student student;
+
+  void _open(BuildContext ctx, InvitePreset preset) {
+    showModalBottomSheet<void>(
+      context: ctx,
+      isScrollControlled: true,
+      builder: (_) => InviteUserSheet(preset: preset),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.family_restroom_outlined),
+            title: const Text('Invite parent'),
+            subtitle: const Text(
+                'Send a magic-link email; they get the parent dashboard '
+                'and only see this student.'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _open(
+              context,
+              InvitePreset(
+                role: 'parent',
+                title: 'Invite parent of ${student.firstName}',
+                linkToStudentId: student.id,
+                linkRelationship: 'parent',
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.school_outlined),
+            title: const Text('Invite student to log in'),
+            subtitle: const Text(
+                'For older students who manage their own attendance + '
+                'performance view.'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _open(
+              context,
+              InvitePreset(
+                role: 'student',
+                title: 'Invite ${student.firstName} to log in',
+                linkStudentLoginId: student.id,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

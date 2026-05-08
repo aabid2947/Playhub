@@ -4,6 +4,7 @@ import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/presentation/academy_settings_page.dart';
 import 'package:playhub/features/audit/presentation/audit_log_page.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
+import 'package:playhub/features/users/presentation/team_page.dart';
 
 class SettingsTab extends ConsumerWidget {
   const SettingsTab({super.key});
@@ -40,6 +41,16 @@ class SettingsTab extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push<void>(
             MaterialPageRoute(builder: (_) => const AuditLogPage()),
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.group_outlined),
+          title: const Text('Team'),
+          subtitle: const Text('Invite admins, coaches, and trainers'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => const TeamPage()),
           ),
         ),
         const Divider(height: 1),

@@ -5,6 +5,7 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_documents_section.dart';
+import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 
 class CoachFormPage extends ConsumerStatefulWidget {
@@ -277,6 +278,54 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 const Divider(),
                 const SizedBox(height: 16),
                 CoachDocumentsSection(coachId: widget.existing!.id),
+                const SizedBox(height: 24),
+                _SectionLabel('Login & access'),
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      widget.existing!.userId == null
+                          ? Icons.lock_open_outlined
+                          : Icons.verified_user_outlined,
+                    ),
+                    title: Text(widget.existing!.userId == null
+                        ? 'Invite this coach to log in'
+                        : 'Coach has a login'),
+                    subtitle: Text(widget.existing!.userId == null
+                        ? 'Sends a magic-link to the email above so they '
+                            'can sign in as a coach.'
+                        : 'They can already sign in.'),
+                    trailing: widget.existing!.userId == null
+                        ? const Icon(Icons.chevron_right)
+                        : null,
+                    onTap: widget.existing!.userId != null
+                        ? null
+                        : () {
+                            final email = (widget.existing!.email ?? '').trim();
+                            if (email.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Set the coach\'s email above first, '
+                                      'then save before inviting.'),
+                                ),
+                              );
+                              return;
+                            }
+                            showModalBottomSheet<void>(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (_) => InviteUserSheet(
+                                preset: InvitePreset(
+                                  role: 'coach',
+                                  title:
+                                      'Invite ${widget.existing!.firstName} to log in',
+                                  linkCoachId: widget.existing!.id,
+                                ),
+                              ),
+                            );
+                          },
+                  ),
+                ),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
