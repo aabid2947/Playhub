@@ -6,6 +6,7 @@ import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/billing/presentation/batch_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
+import 'package:playhub/features/chat/presentation/message_parent_button.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
@@ -367,6 +368,7 @@ class _EnrollmentSection extends StatelessWidget {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      MessageParentButton(studentId: e.studentId),
                       if (onPromote != null)
                         IconButton(
                           tooltip: 'Promote to active',
