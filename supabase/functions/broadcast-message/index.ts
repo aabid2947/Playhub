@@ -52,10 +52,18 @@ Deno.serve(async (req) => {
     return j({ error: rpcErr?.message ?? 'thread create failed' }, 400);
   }
 
-  // 2. Resolve caller's user id + academy via the auth token.
-  const { data: ures } = await callerClient.auth.getUser();
-  const senderId = ures.user?.id;
-  if (!senderId) return j({ error: 'unauthorised' }, 401);
+  // 2. Resolve caller's user id + academy via the auth token. Edge
+  // Functions are stateless — pass the JWT to getUser(token) instead of
+  // relying on a session store that doesn't exist here.
+  const verifier = createClient(url, anon);
+  const { data: ures, error: uerr } = await verifier.auth.getUser(token);
+  if (uerr || !ures.user) {
+    return j({
+      error: 'unauthorised',
+      detail: uerr?.message ?? 'no user from token',
+    }, 401);
+  }
+  const senderId = ures.user.id;
 
   const admin = createClient(url, key);
   const { data: senderRow } = await admin.from('users')
