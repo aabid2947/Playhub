@@ -8,7 +8,10 @@ import 'package:playhub/features/auth/presentation/login_page.dart';
 import 'package:playhub/features/auth/presentation/set_new_password_page.dart';
 import 'package:playhub/features/auth/presentation/signup_page.dart';
 import 'package:playhub/features/auth/presentation/splash_page.dart';
+import 'package:playhub/features/chat/presentation/thread_detail_page.dart';
 import 'package:playhub/features/dashboards/role_dashboard.dart';
+import 'package:playhub/features/leads/presentation/lead_detail_page.dart';
+import 'package:playhub/features/notifications/presentation/notification_preferences_page.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -55,6 +58,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const SetNewPasswordPage(),
       ),
       GoRoute(path: '/home', builder: (_, __) => const RoleDashboard()),
+      GoRoute(
+        path: '/leads/:id',
+        builder: (_, state) =>
+            LeadDetailPage(leadId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/threads/:id',
+        builder: (_, state) =>
+            ThreadDetailPage(threadId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/settings/notifications',
+        builder: (_, __) => const NotificationPreferencesPage(),
+      ),
     ],
   );
 });

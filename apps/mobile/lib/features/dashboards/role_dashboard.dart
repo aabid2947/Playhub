@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/push_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/dashboards/setup_academy_page.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
+import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
+import 'package:playhub/features/student/presentation/student_home_shell.dart';
 
 /// Top-level home router. Decides which shell to show based on the
 /// current user's profile state.
@@ -13,6 +16,9 @@ class RoleDashboard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Kick off FCM init the first time we render the signed-in surface.
+    ref.watch(pushBootstrapProvider);
+
     final profileAsync = ref.watch(currentProfileProvider);
 
     return profileAsync.when(
@@ -32,6 +38,8 @@ class RoleDashboard extends ConsumerWidget {
             profile.role == 'academy_admin') {
           return const OwnerHomeShell();
         }
+        if (profile.role == 'parent') return const ParentHomeShell();
+        if (profile.role == 'student') return const StudentHomeShell();
         // Other roles get the Sprint-0 stub for now; full per-role shells in
         // later sprints.
         return _RoleStub(profile: profile);

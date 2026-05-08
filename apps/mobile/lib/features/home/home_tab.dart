@@ -6,9 +6,13 @@ import 'package:playhub/features/attendance/presentation/admin_attendance_overvi
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
+import 'package:playhub/features/announcements/presentation/announcements_page.dart';
 import 'package:playhub/features/billing/presentation/billing_dashboard_page.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
+import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
 class HomeTab extends ConsumerWidget {
@@ -171,6 +175,48 @@ class _ActionsCard extends StatelessWidget {
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
                 builder: (_) => const BillingDashboardPage(),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.person_search_outlined),
+            title: const Text('Leads'),
+            subtitle: const Text('Funnel kanban + new lead intake'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const LeadsKanbanPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.campaign_outlined),
+            title: const Text('Announcements'),
+            subtitle: const Text('Compose + send to roles, batches, centers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const AnnouncementsPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.chat_outlined),
+            title: const Text('Messages'),
+            subtitle: const Text('1:1 + batch group chat'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ThreadsPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('Notifications'),
+            subtitle: const Text('In-app feed'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const NotificationCenterPage(),
               ),
             ),
           ),
