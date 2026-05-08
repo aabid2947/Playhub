@@ -40,11 +40,11 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
     });
     try {
       // Web bounces back to the current origin; native opens the app via
-      // the `ai.ghostmap.playhub://login-callback` URL scheme registered
+      // the `ai.hammad.playhub://login-callback` URL scheme registered
       // in iOS Info.plist + Android manifest.
       final redirectTo = kIsWeb
           ? Uri.base.origin
-          : 'ai.ghostmap.playhub://login-callback';
+          : 'ai.hammad.playhub://login-callback';
       await ref.read(supabaseClientProvider).auth.resetPasswordForEmail(
             email,
             redirectTo: redirectTo,

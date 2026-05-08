@@ -619,7 +619,7 @@ playhub/
 
 When you say go:
 - [ ] Create GitHub repo, push monorepo skeleton
-- [ ] `flutter create` mobile app with org `ai.ghostmap.playhub`
+- [ ] `flutter create` mobile app with org `ai.hammad.playhub`
 - [ ] Init Supabase project, apply auth config
 - [ ] Twilio account + Indian sender / DLT registration (CRITICAL — blocks phone OTP at Sprint 0 end). Configure in Supabase Auth → Phone provider.
 - [ ] Gmail App Password generated; configured in Supabase Auth → SMTP settings.

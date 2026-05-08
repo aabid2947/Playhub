@@ -30,7 +30,7 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
-                    android:scheme="ai.ghostmap.playhub"
+                    android:scheme="ai.hammad.playhub"
                     android:host="login-callback"/>
             </intent-filter>
         </activity>

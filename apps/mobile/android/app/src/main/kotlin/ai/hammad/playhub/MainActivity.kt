@@ -1,4 +1,4 @@
-package ai.ghostmap.playhub
+package ai.hammad.playhub
 
 import io.flutter.embedding.android.FlutterActivity
 
