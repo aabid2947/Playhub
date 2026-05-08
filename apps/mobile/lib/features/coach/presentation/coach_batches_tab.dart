@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
+import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 
 class CoachBatchesTab extends ConsumerWidget {
@@ -46,7 +47,13 @@ class CoachBatchesTab extends ConsumerWidget {
                   '${b.schedule.summary}'
                   '${b.sport != null ? '  •  ${b.sport}' : ''}',
                 ),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    BatchChatButton(batchId: b.id, compact: true),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(
                       builder: (_) => BatchDetailPage(batch: b)),

@@ -6,6 +6,7 @@ import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/billing/presentation/batch_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
+import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/chat/presentation/message_parent_button.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
@@ -30,6 +31,7 @@ class BatchDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: Text(batch.name),
         actions: [
+          BatchChatButton(batchId: batch.id, compact: true),
           IconButton(
             icon: const Icon(Icons.fact_check_outlined),
             tooltip: 'Mark attendance',
