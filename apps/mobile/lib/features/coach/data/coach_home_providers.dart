@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 
@@ -17,11 +18,29 @@ final myCoachRecordProvider = FutureProvider<Coach?>((ref) async {
   return r == null ? null : Coach.fromMap(r);
 });
 
-/// Active batches assigned to the signed-in coach.
+/// Active batches the signed-in user can see in the coach shell.
+///
+/// - coach / trainer: only batches where coach_id == own coaches.id
+/// - head_coach    : every active batch in the academy (oversight role)
 final myBatchesProvider = FutureProvider<List<Batch>>((ref) async {
+  final profile = await ref.watch(currentProfileProvider.future);
+  final client = ref.watch(supabaseClientProvider);
+  final isHeadCoach = profile?.role == 'head_coach';
+
+  if (isHeadCoach && profile?.academyId != null) {
+    final rows = await client
+        .from('batches')
+        .select()
+        .eq('academy_id', profile!.academyId!)
+        .eq('is_active', true)
+        .order('name');
+    return (rows as List)
+        .map((r) => Batch.fromMap(r as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
   final coach = await ref.watch(myCoachRecordProvider.future);
   if (coach == null) return const [];
-  final client = ref.watch(supabaseClientProvider);
   final rows = await client
       .from('batches')
       .select()

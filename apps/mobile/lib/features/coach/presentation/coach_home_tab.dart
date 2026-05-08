@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
-import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 
 class CoachHomeTab extends ConsumerWidget {
@@ -16,6 +16,7 @@ class CoachHomeTab extends ConsumerWidget {
     final myCoach = ref.watch(myCoachRecordProvider);
     final stats = ref.watch(myCoachStatsProvider);
     final todays = ref.watch(myTodaysBatchesProvider);
+    final isHeadCoach = profile?.role == 'head_coach';
 
     return Scaffold(
       appBar: AppBar(
@@ -55,26 +56,32 @@ class CoachHomeTab extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
-            myCoach.when(
-              loading: () =>
-                  const Card(child: ListTile(title: Text('Loading…'))),
-              error: (e, _) => Card(child: ListTile(title: Text('Error: $e'))),
-              data: (coach) {
-                if (coach == null) {
-                  return const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text(
-                        'No coach record is linked to your account yet. '
-                        'Ask the academy admin to link you to a coach '
-                        'profile so you can see your batches.',
+            // Head coaches don't need a coaches.user_id link — they get
+            // academy-wide oversight via myBatchesProvider.
+            if (isHeadCoach)
+              _StatsRow(stats: stats)
+            else
+              myCoach.when(
+                loading: () =>
+                    const Card(child: ListTile(title: Text('Loading…'))),
+                error: (e, _) =>
+                    Card(child: ListTile(title: Text('Error: $e'))),
+                data: (coach) {
+                  if (coach == null) {
+                    return const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text(
+                          'No coach record is linked to your account yet. '
+                          'Ask the academy admin to link you to a coach '
+                          'profile so you can see your batches.',
+                        ),
                       ),
-                    ),
-                  );
-                }
-                return _StatsRow(stats: stats);
-              },
-            ),
+                    );
+                  }
+                  return _StatsRow(stats: stats);
+                },
+              ),
             const SizedBox(height: 12),
             Card(
               child: ListTile(
@@ -194,14 +201,19 @@ class _BatchRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final today0 = DateTime(today.year, today.month, today.day);
     return Card(
       child: ListTile(
         leading: const Icon(Icons.group_work_outlined),
         title: Text(batch.name),
         subtitle: Text(batch.schedule.summary),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const Icon(Icons.check_circle_outline),
         onTap: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => BatchDetailPage(batch: batch)),
+          MaterialPageRoute(
+            builder: (_) =>
+                AttendanceMarkingPage(batch: batch, date: today0),
+          ),
         ),
       ),
     );
