@@ -8,6 +8,7 @@ import 'package:playhub/features/billing/presentation/batch_discounts_section.da
 import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
 import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/chat/presentation/message_parent_button.dart';
+import 'package:playhub/features/coach/presentation/coach_student_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
@@ -367,6 +368,15 @@ class _EnrollmentSection extends StatelessWidget {
                   title: Text(byStudent[e.studentId]?.fullName ??
                       '(unknown student)'),
                   subtitle: Text(e.status),
+                  onTap: () {
+                    final s = byStudent[e.studentId];
+                    if (s == null) return;
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => CoachStudentPage(student: s),
+                      ),
+                    );
+                  },
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
