@@ -11,10 +11,12 @@ import 'package:playhub/features/billing/presentation/billing_dashboard_page.dar
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/analytics/presentation/kpi_dashboard_page.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_page.dart';
 import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
+import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
@@ -217,6 +219,26 @@ class _ActionsCard extends StatelessWidget {
                 ),
               );
             },
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.insights_outlined),
+            title: const Text('KPI dashboard'),
+            subtitle: const Text('Revenue, enrollment, batch utilization'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const KpiDashboardPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.table_chart_outlined),
+            title: const Text('Custom report'),
+            subtitle: const Text('Pick fields, filters, group by'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ReportBuilderPage()),
+            ),
           ),
           const Divider(height: 1),
           ListTile(
