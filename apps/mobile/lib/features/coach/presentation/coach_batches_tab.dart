@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
 import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 
 class CoachBatchesTab extends ConsumerWidget {
   const CoachBatchesTab({super.key});
@@ -40,12 +41,15 @@ class CoachBatchesTab extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final b = list[i];
+              final sportLabel = ref.watch(sportDisplayProvider((
+                sportId: b.sportId,
+              )));
               return ListTile(
                 leading: const Icon(Icons.group_work_outlined),
                 title: Text(b.name),
                 subtitle: Text(
                   '${b.schedule.summary}'
-                  '${b.sport != null ? '  •  ${b.sport}' : ''}',
+                  '${sportLabel != '—' ? '  •  $sportLabel' : ''}',
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,

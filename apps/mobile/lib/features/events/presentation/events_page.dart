@@ -6,6 +6,8 @@ import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/events/presentation/event_detail_page.dart';
 import 'package:playhub/features/events/presentation/event_form_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
 /// Events list with status-based filtering. Tap a card → detail page.
 class EventsPage extends ConsumerStatefulWidget {
@@ -17,6 +19,7 @@ class EventsPage extends ConsumerStatefulWidget {
 
 class _EventsPageState extends ConsumerState<EventsPage> {
   EventStatus? _filter;
+  String? _sportFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -53,14 +56,22 @@ class _EventsPageState extends ConsumerState<EventsPage> {
             selected: _filter,
             onChanged: (v) => setState(() => _filter = v),
           ),
+          SportFilterChipBar(
+            selectedId: _sportFilter,
+            onSelected: (id) => setState(() => _sportFilter = id),
+          ),
           Expanded(
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Error: $e')),
               data: (events) {
-                final list = _filter == null
-                    ? events
-                    : events.where((e) => e.status == _filter).toList();
+                final list = events.where((e) {
+                  if (_filter != null && e.status != _filter) return false;
+                  if (_sportFilter != null && e.sportId != _sportFilter) {
+                    return false;
+                  }
+                  return true;
+                }).toList();
                 if (list.isEmpty) {
                   return const Center(child: Text('No events'));
                 }

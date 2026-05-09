@@ -6,6 +6,7 @@ import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/schedule_picker.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
 class BatchFormPage extends ConsumerStatefulWidget {
   const BatchFormPage({super.key, this.existing});
@@ -18,7 +19,6 @@ class BatchFormPage extends ConsumerStatefulWidget {
 
 class _BatchFormPageState extends ConsumerState<BatchFormPage> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
-  late final _sport = TextEditingController(text: widget.existing?.sport ?? '');
   late final _ageGroup =
       TextEditingController(text: widget.existing?.ageGroup ?? '');
   late final _capacity = TextEditingController(
@@ -26,6 +26,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
   String? _centerId;
   String? _coachId;
+  String? _sportId;
   String? _skillLevel;
   late BatchSchedule _schedule;
 
@@ -40,6 +41,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     super.initState();
     _centerId = widget.existing?.centerId;
     _coachId = widget.existing?.coachId;
+    _sportId = widget.existing?.sportId;
     _skillLevel = widget.existing?.skillLevel;
     _schedule = widget.existing?.schedule ?? const BatchSchedule();
   }
@@ -47,7 +49,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
   @override
   void dispose() {
     _name.dispose();
-    _sport.dispose();
     _ageGroup.dispose();
     _capacity.dispose();
     super.dispose();
@@ -62,7 +63,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     try {
       final patch = <String, dynamic>{
         'name': _name.text.trim(),
-        'sport': _sport.text.trim().isEmpty ? null : _sport.text.trim(),
+        'sport_id': _sportId,
         'age_group':
             _ageGroup.text.trim().isEmpty ? null : _ageGroup.text.trim(),
         'capacity': _capacity.text.trim().isEmpty
@@ -110,9 +111,9 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
-                      controller: _sport,
-                      decoration: const InputDecoration(labelText: 'Sport'),
+                    child: SportPicker(
+                      value: _sportId,
+                      onChanged: (v) => setState(() => _sportId = v),
                     ),
                   ),
                   const SizedBox(width: 12),

@@ -65,7 +65,7 @@ class PerformanceAssessment {
     required this.assessmentDate,
     this.batchId,
     this.coachId,
-    this.sport,
+    this.sportId,
     this.overallScore,
     this.qualitativeFeedback,
     this.recordedBy,
@@ -79,7 +79,7 @@ class PerformanceAssessment {
         batchId: m['batch_id'] as String?,
         coachId: m['coach_id'] as String?,
         assessmentDate: DateTime.parse(m['assessment_date'] as String),
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         overallScore: (m['overall_score'] as num?)?.toDouble(),
         qualitativeFeedback: m['qualitative_feedback'] as String?,
         recordedBy: m['recorded_by'] as String?,
@@ -91,38 +91,19 @@ class PerformanceAssessment {
   final String? batchId;
   final String? coachId;
   final DateTime assessmentDate;
-  final String? sport;
+  final String? sportId;
   final double? overallScore;
   final String? qualitativeFeedback;
   final String? recordedBy;
 }
 
-/// Sport → default skill list. The form pre-fills these and lets the coach
-/// add/remove rows. Choices match SRD §3.6 + Open Decision #1
-/// ("default-then-customize").
-const Map<String, List<String>> defaultSkillRubrics = {
-  'cricket': ['Batting', 'Bowling', 'Fielding', 'Footwork', 'Game awareness'],
-  'football': ['Dribbling', 'Passing', 'Shooting', 'Defending', 'Stamina'],
-  'badminton': ['Footwork', 'Smash', 'Net play', 'Serve', 'Tactics'],
-  'swimming': [
-    'Stroke form',
-    'Speed',
-    'Endurance',
-    'Turn technique',
-    'Breath control',
-  ],
-  'basketball': [
-    'Dribbling',
-    'Shooting',
-    'Passing',
-    'Defense',
-    'Court vision',
-  ],
-  'general': ['Technique', 'Effort', 'Discipline', 'Team play', 'Improvement'],
-};
-
-List<String> rubricFor(String? sport) {
-  if (sport == null) return defaultSkillRubrics['general']!;
-  return defaultSkillRubrics[sport.toLowerCase()] ??
-      defaultSkillRubrics['general']!;
-}
+/// Generic fallback rubric used when a sport hasn't been picked yet (or
+/// when the chosen sport has no skills configured). Sport-specific rubrics
+/// come from `public.sport_skills` via `sportSkillsProvider`.
+const List<String> genericRubric = [
+  'Technique',
+  'Effort',
+  'Discipline',
+  'Team play',
+  'Improvement',
+];

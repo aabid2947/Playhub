@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
 
 /// Coach-facing form: pick sport rubric, score skills, attach media,
@@ -19,10 +21,8 @@ class PerformanceFormPage extends ConsumerStatefulWidget {
 }
 
 class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
-  late String _sport = widget.student.sport ?? 'general';
-  late final List<SkillEntry> _skills = rubricFor(_sport)
-      .map((n) => SkillEntry(name: n))
-      .toList();
+  String? _sportId;
+  final List<SkillEntry> _skills = [];
   final _feedback = TextEditingController();
   bool _saving = false;
 
@@ -31,18 +31,45 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
   final List<String> _mediaPaths = [];
 
   @override
+  void initState() {
+    super.initState();
+    _sportId = widget.student.sportId;
+    if (_sportId != null) {
+      _hydrateSkills(_sportId!);
+    } else {
+      // Fall back to a generic rubric until a sport is picked.
+      _skills.addAll(
+        genericRubric.map((n) => SkillEntry(name: n)),
+      );
+    }
+  }
+
+  Future<void> _hydrateSkills(String sportId) async {
+    final list = await ref.read(sportSkillsProvider(sportId).future);
+    if (!mounted) return;
+    setState(() {
+      _skills
+        ..clear()
+        ..addAll(list.map((s) => SkillEntry(name: s.name)));
+      if (_skills.isEmpty) {
+        _skills.addAll(
+          genericRubric.map((n) => SkillEntry(name: n)),
+        );
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _feedback.dispose();
     super.dispose();
   }
 
-  void _setSport(String s) {
-    setState(() {
-      _sport = s;
-      _skills
-        ..clear()
-        ..addAll(rubricFor(s).map((n) => SkillEntry(name: n)));
-    });
+  void _setSport(String? sportId) {
+    setState(() => _sportId = sportId);
+    if (sportId != null) {
+      _hydrateSkills(sportId);
+    }
   }
 
   double _overall() {
@@ -60,7 +87,7 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
         ref,
         studentId: widget.student.id,
         batchId: widget.batchId,
-        sport: _sport,
+        sportId: _sportId,
         overallScore: _overall(),
         qualitativeFeedback: _feedback.text.trim(),
         skills: _skills,
@@ -136,22 +163,12 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: _sport,
-            items: defaultSkillRubrics.keys
-                .map((s) => DropdownMenuItem(
-                      value: s,
-                      child: Text(s[0].toUpperCase() + s.substring(1)),
-                    ))
-                .toList(),
-            onChanged: saved
-                ? null
-                : (v) {
-                    if (v != null) _setSport(v);
-                  },
-            decoration: const InputDecoration(
-              labelText: 'Sport / rubric',
-              border: OutlineInputBorder(),
+          AbsorbPointer(
+            absorbing: saved,
+            child: SportPicker(
+              value: _sportId,
+              onChanged: _setSport,
+              label: 'Sport / rubric',
             ),
           ),
           const SizedBox(height: 16),

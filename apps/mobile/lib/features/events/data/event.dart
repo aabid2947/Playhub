@@ -48,7 +48,7 @@ class EventEntry {
     required this.feeAmount,
     this.centerId,
     this.description,
-    this.sport,
+    this.sportId,
     this.endsAt,
     this.location,
     this.registrationOpensAt,
@@ -68,7 +68,7 @@ class EventEntry {
         description: m['description'] as String?,
         kind: EventKind.fromDb(m['kind'] as String?),
         status: EventStatus.fromDb(m['status'] as String?),
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         startsAt: DateTime.parse(m['starts_at'] as String).toLocal(),
         endsAt: _ts(m['ends_at']),
         location: m['location'] as String?,
@@ -95,7 +95,7 @@ class EventEntry {
   final String? description;
   final EventKind kind;
   final EventStatus status;
-  final String? sport;
+  final String? sportId;
   final DateTime startsAt;
   final DateTime? endsAt;
   final String? location;

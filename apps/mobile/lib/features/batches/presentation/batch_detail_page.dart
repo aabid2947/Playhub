@@ -9,6 +9,7 @@ import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
 import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/chat/presentation/message_parent_button.dart';
 import 'package:playhub/features/coach/presentation/coach_student_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
@@ -73,18 +74,23 @@ class BatchDetailPage extends ConsumerWidget {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    [
-                      if (batch.sport != null) batch.sport!,
-                      if (batch.ageGroup != null) batch.ageGroup!,
-                      if (batch.skillLevel != null) batch.skillLevel!,
-                      if (batch.capacity != null)
-                        '${batch.enrolledCount}/${batch.capacity} enrolled'
-                      else
-                        '${batch.enrolledCount} enrolled',
-                    ].join(' • '),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  Consumer(builder: (_, ref, __) {
+                    final sportLabel = ref.watch(sportDisplayProvider((
+                      sportId: batch.sportId,
+                    )));
+                    return Text(
+                      [
+                        if (sportLabel != '—') sportLabel,
+                        if (batch.ageGroup != null) batch.ageGroup!,
+                        if (batch.skillLevel != null) batch.skillLevel!,
+                        if (batch.capacity != null)
+                          '${batch.enrolledCount}/${batch.capacity} enrolled'
+                        else
+                          '${batch.enrolledCount} enrolled',
+                      ].join(' • '),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    );
+                  }),
                 ],
               ),
             ),

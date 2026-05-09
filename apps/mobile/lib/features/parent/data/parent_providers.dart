@@ -30,12 +30,12 @@ class StudentBatchRow {
   const StudentBatchRow({
     required this.batchId,
     required this.batchName,
-    required this.sport,
+    required this.sportId,
     required this.studentId,
   });
   final String batchId;
   final String batchName;
-  final String? sport;
+  final String? sportId;
   final String studentId;
 }
 
@@ -45,7 +45,7 @@ final myLinkedStudentBatchesProvider =
     final client = ref.watch(supabaseClientProvider);
     final rows = await client
         .from('batch_enrollments')
-        .select('batch_id, batches:batch_id(name, sport)')
+        .select('batch_id, batches:batch_id(name, sport_id)')
         .eq('student_id', studentId)
         .eq('enrollment_status', 'active');
     return (rows as List).map((r) {
@@ -54,7 +54,7 @@ final myLinkedStudentBatchesProvider =
       return StudentBatchRow(
         batchId: m['batch_id'] as String,
         batchName: (b?['name'] as String?) ?? '(no name)',
-        sport: b?['sport'] as String?,
+        sportId: b?['sport_id'] as String?,
         studentId: studentId,
       );
     }).toList(growable: false);

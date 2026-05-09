@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 class PerformanceDetailPage extends ConsumerWidget {
@@ -14,11 +15,14 @@ class PerformanceDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final skillsAsync = ref.watch(skillsForAssessmentProvider(assessment.id));
     final mediaAsync = ref.watch(mediaForAssessmentProvider(assessment.id));
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: assessment.sportId,
+    )));
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${assessment.sport ?? 'general'} · '
+          '${sportLabel == '—' ? 'general' : sportLabel} · '
           '${assessment.assessmentDate.toIso8601String().substring(0, 10)}',
         ),
       ),

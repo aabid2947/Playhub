@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 
 /// Required CSV header columns.
@@ -132,6 +133,20 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
     }
 
     final client = ref.read(supabaseClientProvider);
+
+    // Build a name → sport_id lookup off the academy's enabled sports so
+    // the CSV's free-text 'sport' column maps to the catalog. Unknown
+    // values fall through unmapped.
+    final enabledSports =
+        await ref.read(academySportsProvider.future);
+    final sportLookup = <String, String>{
+      for (final s in enabledSports) ...{
+        s.displayName.toLowerCase(): s.sport.id,
+        s.sport.code.toLowerCase(): s.sport.id,
+        s.sport.name.toLowerCase(): s.sport.id,
+      }
+    };
+
     var ok = 0;
     var fail = 0;
     for (final r in rows) {
@@ -139,6 +154,9 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
         fail++;
         continue;
       }
+      final sportText = r['sport']?.trim().toLowerCase();
+      final sportId =
+          sportText != null && sportText.isNotEmpty ? sportLookup[sportText] : null;
       try {
         await client.from('students').insert({
           'academy_id': academyId,
@@ -149,7 +167,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
           if (r['parent_email'] != null) 'parent_email': r['parent_email'],
           if (r['date_of_birth'] != null) 'date_of_birth': r['date_of_birth'],
           if (r['gender'] != null) 'gender': r['gender'],
-          if (r['sport'] != null) 'sport': r['sport'],
+          if (sportId != null) 'sport_id': sportId,
           if (r['skill_level'] != null) 'skill_level': r['skill_level'],
           if (r['city'] != null) 'city': r['city'],
         });

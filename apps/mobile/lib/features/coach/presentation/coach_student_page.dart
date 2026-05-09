@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/chat/presentation/message_parent_button.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_history_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 
 /// Read-only student summary page for the coach context. Avoids the
@@ -34,11 +35,16 @@ class CoachStudentPage extends ConsumerWidget {
                   Text(student.fullName,
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 4),
-                  Wrap(spacing: 8, children: [
-                    if (student.sport != null) Chip(label: Text(student.sport!)),
-                    if (student.skillLevel != null)
-                      Chip(label: Text(student.skillLevel!)),
-                  ]),
+                  Builder(builder: (_) {
+                    final sportLabel = ref.watch(sportDisplayProvider((
+                      sportId: student.sportId,
+                    )));
+                    return Wrap(spacing: 8, children: [
+                      if (sportLabel != '—') Chip(label: Text(sportLabel)),
+                      if (student.skillLevel != null)
+                        Chip(label: Text(student.skillLevel!)),
+                    ]);
+                  }),
                   if (student.parentName.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text('Parent: ${student.parentName}',

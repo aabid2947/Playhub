@@ -6,6 +6,7 @@ import 'package:playhub/features/billing/presentation/student_discounts_section.
 import 'package:playhub/features/billing/presentation/student_fees_section.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_history_page.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
@@ -32,7 +33,6 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
       TextEditingController(text: widget.existing?.parentPhone ?? '');
   late final _parentEmail =
       TextEditingController(text: widget.existing?.parentEmail ?? '');
-  late final _sport = TextEditingController(text: widget.existing?.sport ?? '');
   late final _city = TextEditingController(text: widget.existing?.city ?? '');
   late final _medical =
       TextEditingController(text: widget.existing?.medicalNotes ?? '');
@@ -40,6 +40,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   String? _gender;
   String? _skillLevel;
   String? _centerId;
+  String? _sportId;
   String _status = 'active';
   DateTime? _dob;
   String? _photo;
@@ -56,6 +57,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     _gender = widget.existing?.gender;
     _skillLevel = widget.existing?.skillLevel;
     _centerId = widget.existing?.centerId;
+    _sportId = widget.existing?.sportId;
     _status = widget.existing?.status ?? 'active';
     _dob = widget.existing?.dateOfBirth;
     _photo = widget.existing?.photo;
@@ -68,7 +70,6 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     _parentName.dispose();
     _parentPhone.dispose();
     _parentEmail.dispose();
-    _sport.dispose();
     _city.dispose();
     _medical.dispose();
     super.dispose();
@@ -107,7 +108,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
         'parent_name': _parentName.text.trim(),
         'parent_phone': _emptyToNull(_parentPhone),
         'parent_email': _emptyToNull(_parentEmail),
-        'sport': _emptyToNull(_sport),
+        'sport_id': _sportId,
         'city': _emptyToNull(_city),
         'medical_notes': _emptyToNull(_medical),
         'gender': _gender,
@@ -260,9 +261,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
-                      controller: _sport,
-                      decoration: const InputDecoration(labelText: 'Sport'),
+                    child: SportPicker(
+                      value: _sportId,
+                      onChanged: (v) => setState(() => _sportId = v),
                     ),
                   ),
                   const SizedBox(width: 12),

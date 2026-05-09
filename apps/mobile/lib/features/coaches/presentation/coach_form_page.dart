@@ -5,6 +5,8 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_documents_section.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 
@@ -40,6 +42,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
   String? _centerId;
   String? _paymentType;
   String? _photo;
+  final Set<String> _sportIds = <String>{};
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -53,6 +56,14 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     _centerId = widget.existing?.centerId;
     _paymentType = widget.existing?.paymentType;
     _photo = widget.existing?.photo;
+    final id = widget.existing?.id;
+    if (id != null) {
+      // Hydrate the coach's existing sport assignments, if any.
+      Future.microtask(() async {
+        final ids = await ref.read(coachSportsProvider(id).future);
+        if (mounted) setState(() => _sportIds.addAll(ids));
+      });
+    }
   }
 
   String _initials() {
@@ -103,10 +114,13 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
         'center_id': _centerId,
         'photo': _photo,
       };
-      if (isEdit) {
-        await updateCoach(ref, widget.existing!.id, patch);
-      } else {
-        await createCoach(ref, patch);
+      final saved = isEdit
+          ? await updateCoach(ref, widget.existing!.id, patch)
+          : await createCoach(ref, patch);
+      final repo = await ref.read(sportsRepoProvider.future);
+      if (repo != null) {
+        await repo.setCoachSports(saved.id, _sportIds.toList());
+        ref.invalidate(coachSportsProvider(saved.id));
       }
       if (mounted) context.pop();
     } on Object catch (e) {
@@ -184,11 +198,23 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
               ),
               const SizedBox(height: 24),
               const _SectionLabel('Expertise'),
+              SportMultiSelect(
+                label: 'Sports coached',
+                selectedIds: _sportIds,
+                onToggle: (sid, sel) => setState(() {
+                  if (sel) {
+                    _sportIds.add(sid);
+                  } else {
+                    _sportIds.remove(sid);
+                  }
+                }),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _specialization,
                 decoration: const InputDecoration(
-                  labelText: 'Specialization',
-                  hintText: 'Cricket, Batting, Fielding (comma-separated)',
+                  labelText: 'Sub-specialty / notes',
+                  hintText: 'Batting, Wicket-keeping, …',
                 ),
               ),
               const SizedBox(height: 12),

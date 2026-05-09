@@ -73,6 +73,7 @@ Future<String> createAssessment(
   required List<SkillEntry> skills,
   String? batchId,
   String? sport,
+  String? sportId,
   double? overallScore,
   String? qualitativeFeedback,
   DateTime? date,
@@ -92,6 +93,7 @@ Future<String> createAssessment(
         'student_id': studentId,
         if (batchId != null) 'batch_id': batchId,
         if (sport != null && sport.isNotEmpty) 'sport': sport,
+        if (sportId != null) 'sport_id': sportId,
         if (overallScore != null) 'overall_score': overallScore,
         if (qualitativeFeedback != null && qualitativeFeedback.isNotEmpty)
           'qualitative_feedback': qualitativeFeedback,

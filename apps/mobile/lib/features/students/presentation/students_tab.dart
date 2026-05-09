@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
@@ -23,9 +25,8 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   }
 
   void _applySearch() {
-    final f = ref.read(studentsFilterProvider);
     ref.read(studentsFilterProvider.notifier).state =
-        StudentsFilter(search: _search.text, status: f.status, centerId: f.centerId);
+        ref.read(studentsFilterProvider).copyWith(search: _search.text);
   }
 
   @override
@@ -68,11 +69,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                   initialValue: filter.status,
                   onSelected: (v) {
                     ref.read(studentsFilterProvider.notifier).state =
-                        StudentsFilter(
-                      search: filter.search,
-                      status: v,
-                      centerId: filter.centerId,
-                    );
+                        filter.copyWith(status: v);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem<String?>(child: Text('All')),
@@ -94,6 +91,15 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                 ),
               ],
             ),
+          ),
+          SportFilterChipBar(
+            selectedId: filter.sportId,
+            onSelected: (id) {
+              ref.read(studentsFilterProvider.notifier).state =
+                  id == null
+                      ? filter.copyWith(clearSport: true)
+                      : filter.copyWith(sportId: id);
+            },
           ),
           Expanded(
             child: studentsAsync.when(
@@ -128,25 +134,28 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   }
 }
 
-class _StudentTile extends StatelessWidget {
+class _StudentTile extends ConsumerWidget {
   const _StudentTile({required this.student});
   final Student student;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final initials = (student.firstName.isNotEmpty
             ? student.firstName[0]
             : '?') +
         (student.lastName.isNotEmpty ? student.lastName[0] : '');
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: student.sportId,
+    )));
     return ListTile(
       leading: AvatarView(url: student.photo, fallbackInitials: initials),
       title: Text(student.fullName),
       subtitle: Text(
         [
-          if (student.sport != null) student.sport,
-          if (student.skillLevel != null) student.skillLevel,
+          if (sportLabel != '—') sportLabel,
+          if (student.skillLevel != null) student.skillLevel!,
           'parent: ${student.parentName}',
-        ].whereType<String>().join(' • '),
+        ].join(' • '),
       ),
       trailing: _StatusChip(status: student.status),
       onTap: () => Navigator.of(context).push<void>(

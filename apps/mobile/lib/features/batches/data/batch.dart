@@ -42,7 +42,7 @@ class Batch {
     this.centerId,
     this.coachId,
     this.description,
-    this.sport,
+    this.sportId,
     this.capacity,
     this.ageGroup,
     this.skillLevel,
@@ -58,7 +58,7 @@ class Batch {
         coachId: m['coach_id'] as String?,
         name: m['name'] as String,
         description: m['description'] as String?,
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         schedule: BatchSchedule.fromMap(
             (m['schedule'] as Map?)?.cast<String, dynamic>() ?? const {}),
         capacity: m['capacity'] as int?,
@@ -80,7 +80,7 @@ class Batch {
   final String? coachId;
   final String name;
   final String? description;
-  final String? sport;
+  final String? sportId;
   final BatchSchedule schedule;
   final int? capacity;
   final String? ageGroup;

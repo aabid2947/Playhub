@@ -101,8 +101,9 @@ begin
   join public.students s on s.academy_id = b.academy_id;
 
   insert into public.performance_assessments
-    (academy_id, student_id, batch_id, assessment_date, overall_score, sport)
-  select s.academy_id, s.id, b.id, current_date, 8.0, 'cricket'
+    (academy_id, student_id, batch_id, assessment_date, overall_score, sport_id)
+  select s.academy_id, s.id, b.id, current_date, 8.0,
+         (select id from public.sports where code = 'cricket')
   from public.students s
   join public.batches b on b.academy_id = s.academy_id;
 

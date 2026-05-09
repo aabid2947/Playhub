@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_form_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 
 /// Six-column kanban scrolling horizontally. Tap a card → detail page.
 class LeadsKanbanPage extends ConsumerWidget {
@@ -137,12 +138,17 @@ class _Card extends ConsumerWidget {
               Text(lead.displayName,
                   style: Theme.of(context).textTheme.titleSmall,
                   overflow: TextOverflow.ellipsis),
-              if (lead.sport != null)
-                Padding(
+              Builder(builder: (_) {
+                final sportLabel = ref.watch(sportDisplayProvider((
+                  sportId: lead.sportId,
+                )));
+                if (sportLabel == '—') return const SizedBox.shrink();
+                return Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Text(lead.sport!,
+                  child: Text(sportLabel,
                       style: Theme.of(context).textTheme.bodySmall),
-                ),
+                );
+              }),
               if (lead.phone != null || lead.email != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_convert_sheet.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 
 class LeadDetailPage extends ConsumerWidget {
   const LeadDetailPage({required this.leadId, super.key});
@@ -66,14 +67,19 @@ class _Header extends StatelessWidget {
             Text(lead.displayName,
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
-            Wrap(
-              spacing: 8,
-              children: [
-                Chip(label: Text(lead.status.label)),
-                Chip(label: Text(lead.source.label)),
-                if (lead.sport != null) Chip(label: Text(lead.sport!)),
-              ],
-            ),
+            Consumer(builder: (_, ref, __) {
+              final sportLabel = ref.watch(sportDisplayProvider((
+                sportId: lead.sportId,
+              )));
+              return Wrap(
+                spacing: 8,
+                children: [
+                  Chip(label: Text(lead.status.label)),
+                  Chip(label: Text(lead.source.label)),
+                  if (sportLabel != '—') Chip(label: Text(sportLabel)),
+                ],
+              );
+            }),
             if (lead.notes != null) ...[
               const SizedBox(height: 8),
               Text(lead.notes!),

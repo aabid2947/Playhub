@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
 class LeadFormPage extends ConsumerStatefulWidget {
   const LeadFormPage({super.key});
@@ -17,9 +18,9 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _parentName = TextEditingController();
-  final _sport = TextEditingController();
   final _notes = TextEditingController();
   final _age = TextEditingController();
+  String? _sportId;
   LeadSource _source = LeadSource.walkIn;
   bool _saving = false;
 
@@ -31,7 +32,6 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
       _email,
       _phone,
       _parentName,
-      _sport,
       _notes,
       _age,
     ]) {
@@ -54,7 +54,7 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
         parentName:
             _parentName.text.trim().isEmpty ? null : _parentName.text.trim(),
         age: int.tryParse(_age.text.trim()),
-        sport: _sport.text.trim().isEmpty ? null : _sport.text.trim(),
+        sportId: _sportId,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         source: _source,
       );
@@ -121,9 +121,10 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
               decoration: const InputDecoration(labelText: 'Age'),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _sport,
-              decoration: const InputDecoration(labelText: 'Sport interest'),
+            SportPicker(
+              value: _sportId,
+              onChanged: (v) => setState(() => _sportId = v),
+              label: 'Sport interest',
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<LeadSource>(

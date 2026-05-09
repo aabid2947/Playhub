@@ -62,7 +62,7 @@ class Lead {
     this.phone,
     this.parentName,
     this.age,
-    this.sport,
+    this.sportId,
     this.preferredCenterId,
     this.notes,
     this.assignedTo,
@@ -82,7 +82,7 @@ class Lead {
         phone: m['phone'] as String?,
         parentName: m['parent_name'] as String?,
         age: m['age'] as int?,
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         preferredCenterId: m['preferred_center_id'] as String?,
         notes: m['notes'] as String?,
         status: LeadStatus.fromDb(m['status'] as String?),
@@ -107,7 +107,7 @@ class Lead {
   final String? phone;
   final String? parentName;
   final int? age;
-  final String? sport;
+  final String? sportId;
   final String? preferredCenterId;
   final String? notes;
   final LeadStatus status;

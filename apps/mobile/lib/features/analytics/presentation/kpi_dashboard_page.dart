@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/features/analytics/data/analytics_providers.dart';
+import 'package:playhub/features/analytics/data/sport_breakdown.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 
 /// KPI dashboard backed by the analytics_* materialized views (refreshed
@@ -30,6 +31,7 @@ class KpiDashboardPage extends ConsumerWidget {
               ref.invalidate(leadFunnelProvider);
               ref.invalidate(batchUtilizationProvider);
               ref.invalidate(collectionSummaryProvider);
+              ref.invalidate(sportBreakdownProvider);
             },
           ),
         ],
@@ -45,6 +47,8 @@ class KpiDashboardPage extends ConsumerWidget {
           ],
           if (isOwner || isAdmin || isHeadCoach) ...const [
             _EnrollmentTrendCard(),
+            SizedBox(height: 12),
+            _SportBreakdownCard(),
             SizedBox(height: 12),
             _BatchUtilizationCard(),
             SizedBox(height: 12),
@@ -250,6 +254,93 @@ class _BatchUtilizationCard extends ConsumerWidget {
                       ],
                     ),
                   ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _SportBreakdownCard extends ConsumerWidget {
+  const _SportBreakdownCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(sportBreakdownProvider);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: async.when(
+          loading: () => const LinearProgressIndicator(),
+          error: (e, _) => Text('Error: $e'),
+          data: (rows) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('By sport',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                if (rows.isEmpty)
+                  const Text(
+                    'Add sports under Settings → Sports to see this breakdown.',
+                  )
+                else ...[
+                  Row(
+                    children: [
+                      const Expanded(flex: 4, child: Text('')),
+                      Expanded(
+                        child: Text('Students',
+                            textAlign: TextAlign.right,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                      Expanded(
+                        child: Text('Batches',
+                            textAlign: TextAlign.right,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                      Expanded(
+                        child: Text('Coaches',
+                            textAlign: TextAlign.right,
+                            style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 12),
+                  for (final r in rows)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              r.sportName,
+                              style: r.sportId == null
+                                  ? Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(fontStyle: FontStyle.italic)
+                                  : null,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text('${r.studentCount}',
+                                textAlign: TextAlign.right),
+                          ),
+                          Expanded(
+                            child: Text('${r.batchCount}',
+                                textAlign: TextAlign.right),
+                          ),
+                          Expanded(
+                            child: Text('${r.coachCount}',
+                                textAlign: TextAlign.right),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ],
             );
           },

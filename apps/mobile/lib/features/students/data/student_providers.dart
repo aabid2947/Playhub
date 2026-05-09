@@ -4,10 +4,25 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 
 class StudentsFilter {
-  const StudentsFilter({this.search, this.status, this.centerId});
+  const StudentsFilter({this.search, this.status, this.centerId, this.sportId});
   final String? search;
   final String? status;
   final String? centerId;
+  final String? sportId;
+
+  StudentsFilter copyWith({
+    String? search,
+    String? status,
+    String? centerId,
+    String? sportId,
+    bool clearSport = false,
+  }) =>
+      StudentsFilter(
+        search: search ?? this.search,
+        status: status ?? this.status,
+        centerId: centerId ?? this.centerId,
+        sportId: clearSport ? null : (sportId ?? this.sportId),
+      );
 }
 
 final studentsFilterProvider =
@@ -28,6 +43,9 @@ final studentsProvider = FutureProvider<List<Student>>((ref) async {
   }
   if (filter.centerId != null && filter.centerId!.isNotEmpty) {
     query = query.eq('center_id', filter.centerId!);
+  }
+  if (filter.sportId != null && filter.sportId!.isNotEmpty) {
+    query = query.eq('sport_id', filter.sportId!);
   }
   if (filter.search != null && filter.search!.trim().isNotEmpty) {
     final s = filter.search!.trim();

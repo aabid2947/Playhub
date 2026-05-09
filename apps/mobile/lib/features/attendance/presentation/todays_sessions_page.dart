@@ -4,6 +4,7 @@ import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 
 /// Coach (and admin) entry point for daily attendance — chronological list
 /// of today's batches. Tap → AttendanceMarkingPage.
@@ -57,6 +58,9 @@ class _SessionTile extends ConsumerWidget {
     final markedCount = attendanceAsync.valueOrNull?.length ?? 0;
     final total = batch.enrolledCount;
     final allMarked = markedCount > 0 && markedCount >= total && total > 0;
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: batch.sportId,
+    )));
 
     return ListTile(
       leading: CircleAvatar(
@@ -72,8 +76,8 @@ class _SessionTile extends ConsumerWidget {
       subtitle: Text(
         [
           batch.schedule.summary,
-          if (batch.sport != null) batch.sport,
-        ].whereType<String>().join(' • '),
+          if (sportLabel != '—') sportLabel,
+        ].join(' • '),
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,

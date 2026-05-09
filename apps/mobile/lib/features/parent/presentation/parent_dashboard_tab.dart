@@ -6,6 +6,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 
 /// Parent / student dashboard. Shows linked-students switcher, attendance
@@ -115,12 +116,15 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
   }
 }
 
-class _StudentHeader extends StatelessWidget {
+class _StudentHeader extends ConsumerWidget {
   const _StudentHeader({required this.student});
   final Student student;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: student.sportId,
+    )));
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -140,8 +144,8 @@ class _StudentHeader extends StatelessWidget {
                 children: [
                   Text('${student.firstName} ${student.lastName}',
                       style: Theme.of(context).textTheme.titleLarge),
-                  if (student.sport != null)
-                    Text(student.sport!,
+                  if (sportLabel != '—')
+                    Text(sportLabel,
                         style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
@@ -182,11 +186,18 @@ class _BatchesCard extends ConsumerWidget {
                   runSpacing: 6,
                   children: [
                     for (final r in rows)
-                      Chip(
-                        avatar: const Icon(Icons.schedule, size: 16),
-                        label: Text(r.batchName +
-                            (r.sport != null ? ' • ${r.sport}' : '')),
-                      ),
+                      Consumer(builder: (_, ref, __) {
+                        final label = ref.watch(sportDisplayProvider((
+                          sportId: r.sportId,
+                        )));
+                        return Chip(
+                          avatar: const Icon(Icons.schedule, size: 16),
+                          label: Text(
+                            r.batchName +
+                                (label != '—' ? ' • $label' : ''),
+                          ),
+                        );
+                      }),
                   ],
                 );
               },

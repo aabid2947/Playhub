@@ -4,31 +4,55 @@ import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
-class BatchesTab extends ConsumerWidget {
+class BatchesTab extends ConsumerStatefulWidget {
   const BatchesTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BatchesTab> createState() => _BatchesTabState();
+}
+
+class _BatchesTabState extends ConsumerState<BatchesTab> {
+  String? _sportFilter;
+
+  @override
+  Widget build(BuildContext context) {
     final batchesAsync = ref.watch(batchesProvider);
 
     return Scaffold(
-      body: batchesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (batches) {
-          if (batches.isEmpty) {
-            return const _EmptyState();
-          }
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(batchesProvider),
-            child: ListView.separated(
-              itemCount: batches.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) => _BatchTile(batch: batches[i]),
+      body: Column(
+        children: [
+          SportFilterChipBar(
+            selectedId: _sportFilter,
+            onSelected: (id) => setState(() => _sportFilter = id),
+          ),
+          Expanded(
+            child: batchesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (batches) {
+                final list = _sportFilter == null
+                    ? batches
+                    : batches
+                        .where((b) => b.sportId == _sportFilter)
+                        .toList();
+                if (list.isEmpty) {
+                  return const _EmptyState();
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(batchesProvider),
+                  child: ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) => _BatchTile(batch: list[i]),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.of(context).push<void>(
@@ -41,16 +65,19 @@ class BatchesTab extends ConsumerWidget {
   }
 }
 
-class _BatchTile extends StatelessWidget {
+class _BatchTile extends ConsumerWidget {
   const _BatchTile({required this.batch});
   final Batch batch;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cap = batch.capacity;
     final utilLabel = cap == null
         ? '${batch.enrolledCount}'
         : '${batch.enrolledCount}/$cap';
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: batch.sportId,
+    )));
 
     return ListTile(
       leading: const Icon(Icons.schedule_outlined),
@@ -58,9 +85,9 @@ class _BatchTile extends StatelessWidget {
       subtitle: Text(
         [
           batch.schedule.summary,
-          if (batch.sport != null) batch.sport,
-          if (batch.skillLevel != null) batch.skillLevel,
-        ].whereType<String>().join(' • '),
+          if (sportLabel != '—') sportLabel,
+          if (batch.skillLevel != null) batch.skillLevel!,
+        ].join(' • '),
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,

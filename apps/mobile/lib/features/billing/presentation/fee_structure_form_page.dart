@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
 class FeeStructureFormPage extends ConsumerStatefulWidget {
   const FeeStructureFormPage({super.key, this.existing});
@@ -19,8 +20,6 @@ class _FeeStructureFormPageState
       TextEditingController(text: widget.existing?.name ?? '');
   late final _description =
       TextEditingController(text: widget.existing?.description ?? '');
-  late final _sport =
-      TextEditingController(text: widget.existing?.sport ?? '');
   late final _base = TextEditingController(
       text: widget.existing?.baseAmount.toStringAsFixed(2) ?? '');
   late final _tax = TextEditingController(
@@ -35,6 +34,7 @@ class _FeeStructureFormPageState
   late FeeType _type = widget.existing?.type ?? FeeType.monthly;
   late String _latePolicy = widget.existing?.lateFeePolicy ?? 'one_time';
   late bool _isActive = widget.existing?.isActive ?? true;
+  late String? _sportId = widget.existing?.sportId;
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -45,7 +45,6 @@ class _FeeStructureFormPageState
   void dispose() {
     _name.dispose();
     _description.dispose();
-    _sport.dispose();
     _base.dispose();
     _tax.dispose();
     _lateFlat.dispose();
@@ -63,7 +62,7 @@ class _FeeStructureFormPageState
         'description': _description.text.trim().isEmpty
             ? null
             : _description.text.trim(),
-        'sport': _sport.text.trim().isEmpty ? null : _sport.text.trim(),
+        'sport_id': _sportId,
         'type': _type.dbValue,
         'base_amount': double.parse(_base.text.trim()),
         'tax_pct': double.tryParse(_tax.text.trim()) ?? 0,
@@ -126,13 +125,10 @@ class _FeeStructureFormPageState
               ),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _sport,
-              decoration: const InputDecoration(
-                labelText: 'Sport (optional)',
-                hintText: 'cricket / football / …',
-                border: OutlineInputBorder(),
-              ),
+            SportPicker(
+              value: _sportId,
+              onChanged: (v) => setState(() => _sportId = v),
+              label: 'Sport (optional)',
             ),
             const SizedBox(height: 12),
             Row(

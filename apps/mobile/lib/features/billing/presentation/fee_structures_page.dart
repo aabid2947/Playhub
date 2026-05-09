@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 
 class FeeStructuresPage extends ConsumerWidget {
   const FeeStructuresPage({super.key});
@@ -37,21 +38,22 @@ class FeeStructuresPage extends ConsumerWidget {
   }
 }
 
-class _FeeTile extends StatelessWidget {
+class _FeeTile extends ConsumerWidget {
   const _FeeTile({required this.fee});
   final FeeStructure fee;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sportLabel = ref.watch(sportDisplayProvider((sportId: fee.sportId)));
     return ListTile(
       leading: const Icon(Icons.receipt_long_outlined),
       title: Text(fee.name),
       subtitle: Text(
         [
           fee.type.label,
-          if (fee.sport != null) fee.sport,
+          if (sportLabel != '—') sportLabel,
           '₹${fee.baseAmount.toStringAsFixed(0)}${fee.taxPct > 0 ? ' + ${fee.taxPct.toStringAsFixed(0)}% tax' : ''}',
-        ].whereType<String>().join(' • '),
+        ].join(' • '),
       ),
       trailing: !fee.isActive
           ? const Chip(

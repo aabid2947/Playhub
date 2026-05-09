@@ -24,7 +24,7 @@ class Student {
     this.emergencyContactPhone,
     this.medicalNotes,
     this.injuryInfo,
-    this.sport,
+    this.sportId,
     this.skillLevel,
   });
 
@@ -53,7 +53,7 @@ class Student {
         emergencyContactPhone: m['emergency_contact_phone'] as String?,
         medicalNotes: m['medical_notes'] as String?,
         injuryInfo: m['injury_info'] as String?,
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         skillLevel: m['skill_level'] as String?,
         status: m['status'] as String,
         enrollmentDate: DateTime.parse(m['enrollment_date'] as String),
@@ -81,7 +81,7 @@ class Student {
   final String? emergencyContactPhone;
   final String? medicalNotes;
   final String? injuryInfo;
-  final String? sport;
+  final String? sportId;
   final String? skillLevel;
   final String status;
   final DateTime enrollmentDate;

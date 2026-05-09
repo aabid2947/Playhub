@@ -4,6 +4,7 @@ import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_detail_page.dart';
 import 'package:playhub/features/performance/presentation/performance_form_page.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 
 class PerformanceHistoryPage extends ConsumerWidget {
@@ -102,13 +103,16 @@ class _TrendCard extends StatelessWidget {
   }
 }
 
-class _AssessmentTile extends StatelessWidget {
+class _AssessmentTile extends ConsumerWidget {
   const _AssessmentTile({required this.assessment});
   final PerformanceAssessment assessment;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final dateStr = assessment.assessmentDate.toIso8601String().substring(0, 10);
+    final sportLabel = ref.watch(sportDisplayProvider((
+      sportId: assessment.sportId,
+    )));
     return ListTile(
       leading: CircleAvatar(
         child: Text(
@@ -121,7 +125,7 @@ class _AssessmentTile extends StatelessWidget {
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
-      title: Text(assessment.sport ?? 'general'),
+      title: Text(sportLabel == '—' ? 'general' : sportLabel),
       subtitle: Text(
         [
           dateStr,

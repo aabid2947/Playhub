@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 
 class EventFormPage extends ConsumerStatefulWidget {
   const EventFormPage({super.key});
@@ -15,7 +16,6 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
   final _form = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _desc = TextEditingController();
-  final _sport = TextEditingController();
   final _location = TextEditingController();
   final _capacity = TextEditingController();
   final _fee = TextEditingController(text: '0');
@@ -25,12 +25,13 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
   DateTime? _regOpens;
   DateTime? _regCloses;
   String? _centerId;
+  String? _sportId;
   bool _publish = false;
   bool _saving = false;
 
   @override
   void dispose() {
-    for (final c in [_title, _desc, _sport, _location, _capacity, _fee]) {
+    for (final c in [_title, _desc, _location, _capacity, _fee]) {
       c.dispose();
     }
     super.dispose();
@@ -63,7 +64,7 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
         kind: _kind,
         startsAt: _startsAt,
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        sport: _sport.text.trim().isEmpty ? null : _sport.text.trim(),
+        sportId: _sportId,
         endsAt: _endsAt,
         location: _location.text.trim().isEmpty ? null : _location.text.trim(),
         centerId: _centerId,
@@ -112,9 +113,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               onChanged: (v) => setState(() => _kind = v ?? EventKind.tournament),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _sport,
-              decoration: const InputDecoration(labelText: 'Sport'),
+            SportPicker(
+              value: _sportId,
+              onChanged: (v) => setState(() => _sportId = v),
             ),
             const SizedBox(height: 12),
             ListTile(

@@ -5,6 +5,7 @@ import 'package:playhub/features/academy/presentation/academy_settings_page.dart
 import 'package:playhub/features/audit/presentation/audit_log_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
+import 'package:playhub/features/sports/presentation/sports_settings_page.dart';
 import 'package:playhub/features/subscription/presentation/subscription_page.dart';
 import 'package:playhub/features/support/presentation/support_page.dart';
 import 'package:playhub/features/users/presentation/team_page.dart';
@@ -37,6 +38,16 @@ class SettingsTab extends ConsumerWidget {
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push<void>(
             MaterialPageRoute(builder: (_) => const CentersPage()),
+          ),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.sports_outlined),
+          title: const Text('Sports'),
+          subtitle: const Text('Which sports your academy offers'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => const SportsSettingsPage()),
           ),
         ),
         const Divider(height: 1),

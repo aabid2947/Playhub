@@ -29,7 +29,7 @@ class FeeStructure {
     required this.lateFeePolicy,
     required this.isActive,
     this.description,
-    this.sport,
+    this.sportId,
     this.batchId,
     this.lateFeePct,
     this.lateFeeFlat,
@@ -41,7 +41,7 @@ class FeeStructure {
         name: m['name'] as String,
         description: m['description'] as String?,
         type: FeeType.fromDb(m['type'] as String?),
-        sport: m['sport'] as String?,
+        sportId: m['sport_id'] as String?,
         batchId: m['batch_id'] as String?,
         baseAmount: (m['base_amount'] as num).toDouble(),
         taxPct: (m['tax_pct'] as num).toDouble(),
@@ -59,7 +59,7 @@ class FeeStructure {
   final String name;
   final String? description;
   final FeeType type;
-  final String? sport;
+  final String? sportId;
   final String? batchId;
   final double baseAmount;
   final double taxPct;
