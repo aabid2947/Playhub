@@ -326,6 +326,16 @@ begin
          1499
   from public.academy_subscriptions s;
 
+  -- Sprint-5 polish seed: each academy enables a sport + tags one coach
+  -- with that sport.
+  insert into public.academy_sports (academy_id, sport_id)
+  select a.id, (select id from public.sports where code = 'cricket')
+  from public.academies a where a.id in (v_academy_a, v_academy_b);
+
+  insert into public.coach_sports (academy_id, coach_id, sport_id)
+  select c.academy_id, c.id, (select id from public.sports where code = 'cricket')
+  from public.coaches c;
+
   -- Stash IDs in session-local config so the test phase can read them.
   perform set_config('test.user_a', v_user_a::text, true);
   perform set_config('test.user_b', v_user_b::text, true);
@@ -1424,6 +1434,51 @@ begin
   end if;
 
   raise notice 'PASS: saas_invoices owner-only visibility + auto-create';
+end $$;
+
+-- ---------- Test 35: sports catalog visible globally; junctions tenant-scoped
+
+do $$
+declare
+  v_global int;
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  -- Global catalog: every authenticated user sees every row.
+  select count(*) into v_global from public.sports;
+  if v_global < 20 then
+    raise exception 'FAIL: sports catalog had only % rows', v_global;
+  end if;
+
+  -- academy_sports: own academy visible, other academy not.
+  select count(*) into v_own
+    from public.academy_sports where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.academy_sports where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own academy_sports';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % academy_sports from academy B',
+      v_other;
+  end if;
+
+  -- coach_sports: own academy only.
+  select count(*) into v_own
+    from public.coach_sports where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.coach_sports where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own coach_sports';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % coach_sports from academy B',
+      v_other;
+  end if;
+
+  raise notice 'PASS: sports catalog global + academy_sports/coach_sports isolation';
 end $$;
 
 -- ---------- Reset and roll back --------------------------------------------
