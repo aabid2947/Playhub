@@ -4,6 +4,7 @@ import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
+import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 
@@ -93,6 +94,18 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 _PerformanceCard(studentId: selected.id),
                 const SizedBox(height: 12),
                 _OutstandingCard(studentId: selected.id),
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.emoji_events_outlined),
+                    title: const Text('Events'),
+                    subtitle: const Text('Browse + register for tournaments'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(builder: (_) => const EventsPage()),
+                    ),
+                  ),
+                ),
               ],
             ),
           );

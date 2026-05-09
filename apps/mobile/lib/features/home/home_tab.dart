@@ -11,6 +11,7 @@ import 'package:playhub/features/billing/presentation/billing_dashboard_page.dar
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
@@ -186,6 +187,16 @@ class _ActionsCard extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const LeadsKanbanPage()),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.emoji_events_outlined),
+            title: const Text('Events'),
+            subtitle: const Text('Tournaments, workshops, certificates'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const EventsPage()),
             ),
           ),
           const Divider(height: 1),
