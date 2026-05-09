@@ -267,6 +267,65 @@ begin
          s.id
   from public.students s;
 
+  -- Sprint-5 seed: events + registration + result, vendors + inventory items
+  -- + a movement, support tickets, and saas_invoices (academy_subscriptions
+  -- auto-created via trigger).
+  insert into public.events
+    (academy_id, title, kind, status, starts_at)
+  values
+    (v_academy_a, 'Cup A', 'tournament', 'published',
+       now() + interval '14 days'),
+    (v_academy_b, 'Cup B', 'tournament', 'published',
+       now() + interval '14 days');
+
+  insert into public.event_registrations
+    (academy_id, event_id, student_id)
+  select e.academy_id, e.id, s.id
+  from public.events e
+  join public.students s on s.academy_id = e.academy_id;
+
+  insert into public.event_results
+    (academy_id, event_id, student_id, placement)
+  select er.academy_id, er.event_id, er.student_id, 1
+  from public.event_registrations er;
+
+  insert into public.vendors (academy_id, name)
+  values (v_academy_a, 'Vendor A'), (v_academy_b, 'Vendor B');
+
+  insert into public.inventory_categories (academy_id, name)
+  values (v_academy_a, 'Cat A'), (v_academy_b, 'Cat B');
+
+  insert into public.inventory_items
+    (academy_id, name, unit, on_hand, reorder_threshold)
+  values
+    (v_academy_a, 'Ball A', 'piece', 0, 5),
+    (v_academy_b, 'Ball B', 'piece', 0, 5);
+
+  insert into public.inventory_movements (academy_id, item_id, kind, qty)
+  select i.academy_id, i.id, 'in', 10
+  from public.inventory_items i;
+
+  insert into public.support_tickets (academy_id, opened_by, subject, body)
+  values
+    (v_academy_a, v_user_a, 'Hello A', 'Body A'),
+    (v_academy_b, v_user_b, 'Hello B', 'Body B');
+
+  insert into public.support_ticket_messages
+    (ticket_id, academy_id, author_id, is_staff, body)
+  select t.id, t.academy_id, t.opened_by, false, 'reply ' || t.subject
+  from public.support_tickets t;
+
+  insert into public.saas_invoices
+    (academy_id, subscription_id, invoice_number, status,
+     period_start, period_end, due_date, amount)
+  select s.academy_id, s.id,
+         'TEST-' || s.academy_id::text,
+         'issued',
+         now(), now() + interval '1 month',
+         (current_date + interval '7 days')::date,
+         1499
+  from public.academy_subscriptions s;
+
   -- Stash IDs in session-local config so the test phase can read them.
   perform set_config('test.user_a', v_user_a::text, true);
   perform set_config('test.user_b', v_user_b::text, true);
@@ -1194,6 +1253,177 @@ begin
   end if;
 
   raise notice 'PASS: parent_links read + cross-tenant insert blocked';
+end $$;
+
+-- ---------- Test 31: events + registrations + results isolation ----------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+  v_caught boolean := false;
+  v_event_b uuid;
+  v_student_a uuid;
+begin
+  select count(*) into v_own
+    from public.events where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.events where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own events';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % events from academy B', v_other;
+  end if;
+
+  select count(*) into v_other from public.event_registrations
+    where academy_id = v_academy_b;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % event_registrations from academy B',
+      v_other;
+  end if;
+
+  select count(*) into v_other from public.event_results
+    where academy_id = v_academy_b;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % event_results from academy B',
+      v_other;
+  end if;
+
+  -- Cross-tenant insert into event_registrations must fail.
+  reset role;
+  select id into v_event_b from public.events
+    where academy_id = v_academy_b limit 1;
+  select id into v_student_a from public.students
+    where academy_id = v_academy_a limit 1;
+  set local role authenticated;
+  set local request.jwt.claim.sub = '00000000-aaaa-0000-0000-000000000001';
+
+  begin
+    insert into public.event_registrations
+      (academy_id, event_id, student_id)
+    values (v_academy_b, v_event_b, v_student_a);
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception
+      'FAIL: user A inserted event_registration for event in academy B';
+  end if;
+
+  raise notice 'PASS: events + registrations + results isolation';
+end $$;
+
+-- ---------- Test 32: inventory tables isolation + on_hand sync -----------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_on_hand numeric;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own from public.vendors
+    where academy_id = v_academy_a;
+  select count(*) into v_other from public.vendors
+    where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own vendors';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % vendors from academy B', v_other;
+  end if;
+
+  select count(*) into v_other from public.inventory_items
+    where academy_id = v_academy_b;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % inventory_items from academy B',
+      v_other;
+  end if;
+
+  select count(*) into v_other from public.inventory_movements
+    where academy_id = v_academy_b;
+  if v_other > 0 then
+    raise exception
+      'FAIL: user A read % inventory_movements from academy B', v_other;
+  end if;
+
+  -- Trigger sync check: the seed inserted a +10 'in' movement on each item,
+  -- so the on_hand should be 10 (NOT 0) for the academy_a item.
+  select on_hand into v_on_hand from public.inventory_items
+    where academy_id = v_academy_a limit 1;
+  if v_on_hand <> 10 then
+    raise exception 'FAIL: on_hand sync trigger did not apply (got %)',
+      v_on_hand;
+  end if;
+
+  raise notice 'PASS: inventory isolation + on_hand sync';
+end $$;
+
+-- ---------- Test 33: support tickets + messages isolation ----------------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own
+    from public.support_tickets where academy_id = v_academy_a;
+  select count(*) into v_other
+    from public.support_tickets where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: user A could not read own support_tickets';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: user A read % support_tickets from academy B',
+      v_other;
+  end if;
+
+  select count(*) into v_other
+    from public.support_ticket_messages where academy_id = v_academy_b;
+  if v_other > 0 then
+    raise exception
+      'FAIL: user A read % support_ticket_messages from academy B', v_other;
+  end if;
+
+  raise notice 'PASS: support tickets + messages isolation';
+end $$;
+
+-- ---------- Test 34: SaaS billing visible only to academy owner ---------
+
+do $$
+declare
+  v_own int;
+  v_other int;
+  v_subs int;
+  v_academy_a uuid := current_setting('test.academy_a')::uuid;
+  v_academy_b uuid := current_setting('test.academy_b')::uuid;
+begin
+  select count(*) into v_own from public.saas_invoices
+    where academy_id = v_academy_a;
+  select count(*) into v_other from public.saas_invoices
+    where academy_id = v_academy_b;
+  if v_own = 0 then
+    raise exception 'FAIL: owner A could not read own saas_invoices';
+  end if;
+  if v_other > 0 then
+    raise exception 'FAIL: owner A read % saas_invoices from academy B',
+      v_other;
+  end if;
+
+  select count(*) into v_subs from public.academy_subscriptions
+    where academy_id = v_academy_a;
+  if v_subs = 0 then
+    raise exception
+      'FAIL: ensure_academy_subscription trigger did not auto-create row';
+  end if;
+
+  raise notice 'PASS: saas_invoices owner-only visibility + auto-create';
 end $$;
 
 -- ---------- Reset and roll back --------------------------------------------
