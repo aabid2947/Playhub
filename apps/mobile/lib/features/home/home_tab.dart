@@ -12,6 +12,8 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
+import 'package:playhub/features/inventory/data/inventory_providers.dart';
+import 'package:playhub/features/inventory/presentation/inventory_page.dart';
 import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
@@ -198,6 +200,23 @@ class _ActionsCard extends StatelessWidget {
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const EventsPage()),
             ),
+          ),
+          const Divider(height: 1),
+          Consumer(
+            builder: (_, ref, __) {
+              final low = ref.watch(lowStockItemsProvider).length;
+              return ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text('Inventory'),
+                subtitle: Text(low == 0
+                    ? 'Equipment + low-stock alerts'
+                    : '$low item${low == 1 ? '' : 's'} below threshold'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(builder: (_) => const InventoryPage()),
+                ),
+              );
+            },
           ),
           const Divider(height: 1),
           ListTile(
