@@ -10,6 +10,7 @@ import 'package:playhub/features/dashboards/setup_academy_page.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
 import 'package:playhub/features/student/presentation/student_home_shell.dart';
+import 'package:playhub/features/super_admin/presentation/super_admin_home_shell.dart';
 
 /// Top-level home router. Decides which shell to show based on the
 /// current user's profile state.
@@ -34,6 +35,9 @@ class RoleDashboard extends ConsumerWidget {
         if (profile.mustChangePassword) {
           return const SetNewPasswordPage();
         }
+        if (profile.role == 'super_admin') {
+          return const SuperAdminHomeShell();
+        }
         if (profile.needsAcademySetup) {
           return Scaffold(
             appBar: AppBar(title: const Text('Welcome')),
@@ -57,7 +61,6 @@ class RoleDashboard extends ConsumerWidget {
             profile.role == 'trainer') {
           return const CoachHomeShell();
         }
-        // super_admin still has no shell — that module ships in Sprint 5.
         return _RoleStub(profile: profile);
       },
     );
