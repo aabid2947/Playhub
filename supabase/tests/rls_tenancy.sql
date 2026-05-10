@@ -327,11 +327,13 @@ begin
          1499
   from public.academy_subscriptions s;
 
-  -- Sprint-5 polish seed: each academy enables a sport + tags one coach
-  -- with that sport.
-  insert into public.academy_sports (academy_id, sport_id)
-  select a.id, (select id from public.sports where code = 'cricket')
-  from public.academies a where a.id in (v_academy_a, v_academy_b);
+  -- Sprint-5 polish seed: each academy's center enables Cricket + tags
+  -- its coach with that sport.
+  insert into public.center_sports (academy_id, center_id, sport_id)
+  select c.academy_id, c.id,
+         (select id from public.sports where code = 'cricket')
+  from public.centers c
+  where c.academy_id in (v_academy_a, v_academy_b);
 
   insert into public.coach_sports (academy_id, coach_id, sport_id)
   select c.academy_id, c.id, (select id from public.sports where code = 'cricket')
@@ -1453,16 +1455,16 @@ begin
     raise exception 'FAIL: sports catalog had only % rows', v_global;
   end if;
 
-  -- academy_sports: own academy visible, other academy not.
+  -- center_sports: own academy visible, other academy not.
   select count(*) into v_own
-    from public.academy_sports where academy_id = v_academy_a;
+    from public.center_sports where academy_id = v_academy_a;
   select count(*) into v_other
-    from public.academy_sports where academy_id = v_academy_b;
+    from public.center_sports where academy_id = v_academy_b;
   if v_own = 0 then
-    raise exception 'FAIL: user A could not read own academy_sports';
+    raise exception 'FAIL: user A could not read own center_sports';
   end if;
   if v_other > 0 then
-    raise exception 'FAIL: user A read % academy_sports from academy B',
+    raise exception 'FAIL: user A read % center_sports from academy B',
       v_other;
   end if;
 
@@ -1479,7 +1481,7 @@ begin
       v_other;
   end if;
 
-  raise notice 'PASS: sports catalog global + academy_sports/coach_sports isolation';
+  raise notice 'PASS: sports catalog global + center_sports/coach_sports isolation';
 end $$;
 
 -- ---------- Reset and roll back --------------------------------------------

@@ -44,20 +44,22 @@ class SportSkill {
   final int sortOrder;
 }
 
-/// `academy_sports` row joined with the underlying sport. The `displayName`
-/// honours the per-academy override.
-class AcademySport {
-  const AcademySport({
+/// `center_sports` row joined with the underlying sport. The `displayName`
+/// honours the per-center override.
+class CenterSport {
+  const CenterSport({
     required this.id,
     required this.academyId,
+    required this.centerId,
     required this.sport,
     required this.isActive,
     this.customName,
   });
 
-  factory AcademySport.fromMap(Map<String, dynamic> m) => AcademySport(
+  factory CenterSport.fromMap(Map<String, dynamic> m) => CenterSport(
         id: m['id'] as String,
         academyId: m['academy_id'] as String,
+        centerId: m['center_id'] as String,
         sport: Sport.fromMap((m['sport'] as Map).cast<String, dynamic>()),
         customName: m['custom_name'] as String?,
         isActive: m['is_active'] as bool? ?? true,
@@ -65,6 +67,7 @@ class AcademySport {
 
   final String id;
   final String academyId;
+  final String centerId;
   final Sport sport;
   final String? customName;
   final bool isActive;

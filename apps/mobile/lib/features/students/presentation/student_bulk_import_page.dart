@@ -138,7 +138,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
     // the CSV's free-text 'sport' column maps to the catalog. Unknown
     // values fall through unmapped.
     final enabledSports =
-        await ref.read(academySportsProvider.future);
+        await ref.read(academyCenterSportsProvider.future);
     final sportLookup = <String, String>{
       for (final s in enabledSports) ...{
         s.displayName.toLowerCase(): s.sport.id,

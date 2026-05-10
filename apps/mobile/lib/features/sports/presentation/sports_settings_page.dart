@@ -1,65 +1,131 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 
-/// Settings → Sports. Lists the academy's enabled sports, lets owner/admin
-/// add new ones from the global catalog, rename them locally, or remove.
-class SportsSettingsPage extends ConsumerWidget {
+/// Settings → Sports. Pick a center, manage which sports it offers.
+/// Defaults to the user's center_id when set; falls back to the first
+/// center in the academy.
+class SportsSettingsPage extends ConsumerStatefulWidget {
   const SportsSettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final enabledAsync = ref.watch(academySportsProvider);
+  ConsumerState<SportsSettingsPage> createState() =>
+      _SportsSettingsPageState();
+}
+
+class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
+  String? _centerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final centersAsync = ref.watch(centersProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sports'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref.invalidate(academySportsProvider),
+            onPressed: () {
+              if (_centerId != null) {
+                ref.invalidate(centerSportsProvider(_centerId!));
+              }
+              ref.invalidate(academyCenterSportsProvider);
+            },
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('Add sport'),
-        onPressed: () => showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          builder: (_) => const _AddSportSheet(),
-        ),
-      ),
-      body: enabledAsync.when(
+      body: centersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (rows) {
-          if (rows.isEmpty) {
+        data: (centers) {
+          if (centers.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'No sports yet. Tap "Add sport" to enable the ones your '
-                  'academy offers.',
+                  'No centers yet — add a center in Settings → Centers '
+                  'first, then come back here to enable its sports.',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
-          return ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) => _SportRow(row: rows[i]),
+          _centerId ??= centers.first.id;
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _centerId,
+                  decoration: const InputDecoration(labelText: 'Center'),
+                  items: [
+                    for (final c in centers.where((c) => c.isActive))
+                      DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => _centerId = v),
+                ),
+              ),
+              Expanded(
+                child: _centerId == null
+                    ? const SizedBox.shrink()
+                    : _CenterSportsList(centerId: _centerId!),
+              ),
+            ],
           );
         },
       ),
+      floatingActionButton: _centerId == null
+          ? null
+          : FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Add sport'),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => _AddSportSheet(centerId: _centerId!),
+              ),
+            ),
+    );
+  }
+}
+
+class _CenterSportsList extends ConsumerWidget {
+  const _CenterSportsList({required this.centerId});
+  final String centerId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(centerSportsProvider(centerId));
+    return async.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
+      data: (rows) {
+        if (rows.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No sports for this center. Tap "Add sport" to enable one.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          itemCount: rows.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (_, i) => _SportRow(row: rows[i]),
+        );
+      },
     );
   }
 }
 
 class _SportRow extends ConsumerWidget {
   const _SportRow({required this.row});
-  final AcademySport row;
+  final CenterSport row;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,8 +165,9 @@ class _SportRow extends ConsumerWidget {
               ),
             );
             if (confirm ?? false) {
-              await repo.disableAcademySport(row.id);
-              ref.invalidate(academySportsProvider);
+              await repo.disableCenterSport(row.id);
+              ref.invalidate(centerSportsProvider(row.centerId));
+              ref.invalidate(academyCenterSportsProvider);
             }
           }
         },
@@ -115,7 +182,7 @@ class _SportRow extends ConsumerWidget {
   Future<void> _renameDialog(
     BuildContext context,
     WidgetRef ref,
-    AcademySport row,
+    CenterSport row,
   ) async {
     final ctrl = TextEditingController(text: row.customName ?? '');
     final result = await showDialog<String?>(
@@ -145,21 +212,23 @@ class _SportRow extends ConsumerWidget {
     if (result == null) return;
     final repo = await ref.read(sportsRepoProvider.future);
     if (repo == null) return;
-    await repo.updateAcademySport(
+    await repo.updateCenterSport(
       row.id,
       customName: result.isEmpty ? '' : result,
     );
-    ref.invalidate(academySportsProvider);
+    ref.invalidate(centerSportsProvider(row.centerId));
+    ref.invalidate(academyCenterSportsProvider);
   }
 }
 
 class _AddSportSheet extends ConsumerWidget {
-  const _AddSportSheet();
+  const _AddSportSheet({required this.centerId});
+  final String centerId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final allAsync = ref.watch(allSportsProvider);
-    final enabledAsync = ref.watch(academySportsProvider);
+    final enabledAsync = ref.watch(centerSportsProvider(centerId));
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -189,7 +258,9 @@ class _AddSportSheet extends ConsumerWidget {
                 if (candidates.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Text('Every catalog sport is already enabled.'),
+                    child: Text(
+                      'Every catalog sport is already enabled at this center.',
+                    ),
                   );
                 }
                 return ConstrainedBox(
@@ -211,8 +282,12 @@ class _AddSportSheet extends ConsumerWidget {
                             final repo =
                                 await ref.read(sportsRepoProvider.future);
                             if (repo == null) return;
-                            await repo.enableSport(s.id);
-                            ref.invalidate(academySportsProvider);
+                            await repo.enableSportAtCenter(
+                              centerId: centerId,
+                              sportId: s.id,
+                            );
+                            ref.invalidate(centerSportsProvider(centerId));
+                            ref.invalidate(academyCenterSportsProvider);
                             if (context.mounted) Navigator.pop(context);
                           },
                           child: const Text('Add'),

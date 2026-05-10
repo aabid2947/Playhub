@@ -116,6 +116,7 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             SportPicker(
               value: _sportId,
               onChanged: (v) => setState(() => _sportId = v),
+              centerId: _centerId,
             ),
             const SizedBox(height: 12),
             ListTile(

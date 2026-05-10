@@ -169,6 +169,7 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
               value: _sportId,
               onChanged: _setSport,
               label: 'Sport / rubric',
+              centerId: widget.student.centerId,
             ),
           ),
           const SizedBox(height: 16),

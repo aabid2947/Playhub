@@ -5,7 +5,7 @@ import 'package:playhub/features/sports/data/sport.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Full global catalog. Used by Settings → Sports for the "add a sport"
-/// picker; everywhere else uses `academySportsProvider`.
+/// picker; everywhere else uses one of the academy/center providers.
 final allSportsProvider = FutureProvider<List<Sport>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final rows = await client
@@ -18,23 +18,39 @@ final allSportsProvider = FutureProvider<List<Sport>>((ref) async {
       .toList(growable: false);
 });
 
-/// Sports the current user's academy has enabled. Source of truth for
-/// every "pick a sport" dropdown in the app.
-final academySportsProvider =
-    FutureProvider<List<AcademySport>>((ref) async {
+/// Every active center_sports row across all centers in the user's
+/// academy. The fallback list when a form/filter has no specific center
+/// scope (e.g. fee_structures, leads with no preferred_center).
+final academyCenterSportsProvider =
+    FutureProvider<List<CenterSport>>((ref) async {
   final client = ref.watch(supabaseClientProvider);
   final profile = await ref.watch(currentProfileProvider.future);
   if (profile?.academyId == null) return const [];
   final rows = await client
-      .from('academy_sports')
-      .select('id, academy_id, custom_name, is_active, sport:sport_id(id, code, name, category, is_active)')
+      .from('center_sports')
+      .select(
+          'id, academy_id, center_id, custom_name, is_active, sport:sport_id(id, code, name, category, is_active)')
       .eq('academy_id', profile!.academyId!)
+      .eq('is_active', true);
+  return (rows as List)
+      .map((r) => CenterSport.fromMap(r as Map<String, dynamic>))
+      .toList(growable: false);
+});
+
+/// Active center_sports rows for one center.
+final centerSportsProvider =
+    FutureProvider.family<List<CenterSport>, String>((ref, centerId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('center_sports')
+      .select(
+          'id, academy_id, center_id, custom_name, is_active, sport:sport_id(id, code, name, category, is_active)')
+      .eq('center_id', centerId)
       .eq('is_active', true)
       .order('created_at');
   return (rows as List)
-      .map((r) => AcademySport.fromMap(r as Map<String, dynamic>))
-      .toList(growable: false)
-    ..sort((a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+      .map((r) => CenterSport.fromMap(r as Map<String, dynamic>))
+      .toList(growable: false);
 });
 
 /// Per-sport skill catalog. Used by the performance assessment skill
@@ -70,25 +86,30 @@ class SportsRepo {
   final SupabaseClient _client;
   final String _academyId;
 
-  Future<void> enableSport(String sportId, {String? customName}) =>
-      _client.from('academy_sports').insert({
+  Future<void> enableSportAtCenter({
+    required String centerId,
+    required String sportId,
+    String? customName,
+  }) =>
+      _client.from('center_sports').insert({
         'academy_id': _academyId,
+        'center_id': centerId,
         'sport_id': sportId,
         'custom_name': customName,
       });
 
-  Future<void> updateAcademySport(
+  Future<void> updateCenterSport(
     String id, {
     String? customName,
     bool? isActive,
   }) =>
-      _client.from('academy_sports').update({
+      _client.from('center_sports').update({
         if (customName != null) 'custom_name': customName,
         if (isActive != null) 'is_active': isActive,
       }).eq('id', id);
 
-  Future<void> disableAcademySport(String id) =>
-      _client.from('academy_sports').delete().eq('id', id);
+  Future<void> disableCenterSport(String id) =>
+      _client.from('center_sports').delete().eq('id', id);
 
   /// Replaces the coach's sport list with [sportIds]. Diffs current vs new
   /// so we only insert / delete rows that actually changed.
@@ -130,13 +151,13 @@ final sportsRepoProvider = FutureProvider<SportsRepo?>((ref) async {
 
 /// Resolves a sport_id to a display name.
 ///
-/// Returns the academy's `custom_name` when set, the catalog name when the
-/// sport isn't enabled locally, or "—" when sportId is null.
+/// Returns the first matching center's `custom_name` (or catalog name)
+/// across the user's academy. Returns "—" when sportId is null.
 final sportDisplayProvider = Provider.family<String, ({String? sportId})>(
   (ref, args) {
     final id = args.sportId;
     if (id == null) return '—';
-    final list = ref.watch(academySportsProvider).valueOrNull ?? const [];
+    final list = ref.watch(academyCenterSportsProvider).valueOrNull ?? const [];
     for (final s in list) {
       if (s.sport.id == id) return s.displayName;
     }

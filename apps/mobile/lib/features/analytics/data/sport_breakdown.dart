@@ -30,10 +30,11 @@ final sportBreakdownProvider =
   if (profile?.academyId == null) return const [];
   final academyId = profile!.academyId!;
 
-  // Pull the academy's sport list so we always render one row per enabled
-  // sport even if the count is zero.
+  // Pull every center's sport list and dedupe by sport_id. A sport
+  // offered at multiple centers shows once; the first-seen custom_name
+  // wins as the display label.
   final sportRows = await client
-      .from('academy_sports')
+      .from('center_sports')
       .select('sport:sport_id(id, name), custom_name')
       .eq('academy_id', academyId)
       .eq('is_active', true);
@@ -43,6 +44,7 @@ final sportBreakdownProvider =
     final m = r as Map;
     final sport = (m['sport'] as Map).cast<String, dynamic>();
     final id = sport['id'] as String;
+    if (names.containsKey(id)) continue;
     final custom = m['custom_name'] as String?;
     names[id] = (custom != null && custom.trim().isNotEmpty)
         ? custom.trim()

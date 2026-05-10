@@ -114,6 +114,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                     child: SportPicker(
                       value: _sportId,
                       onChanged: (v) => setState(() => _sportId = v),
+                      centerId: _centerId,
                     ),
                   ),
                   const SizedBox(width: 12),

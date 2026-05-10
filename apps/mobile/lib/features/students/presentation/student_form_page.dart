@@ -264,6 +264,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                     child: SportPicker(
                       value: _sportId,
                       onChanged: (v) => setState(() => _sportId = v),
+                      centerId: _centerId,
                     ),
                   ),
                   const SizedBox(width: 12),
