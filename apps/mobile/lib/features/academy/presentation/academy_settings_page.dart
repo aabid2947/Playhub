@@ -19,14 +19,12 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   final _address = TextEditingController();
   final _city = TextEditingController();
   final _website = TextEditingController();
-  final _newSport = TextEditingController();
   final _prefix = TextEditingController();
   bool _busy = false;
   String? _message;
   bool _isError = false;
   Academy? _loaded;
   String? _logo;
-  List<String> _sports = const [];
   TimeOfDay? _open;
   TimeOfDay? _close;
   List<DateTime> _holidays = const [];
@@ -39,7 +37,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _address.dispose();
     _city.dispose();
     _website.dispose();
-    _newSport.dispose();
     _prefix.dispose();
     super.dispose();
   }
@@ -54,7 +51,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     _city.text = a.city ?? '';
     _website.text = a.website ?? '';
     _logo = a.logo;
-    _sports = List.of(a.sportsOffered);
     _open = _parseTime(a.hoursOpen);
     _close = _parseTime(a.hoursClose);
     _holidays = List.of(a.holidays);
@@ -91,7 +87,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
         'city': _city.text.trim().isEmpty ? null : _city.text.trim(),
         'website': _website.text.trim().isEmpty ? null : _website.text.trim(),
         'logo': _logo,
-        'sports_offered': _sports,
         'hours_open': _open == null ? null : _fmtTime(_open!),
         'hours_close': _close == null ? null : _fmtTime(_close!),
         'holidays': _holidays.map(_fmtDate).toList(),
@@ -107,19 +102,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  void _addSport() {
-    final s = _newSport.text.trim();
-    if (s.isEmpty) return;
-    if (_sports.any((x) => x.toLowerCase() == s.toLowerCase())) {
-      _newSport.clear();
-      return;
-    }
-    setState(() {
-      _sports = [..._sports, s];
-      _newSport.clear();
-    });
   }
 
   Future<void> _pickTime({required bool open}) async {
@@ -213,41 +195,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                   controller: _website,
                   keyboardType: TextInputType.url,
                   decoration: const InputDecoration(labelText: 'Website'),
-                ),
-                const SizedBox(height: 24),
-                const _SectionLabel(label: 'Sports offered'),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    for (final s in _sports)
-                      Chip(
-                        label: Text(s),
-                        onDeleted: () => setState(() {
-                          _sports = _sports.where((x) => x != s).toList();
-                        }),
-                      ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _newSport,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => _addSport(),
-                        decoration: const InputDecoration(
-                          labelText: 'Add a sport',
-                          hintText: 'Cricket, Badminton, Swimming…',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.add_circle_outline),
-                      onPressed: _addSport,
-                    ),
-                  ],
                 ),
                 const SizedBox(height: 24),
                 const _SectionLabel(label: 'Operating hours'),

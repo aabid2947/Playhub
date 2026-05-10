@@ -10,7 +10,6 @@ class Academy {
     this.state,
     this.pincode,
     this.website,
-    this.sportsOffered = const [],
     this.hoursOpen,
     this.hoursClose,
     this.holidays = const [],
@@ -28,9 +27,6 @@ class Academy {
         state: m['state'] as String?,
         pincode: m['pincode'] as String?,
         website: m['website'] as String?,
-        sportsOffered: ((m['sports_offered'] as List?) ?? const [])
-            .map((e) => e.toString())
-            .toList(),
         hoursOpen: m['hours_open'] as String?,
         hoursClose: m['hours_close'] as String?,
         holidays: ((m['holidays'] as List?) ?? const [])
@@ -49,7 +45,6 @@ class Academy {
   final String? state;
   final String? pincode;
   final String? website;
-  final List<String> sportsOffered;
   final String? hoursOpen;  // 'HH:mm:ss' as Postgres returns
   final String? hoursClose;
   final List<DateTime> holidays;
