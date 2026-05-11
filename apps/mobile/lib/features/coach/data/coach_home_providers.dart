@@ -77,6 +77,65 @@ class CoachStats {
   final int todaysCount;
 }
 
+/// Attendance % per week (last 4 weeks) across the signed-in coach's
+/// batches. Used by the coach home tab's trend card.
+class CoachWeeklyAttendance {
+  const CoachWeeklyAttendance({
+    required this.weekStart,
+    required this.total,
+    required this.present,
+  });
+  final DateTime weekStart;
+  final int total;
+  final int present;
+  double get pct => total == 0 ? 0 : (present * 100.0 / total);
+}
+
+final coachAttendanceTrendProvider =
+    FutureProvider<List<CoachWeeklyAttendance>>((ref) async {
+  final batches = await ref.watch(myBatchesProvider.future);
+  if (batches.isEmpty) return const [];
+  final client = ref.watch(supabaseClientProvider);
+  final ids = batches.map((b) => b.id).toList();
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final mondayThisWeek =
+      today.subtract(Duration(days: today.weekday - 1));
+  final from = mondayThisWeek.subtract(const Duration(days: 21));
+  final fromIso = '${from.year}-${from.month.toString().padLeft(2, '0')}'
+      '-${from.day.toString().padLeft(2, '0')}';
+
+  final rows = await client
+      .from('attendance_records')
+      .select('date, status')
+      .inFilter('batch_id', ids)
+      .gte('date', fromIso);
+
+  final buckets = <DateTime, List<int>>{};
+  for (var i = 3; i >= 0; i--) {
+    buckets[mondayThisWeek.subtract(Duration(days: 7 * i))] = [0, 0];
+  }
+  for (final r in rows as List) {
+    final m = r as Map<String, dynamic>;
+    final d = DateTime.parse(m['date'] as String);
+    final monday =
+        DateTime(d.year, d.month, d.day).subtract(Duration(days: d.weekday - 1));
+    final b = buckets[monday];
+    if (b == null) continue;
+    b[0]++;
+    final s = m['status'] as String;
+    if (s == 'present' || s == 'late') b[1]++;
+  }
+  return buckets.entries
+      .map((e) => CoachWeeklyAttendance(
+            weekStart: e.key,
+            total: e.value[0],
+            present: e.value[1],
+          ))
+      .toList(growable: false);
+});
+
 final myCoachStatsProvider = FutureProvider<CoachStats>((ref) async {
   final batches = await ref.watch(myBatchesProvider.future);
   final todays = await ref.watch(myTodaysBatchesProvider.future);

@@ -1,8 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
@@ -30,6 +33,13 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () =>
@@ -64,8 +74,10 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 ..invalidate(myLinkedStudentIdsProvider)
                 ..invalidate(myLinkedStudentsProvider)
                 ..invalidate(studentAttendanceProvider(selected.id))
+                ..invalidate(studentAttendanceWeeklyProvider(selected.id))
                 ..invalidate(studentPerformanceProvider(selected.id))
                 ..invalidate(studentOutstandingDuesProvider(selected.id))
+                ..invalidate(studentUpcomingSessionsProvider(selected.id))
                 ..invalidate(myLinkedStudentBatchesProvider(selected.id));
             },
             child: ListView(
@@ -87,6 +99,8 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                     ),
                   ),
                 _StudentHeader(student: selected),
+                const SizedBox(height: 12),
+                _UpcomingSessionsCard(studentId: selected.id),
                 const SizedBox(height: 12),
                 _BatchesCard(studentId: selected.id),
                 const SizedBox(height: 12),
@@ -125,17 +139,18 @@ class _StudentHeader extends ConsumerWidget {
     final sportLabel = ref.watch(sportDisplayProvider((
       sportId: student.sportId,
     )));
+    final photoUrl = ref
+        .watch(storageServiceProvider)
+        .publicAvatarUrl(student.photo);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 28,
-              child: Text(
-                student.firstName.isEmpty ? '?' : student.firstName[0],
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+            _AvatarCircle(
+              size: 56,
+              url: photoUrl,
+              fallback: student.firstName.isEmpty ? '?' : student.firstName[0],
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -149,6 +164,104 @@ class _StudentHeader extends ConsumerWidget {
                         style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarCircle extends StatelessWidget {
+  const _AvatarCircle({
+    required this.size,
+    required this.url,
+    required this.fallback,
+  });
+  final double size;
+  final String? url;
+  final String fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null) {
+      return CircleAvatar(
+        radius: size / 2,
+        child: Text(
+          fallback,
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+      );
+    }
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: url!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => CircleAvatar(
+          radius: size / 2,
+          child: const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (_, __, ___) => CircleAvatar(
+          radius: size / 2,
+          child: Text(
+            fallback,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UpcomingSessionsCard extends ConsumerWidget {
+  const _UpcomingSessionsCard({required this.studentId});
+  final String studentId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(studentUpcomingSessionsProvider(studentId));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Upcoming sessions — next 7 days',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            async.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: LinearProgressIndicator(),
+              ),
+              error: (e, _) => Text('Error: $e'),
+              data: (sessions) {
+                if (sessions.isEmpty) {
+                  return const Text('No sessions scheduled this week');
+                }
+                return Column(
+                  children: [
+                    for (final s in sessions)
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.event_outlined),
+                        title: Text(s.batchName),
+                        subtitle: Text(
+                          s.coachDisplayName == null
+                              ? s.whenLabel
+                              : '${s.whenLabel}  •  Coach ${s.coachDisplayName}',
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -181,23 +294,12 @@ class _BatchesCard extends ConsumerWidget {
               error: (e, _) => Text('Error: $e'),
               data: (rows) {
                 if (rows.isEmpty) return const Text('No active batches');
-                return Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
+                return Column(
                   children: [
-                    for (final r in rows)
-                      Consumer(builder: (_, ref, __) {
-                        final label = ref.watch(sportDisplayProvider((
-                          sportId: r.sportId,
-                        )));
-                        return Chip(
-                          avatar: const Icon(Icons.schedule, size: 16),
-                          label: Text(
-                            r.batchName +
-                                (label != '—' ? ' • $label' : ''),
-                          ),
-                        );
-                      }),
+                    for (var i = 0; i < rows.length; i++) ...[
+                      if (i > 0) const Divider(height: 24),
+                      _BatchRow(row: rows[i]),
+                    ],
                   ],
                 );
               },
@@ -205,6 +307,67 @@ class _BatchesCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BatchRow extends ConsumerWidget {
+  const _BatchRow({required this.row});
+  final StudentBatchRow row;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sportLabel = ref.watch(sportDisplayProvider((sportId: row.sportId)));
+    final coachPhotoUrl = ref
+        .watch(storageServiceProvider)
+        .publicAvatarUrl(row.coachPhoto);
+    final coachName = row.coachDisplayName;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          row.batchName + (sportLabel != '—' ? '  •  $sportLabel' : ''),
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Icon(Icons.schedule, size: 16),
+            const SizedBox(width: 6),
+            Expanded(child: Text(row.scheduleSummary)),
+          ],
+        ),
+        if (coachName.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _AvatarCircle(
+                size: 36,
+                url: coachPhotoUrl,
+                fallback: coachName.isEmpty ? '?' : coachName[0],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Coach $coachName',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (row.coachQualifications.isNotEmpty)
+                      Text(
+                        row.coachQualifications.join(', '),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
@@ -271,6 +434,11 @@ class _AttendanceCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     Text('$present / $total present ($pct%)'),
+                    const SizedBox(height: 16),
+                    Text('Weekly % (last 4 weeks)',
+                        style: Theme.of(context).textTheme.bodySmall),
+                    const SizedBox(height: 8),
+                    _WeeklyAttendanceChart(studentId: studentId),
                   ],
                 );
               },
@@ -278,6 +446,115 @@ class _AttendanceCard extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WeeklyAttendanceChart extends ConsumerWidget {
+  const _WeeklyAttendanceChart({required this.studentId});
+  final String studentId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(studentAttendanceWeeklyProvider(studentId));
+    return async.when(
+      loading: () => const SizedBox(
+        height: 40,
+        child: LinearProgressIndicator(),
+      ),
+      error: (e, _) => Text('Error: $e'),
+      data: (weeks) {
+        if (weeks.every((w) => w.total == 0)) {
+          return const Text('Not enough data');
+        }
+        final primary = Theme.of(context).colorScheme.primary;
+        return SizedBox(
+          height: 120,
+          child: BarChart(
+            BarChartData(
+              maxY: 100,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              barGroups: [
+                for (var i = 0; i < weeks.length; i++)
+                  BarChartGroupData(
+                    x: i,
+                    barRods: [
+                      BarChartRodData(
+                        toY: weeks[i].pct,
+                        color: primary,
+                        width: 16,
+                        borderRadius:
+                            const BorderRadius.vertical(top: Radius.circular(4)),
+                      ),
+                    ],
+                  ),
+              ],
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: 25,
+                getDrawingHorizontalLine: (_) => FlLine(
+                  color: Theme.of(context).dividerColor,
+                  strokeWidth: 0.5,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 32,
+                    interval: 25,
+                    getTitlesWidget: (v, _) => Text(
+                      '${v.toInt()}%',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 18,
+                    getTitlesWidget: (v, _) {
+                      final i = v.toInt();
+                      if (i < 0 || i >= weeks.length) {
+                        return const SizedBox.shrink();
+                      }
+                      final ws = weeks[i].weekStart;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${ws.day}/${ws.month}',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipItem: (group, _, __, ___) {
+                    final w = weeks[group.x];
+                    return BarTooltipItem(
+                      'Week of ${w.weekStart.day}/${w.weekStart.month}\n'
+                      '${w.present}/${w.total}'
+                      ' (${w.pct.toStringAsFixed(0)}%)',
+                      const TextStyle(color: Colors.white),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -307,13 +584,74 @@ class _PerformanceCard extends ConsumerWidget {
                 if (pts.isEmpty) {
                   return const Text('No assessments yet');
                 }
+                final primary = Theme.of(context).colorScheme.primary;
                 return SizedBox(
-                  height: 80,
-                  child: CustomPaint(
-                    size: Size.infinite,
-                    painter: _SparkPainter(
-                      points: pts.map((p) => p.score).toList(),
-                      color: Theme.of(context).colorScheme.primary,
+                  height: 160,
+                  child: LineChart(
+                    LineChartData(
+                      minY: 0,
+                      maxY: 10,
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: [
+                            for (var i = 0; i < pts.length; i++)
+                              FlSpot(i.toDouble(), pts[i].score),
+                          ],
+                          isCurved: true,
+                          color: primary,
+                          barWidth: 3,
+                          dotData: const FlDotData(show: true),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: primary.withValues(alpha: 0.12),
+                          ),
+                        ),
+                      ],
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: 2.5,
+                        getDrawingHorizontalLine: (_) => FlLine(
+                          color: Theme.of(context).dividerColor,
+                          strokeWidth: 0.5,
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 28,
+                            interval: 2.5,
+                            getTitlesWidget: (v, _) => Text(
+                              v.toStringAsFixed(0),
+                              style:
+                                  Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ),
+                        ),
+                      ),
+                      lineTouchData: LineTouchData(
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipItems: (spots) => spots.map((s) {
+                            final p = pts[s.x.toInt()];
+                            final d = p.date;
+                            final dStr =
+                                '${d.year}-${d.month.toString().padLeft(2, '0')}'
+                                '-${d.day.toString().padLeft(2, '0')}';
+                            return LineTooltipItem(
+                              '$dStr\n${p.score.toStringAsFixed(1)}/10',
+                              const TextStyle(color: Colors.white),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -324,45 +662,6 @@ class _PerformanceCard extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _SparkPainter extends CustomPainter {
-  _SparkPainter({required this.points, required this.color});
-  final List<double> points;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.length < 2) {
-      final paint = Paint()
-        ..color = color
-        ..strokeWidth = 2;
-      canvas.drawCircle(
-          Offset(size.width / 2, size.height / 2), 3, paint);
-      return;
-    }
-    final maxY = 10.0; // overall_score is 0..10
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeJoin = StrokeJoin.round;
-    final path = Path();
-    for (var i = 0; i < points.length; i++) {
-      final x = size.width * (i / (points.length - 1));
-      final y = size.height - (points[i] / maxY) * size.height;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SparkPainter oldDelegate) =>
-      oldDelegate.points != points;
 }
 
 class _OutstandingCard extends ConsumerWidget {

@@ -10,6 +10,7 @@ class Profile {
     this.lastName,
     this.academyId,
     this.centerId,
+    this.profilePhoto,
     this.mustChangePassword = false,
   });
 
@@ -22,6 +23,7 @@ class Profile {
         lastName: m['last_name'] as String?,
         academyId: m['academy_id'] as String?,
         centerId: m['center_id'] as String?,
+        profilePhoto: m['profile_photo'] as String?,
         mustChangePassword: m['must_change_password'] as bool? ?? false,
       );
 
@@ -33,6 +35,7 @@ class Profile {
   final String? lastName;
   final String? academyId;
   final String? centerId;
+  final String? profilePhoto;
   final bool mustChangePassword;
 
   bool get needsAcademySetup =>

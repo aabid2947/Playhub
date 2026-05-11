@@ -1,3 +1,5 @@
+import 'package:playhub/features/chat/data/attachment.dart';
+
 enum ThreadKind {
   direct('direct'),
   batch('batch');
@@ -78,8 +80,8 @@ class Message {
         senderId: m['sender_id'] as String,
         content: m['content'] as String? ?? '',
         attachments: ((m['attachments'] as List?) ?? const [])
-            .map((e) => e.toString())
-            .toList(),
+            .map((e) => ChatAttachment.fromAny(e as Object))
+            .toList(growable: false),
         editedAt: _ts(m['edited_at']),
         deletedAt: _ts(m['deleted_at']),
         createdAt: _ts(m['created_at']) ?? DateTime.now(),
@@ -93,7 +95,7 @@ class Message {
   final String academyId;
   final String senderId;
   final String content;
-  final List<String> attachments;
+  final List<ChatAttachment> attachments;
   final DateTime? editedAt;
   final DateTime? deletedAt;
   final DateTime createdAt;

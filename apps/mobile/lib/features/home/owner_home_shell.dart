@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/batches/presentation/batches_tab.dart';
 import 'package:playhub/features/coaches/presentation/coaches_tab.dart';
 import 'package:playhub/features/home/home_tab.dart';
@@ -31,7 +32,18 @@ class _OwnerHomeShellState extends State<OwnerHomeShell> {
     final titles = ['PlayHub', 'Students', 'Coaches', 'Batches', 'Settings'];
 
     return Scaffold(
-      appBar: AppBar(title: Text(titles[_index])),
+      appBar: AppBar(
+        title: Text(titles[_index]),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           const VerificationBanner(),

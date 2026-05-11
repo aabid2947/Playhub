@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/chat/data/attachment.dart';
 import 'package:playhub/features/chat/data/chat.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -69,7 +70,7 @@ class ChatRepo {
   Future<void> send(
     String threadId,
     String content, {
-    List<String> attachments = const [],
+    List<ChatAttachment> attachments = const [],
   }) async {
     final me = _client.auth.currentUser?.id;
     if (me == null) throw StateError('not authenticated');
@@ -78,7 +79,7 @@ class ChatRepo {
       'academy_id': _academyId,
       'sender_id': me,
       'content': content,
-      'attachments': attachments,
+      'attachments': attachments.map((a) => a.toJson()).toList(),
     });
   }
 

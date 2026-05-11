@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -127,34 +128,96 @@ class _RevenueTrendCard extends ConsumerWidget {
                 .fold<double>(0, (a, b) => a > b ? a : b);
             final f = NumberFormat.compactCurrency(
                 locale: 'en_IN', symbol: '₹');
+            final primary = Theme.of(context).colorScheme.primary;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Revenue trend',
                     style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 SizedBox(
-                  height: 120,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      for (final r in rows) ...[
-                        Expanded(
-                          child: Tooltip(
-                            message:
-                                '${DateFormat.yMMM().format(r.monthStart)}: ${f.format(r.collected)}',
-                            child: Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 2),
-                              height: maxV == 0
-                                  ? 1
-                                  : (r.collected / maxV) * 100 + 2,
-                              color: Theme.of(context).colorScheme.primary,
+                  height: 180,
+                  child: BarChart(
+                    BarChartData(
+                      maxY: maxV == 0 ? 1 : maxV * 1.15,
+                      alignment: BarChartAlignment.spaceAround,
+                      barGroups: [
+                        for (var i = 0; i < rows.length; i++)
+                          BarChartGroupData(
+                            x: i,
+                            barRods: [
+                              BarChartRodData(
+                                toY: rows[i].collected,
+                                color: primary,
+                                width: 12,
+                                borderRadius:
+                                    const BorderRadius.vertical(
+                                  top: Radius.circular(4),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: maxV == 0 ? 1 : maxV / 4,
+                        getDrawingHorizontalLine: (_) => FlLine(
+                          color: Theme.of(context).dividerColor,
+                          strokeWidth: 0.5,
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 44,
+                            getTitlesWidget: (v, _) => Text(
+                              f.format(v),
+                              style:
+                                  Theme.of(context).textTheme.labelSmall,
                             ),
                           ),
                         ),
-                      ],
-                    ],
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 24,
+                            getTitlesWidget: (v, _) {
+                              final i = v.toInt();
+                              if (i < 0 || i >= rows.length) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  DateFormat.MMM().format(rows[i].monthStart),
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipItem: (group, _, __, ___) {
+                            final r = rows[group.x];
+                            return BarTooltipItem(
+                              '${DateFormat.yMMM().format(r.monthStart)}\n'
+                              '${f.format(r.collected)}',
+                              const TextStyle(color: Colors.white),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -184,26 +247,106 @@ class _EnrollmentTrendCard extends ConsumerWidget {
           loading: () => const LinearProgressIndicator(),
           error: (e, _) => Text('Error: $e'),
           data: (rows) {
+            final maxV = rows
+                .map((r) => r.count.toDouble())
+                .fold<double>(0, (a, b) => a > b ? a : b);
+            final primary = Theme.of(context).colorScheme.primary;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('New enrollments / month',
                     style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 if (rows.isEmpty)
                   const Text('No enrollments yet')
                 else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final r in rows)
-                        Chip(
-                          label: Text(
-                            '${DateFormat.MMM().format(r.monthStart)}: ${r.count}',
+                  SizedBox(
+                    height: 160,
+                    child: LineChart(
+                      LineChartData(
+                        minY: 0,
+                        maxY: maxV == 0 ? 1 : maxV * 1.2,
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: [
+                              for (var i = 0; i < rows.length; i++)
+                                FlSpot(i.toDouble(),
+                                    rows[i].count.toDouble()),
+                            ],
+                            isCurved: true,
+                            color: primary,
+                            barWidth: 3,
+                            dotData: const FlDotData(show: true),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: primary.withValues(alpha: 0.12),
+                            ),
+                          ),
+                        ],
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: maxV == 0 ? 1 : maxV / 4,
+                          getDrawingHorizontalLine: (_) => FlLine(
+                            color: Theme.of(context).dividerColor,
+                            strokeWidth: 0.5,
                           ),
                         ),
-                    ],
+                        borderData: FlBorderData(show: false),
+                        titlesData: FlTitlesData(
+                          topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 28,
+                              getTitlesWidget: (v, _) => Text(
+                                v.toInt().toString(),
+                                style:
+                                    Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 24,
+                              interval: 1,
+                              getTitlesWidget: (v, _) {
+                                final i = v.toInt();
+                                if (i < 0 || i >= rows.length) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    DateFormat.MMM()
+                                        .format(rows[i].monthStart),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        lineTouchData: LineTouchData(
+                          touchTooltipData: LineTouchTooltipData(
+                            getTooltipItems: (spots) => spots.map((s) {
+                              final r = rows[s.x.toInt()];
+                              return LineTooltipItem(
+                                '${DateFormat.yMMM().format(r.monthStart)}\n'
+                                '${r.count} new',
+                                const TextStyle(color: Colors.white),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             );

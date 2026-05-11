@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:playhub/features/chat/data/attachment.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -55,6 +56,44 @@ class StorageService {
         );
 
     return _client.storage.from(_avatarBucket).getPublicUrl(path);
+  }
+
+  /// Returns the public URL for a path inside the `avatars` bucket, or
+  /// null if [path] is null or empty. Accepts either a raw storage path
+  /// (preferred) or an already-formed public URL (passed through).
+  String? publicAvatarUrl(String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    return _client.storage.from(_avatarBucket).getPublicUrl(path);
+  }
+
+  /// Self-service avatar upload: any signed-in user can write to
+  /// <academyId>/users/<own user id>/<uuid>.<ext> under RLS policies added
+  /// in migration 20260511000100. Returns the stored path (NOT a URL) so
+  /// callers can persist it to `users.profile_photo`.
+  Future<String?> pickAndUploadOwnAvatar({
+    required String academyId,
+    required String userId,
+  }) async {
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 85,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/users/$userId/${const Uuid().v4()}$ext';
+    await _client.storage.from(_avatarBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
+        );
+    return path;
   }
 
   Future<void> deleteByPublicUrl(String publicUrl) async {
@@ -215,6 +254,109 @@ class StorageService {
       sizeBytes: bytes.length,
     );
   }
+
+  // ---------------- Chat attachments ----------------
+  // Layout: <academyId>/<threadId>/<uuid>.<ext>
+  // Bucket is private; reads via signed URL (10-min TTL by default).
+
+  static const _chatBucket = 'chat_attachments';
+
+  Future<ChatAttachment?> pickChatImage({
+    required String academyId,
+    required String threadId,
+  }) async {
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/$threadId/${const Uuid().v4()}$ext';
+    final mime = _contentTypeOf(ext);
+    await _client.storage.from(_chatBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return ChatAttachment(
+      path: path,
+      name: picked.name,
+      mime: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<ChatAttachment?> pickChatVideo({
+    required String academyId,
+    required String threadId,
+  }) async {
+    final picked = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 5),
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final name = picked.name;
+    final ext = _extensionOf(name);
+    final path = '$academyId/$threadId/${const Uuid().v4()}$ext';
+    final mime = _videoContentTypeOf(ext);
+    await _client.storage.from(_chatBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return ChatAttachment(
+      path: path,
+      name: name,
+      mime: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<ChatAttachment?> pickChatDocument({
+    required String academyId,
+    required String threadId,
+  }) async {
+    final result = await FilePicker.platform.pickFiles(
+      withData: true,
+      allowedExtensions: const [
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv',
+        'jpg', 'jpeg', 'png', 'webp', 'heic',
+      ],
+      type: FileType.custom,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final file = result.files.single;
+    final bytes = file.bytes;
+    if (bytes == null) {
+      throw StateError('Picked file had no bytes');
+    }
+    final ext = _extensionOf(file.name);
+    final path = '$academyId/$threadId/${const Uuid().v4()}$ext';
+    final mime = _contentTypeOf(ext);
+    await _client.storage.from(_chatBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return ChatAttachment(
+      path: path,
+      name: file.name,
+      mime: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<String> signedChatAttachmentUrl(String path,
+          {int expiresInSeconds = 540}) =>
+      _signedUrl(_chatBucket, path, expiresInSeconds: expiresInSeconds);
+
+  Future<void> deleteChatAttachment(String path) =>
+      _deleteFromBucket(_chatBucket, path);
 
   Future<String> signedPerformanceMediaUrl(String path,
           {int expiresInSeconds = 300}) =>

@@ -1,9 +1,11 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 
@@ -23,6 +25,13 @@ class CoachHomeTab extends ConsumerWidget {
         title: const Text('Home'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const ProfilePage()),
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () =>
                 ref.read(supabaseClientProvider).auth.signOut(),
@@ -35,7 +44,8 @@ class CoachHomeTab extends ConsumerWidget {
             ..invalidate(myCoachRecordProvider)
             ..invalidate(myBatchesProvider)
             ..invalidate(myTodaysBatchesProvider)
-            ..invalidate(myCoachStatsProvider);
+            ..invalidate(myCoachStatsProvider)
+            ..invalidate(coachAttendanceTrendProvider);
         },
         child: ListView(
           padding: const EdgeInsets.all(12),
@@ -102,6 +112,8 @@ class CoachHomeTab extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
+            const _AttendanceTrendCard(),
+            const SizedBox(height: 12),
             todays.when(
               loading: () => const SizedBox.shrink(),
               error: (_, __) => const SizedBox.shrink(),
@@ -121,6 +133,136 @@ class CoachHomeTab extends ConsumerWidget {
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceTrendCard extends ConsumerWidget {
+  const _AttendanceTrendCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(coachAttendanceTrendProvider);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: async.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          ),
+          error: (e, _) => Text('Error: $e'),
+          data: (weeks) {
+            if (weeks.isEmpty || weeks.every((w) => w.total == 0)) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Attendance trend',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  const Text('Not enough data yet'),
+                ],
+              );
+            }
+            final primary = Theme.of(context).colorScheme.primary;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Attendance % (last 4 weeks)',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 160,
+                  child: BarChart(
+                    BarChartData(
+                      maxY: 100,
+                      minY: 0,
+                      alignment: BarChartAlignment.spaceAround,
+                      barGroups: [
+                        for (var i = 0; i < weeks.length; i++)
+                          BarChartGroupData(
+                            x: i,
+                            barRods: [
+                              BarChartRodData(
+                                toY: weeks[i].pct,
+                                color: primary,
+                                width: 18,
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4)),
+                              ),
+                            ],
+                          ),
+                      ],
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: 25,
+                        getDrawingHorizontalLine: (_) => FlLine(
+                          color: Theme.of(context).dividerColor,
+                          strokeWidth: 0.5,
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 32,
+                            interval: 25,
+                            getTitlesWidget: (v, _) => Text(
+                              '${v.toInt()}%',
+                              style:
+                                  Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 18,
+                            getTitlesWidget: (v, _) {
+                              final i = v.toInt();
+                              if (i < 0 || i >= weeks.length) {
+                                return const SizedBox.shrink();
+                              }
+                              final ws = weeks[i].weekStart;
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '${ws.day}/${ws.month}',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipItem: (group, _, __, ___) {
+                            final w = weeks[group.x];
+                            return BarTooltipItem(
+                              'Week of ${w.weekStart.day}/${w.weekStart.month}\n'
+                              '${w.present}/${w.total}'
+                              ' (${w.pct.toStringAsFixed(0)}%)',
+                              const TextStyle(color: Colors.white),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
