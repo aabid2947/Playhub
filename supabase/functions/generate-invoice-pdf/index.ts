@@ -1,11 +1,21 @@
-// Admin-triggered: generates an invoice "receipt" CSV (true PDF via
-// pdf-lib lands in v1.x, matching the deferral pattern from
-// attendance-report-pdf). Returns a signed URL valid for 10 minutes.
+// Admin-triggered: renders an invoice as a real PDF via pdf-lib and uploads
+// it to the performance_media bucket. Returns a signed URL valid for 10
+// minutes.
 //
 // Body: { invoice_id }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
+import {
+  drawFooter,
+  drawHeader,
+  drawKv,
+  drawSectionTitle,
+  drawTable,
+  drawTotals,
+  finalizePdf,
+  startPdf,
+} from '../_shared/pdf.ts';
 
 interface Body { invoice_id: string }
 
@@ -27,7 +37,6 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null) as Body | null;
   if (!body?.invoice_id) return j({ error: 'invoice_id required' }, 400);
 
-  // Caller-scoped: RLS gates by academy.
   const caller = createClient(url, anonKey, {
     global: { headers: { authorization: auth } },
   });
@@ -56,45 +65,63 @@ Deno.serve(async (req) => {
     .eq('id', invoice.academy_id)
     .single();
 
-  const csv = [
-    `# ${academy?.name ?? ''}`,
-    `# ${[academy?.address, academy?.city, academy?.state].filter(Boolean).join(', ')}`,
-    `# ${academy?.email ?? ''}  ${academy?.phone ?? ''}`,
-    ``,
-    `Invoice,${invoice.invoice_number}`,
-    `Student,${student?.first_name ?? ''} ${student?.last_name ?? ''}`,
-    `Parent,${student?.parent_name ?? ''}`,
-    `Period,${invoice.period_start ?? ''} to ${invoice.period_end ?? ''}`,
-    `Due,${invoice.due_date}`,
-    `Status,${invoice.status}`,
-    ``,
-    `Kind,Description,Qty,Unit,Total`,
-    ...((lines ?? []).map((l) =>
-      [
-        l.kind,
-        esc(l.description),
-        l.quantity,
-        l.unit_amount,
-        l.total_amount,
-      ].join(','))),
-    ``,
-    `Subtotal,${invoice.base_amount}`,
-    `Tax,${invoice.tax_amount}`,
-    `Late fee,${invoice.late_fee_amount}`,
-    `Discount,-${invoice.discount_amount}`,
-    `Total,${invoice.amount}`,
-    `Paid,${invoice.amount_paid}`,
-    `Balance,${(Number(invoice.amount) - Number(invoice.amount_paid)).toFixed(2)}`,
-  ].join('\n');
+  const ctx = await startPdf();
+  drawHeader(ctx, {
+    title: academy?.name ?? 'Invoice',
+    subtitle: [academy?.address, academy?.city, academy?.state]
+      .filter(Boolean).join(', ') || undefined,
+    right: `INVOICE ${invoice.invoice_number}`,
+  });
+
+  drawSectionTitle(ctx, 'Bill to');
+  drawKv(ctx, [
+    ['Student', `${student?.first_name ?? ''} ${student?.last_name ?? ''}`.trim()],
+    ['Parent', student?.parent_name ?? '—'],
+    ['Period', invoice.period_start && invoice.period_end
+      ? `${invoice.period_start} → ${invoice.period_end}`
+      : '—'],
+    ['Due date', invoice.due_date ?? '—'],
+    ['Status', String(invoice.status ?? '').toUpperCase()],
+    ['Contact', [academy?.phone, academy?.email].filter(Boolean).join(' · ')],
+  ]);
+
+  drawSectionTitle(ctx, 'Line items');
+  drawTable(ctx, {
+    columns: [
+      { header: 'Kind', width: 0.18 },
+      { header: 'Description', width: 0.52 },
+      { header: 'Qty', width: 0.08, align: 'right' },
+      { header: 'Unit', width: 0.11, align: 'right' },
+      { header: 'Total', width: 0.11, align: 'right' },
+    ],
+    rows: (lines ?? []).map((l) => [
+      String(l.kind ?? ''),
+      String(l.description ?? ''),
+      String(l.quantity ?? ''),
+      money(l.unit_amount),
+      money(l.total_amount),
+    ]),
+  });
+
+  const balance = Number(invoice.amount) - Number(invoice.amount_paid);
+  drawTotals(ctx, [
+    { label: 'Subtotal', value: money(invoice.base_amount) },
+    { label: 'Tax', value: money(invoice.tax_amount) },
+    { label: 'Late fee', value: money(invoice.late_fee_amount) },
+    { label: 'Discount', value: `−${money(invoice.discount_amount)}` },
+    { label: 'Total', value: money(invoice.amount), bold: true },
+    { label: 'Paid', value: money(invoice.amount_paid) },
+    { label: 'Balance', value: money(balance), bold: true },
+  ]);
+
+  drawFooter(ctx, `Generated ${new Date().toISOString().substring(0, 10)} · PlayHub`);
+  const bytes = await finalizePdf(ctx);
 
   const admin = createClient(url, serviceKey);
-  const path = `${invoice.academy_id}/invoices/${invoice.invoice_number}-${Date.now()}.csv`;
+  const path = `${invoice.academy_id}/invoices/${invoice.invoice_number}-${Date.now()}.pdf`;
   const { error: uErr } = await admin.storage
     .from('performance_media')
-    .upload(path, new TextEncoder().encode(csv), {
-      contentType: 'text/csv',
-      upsert: false,
-    });
+    .upload(path, bytes, { contentType: 'application/pdf', upsert: false });
   if (uErr) return j({ error: uErr.message }, 500);
 
   const { data: signed, error: sErr } = await admin.storage
@@ -104,9 +131,10 @@ Deno.serve(async (req) => {
   return j({ ok: true, signed_url: signed?.signedUrl, expires_in: 600 });
 });
 
-function esc(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+function money(n: unknown): string {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return '0.00';
+  return v.toFixed(2);
 }
 
 function j(payload: unknown, status = 200) {

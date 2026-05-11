@@ -1,14 +1,20 @@
-// Caller-triggered: generates a "certificate" CSV for an event participant
-// (true PDF via pdf-lib lands in v1.x — same deferral pattern as
-// generate-invoice-pdf and attendance-report-pdf), uploads it into the
-// `certificates` bucket, stamps event_results.certificate_url + the
-// issued_at timestamp, and returns a signed URL valid for 10 minutes.
+// Caller-triggered: renders an event-participation certificate as a real
+// PDF via pdf-lib, uploads it into the `certificates` bucket, stamps
+// event_results.certificate_url + certificate_issued_at, and returns a
+// signed URL valid for 10 minutes.
 //
 // Body: { result_id }
 // Caller must be able to read the event_result row (RLS gates this).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
+import {
+  drawCenteredBlock,
+  drawFooter,
+  drawRule,
+  finalizePdf,
+  startPdf,
+} from '../_shared/pdf.ts';
 
 interface Body { result_id: string }
 
@@ -63,35 +69,68 @@ Deno.serve(async (req) => {
     ? ordinal(result.placement)
     : (result.score != null ? `Score: ${result.score}` : 'Participation');
 
-  const csv = [
-    `# CERTIFICATE`,
-    `# ${academy?.name ?? ''}`,
-    ``,
-    `Event,${esc(event?.title ?? '')}`,
-    `Kind,${event?.kind ?? ''}`,
-    `Sport,${event?.sport ?? ''}`,
-    `Date,${(event?.starts_at ?? '').substring(0, 10)}`,
-    `Location,${esc(event?.location ?? '')}`,
-    `Category,${esc(result.category ?? '')}`,
-    ``,
-    `Awarded to,${esc(`${student?.first_name ?? ''} ${student?.last_name ?? ''}`.trim())}`,
-    `Parent,${esc(student?.parent_name ?? '')}`,
-    `Achievement,${placementLabel}`,
-    `Remarks,${esc(result.remarks ?? '')}`,
-    ``,
-    `Issued by,${esc(academy?.name ?? '')}`,
-    `Issued on,${new Date().toISOString().substring(0, 10)}`,
-  ].join('\n');
+  const ctx = await startPdf();
+  // Push the headline down a third of the page for visual weight.
+  ctx.cursorY -= 60;
+  drawCenteredBlock(ctx, [
+    { text: 'CERTIFICATE OF ACHIEVEMENT', size: 22, bold: true, color: 'accent', gap: 36 },
+    { text: 'This is to certify that', size: 12, color: 'muted', gap: 22 },
+    {
+      text: `${student?.first_name ?? ''} ${student?.last_name ?? ''}`.trim() || '—',
+      size: 28,
+      bold: true,
+      gap: 32,
+    },
+    { text: 'has participated in', size: 12, color: 'muted', gap: 22 },
+    { text: event?.title ?? '—', size: 18, bold: true, gap: 14 },
+    {
+      text: [event?.kind, event?.sport].filter(Boolean).join(' · ') || '',
+      size: 11,
+      color: 'muted',
+      gap: 12,
+    },
+    {
+      text: [
+        (event?.starts_at ?? '').substring(0, 10),
+        event?.location,
+        result.category,
+      ].filter(Boolean).join(' · '),
+      size: 11,
+      color: 'muted',
+      gap: 32,
+    },
+    { text: 'Achievement', size: 10, color: 'muted', gap: 14 },
+    { text: placementLabel, size: 16, bold: true, color: 'accent', gap: 30 },
+  ]);
+
+  if (result.remarks) {
+    drawCenteredBlock(ctx, [
+      { text: result.remarks, size: 10, color: 'muted', gap: 24 },
+    ]);
+  }
+
+  ctx.cursorY -= 12;
+  drawRule(ctx);
+  drawCenteredBlock(ctx, [
+    { text: 'Issued by', size: 9, color: 'muted', gap: 14 },
+    { text: academy?.name ?? '', size: 12, bold: true, gap: 12 },
+    {
+      text: `Issued on ${new Date().toISOString().substring(0, 10)}`,
+      size: 9,
+      color: 'muted',
+      gap: 16,
+    },
+  ]);
+
+  drawFooter(ctx, 'PlayHub · digital certificate');
+  const bytes = await finalizePdf(ctx);
 
   const admin = createClient(url, serviceKey);
-  const path = `${result.academy_id}/${result.event_id}/${result.id}-${Date.now()}.csv`;
+  const path = `${result.academy_id}/${result.event_id}/${result.id}-${Date.now()}.pdf`;
 
   const { error: uErr } = await admin.storage
     .from('certificates')
-    .upload(path, new TextEncoder().encode(csv), {
-      contentType: 'text/csv',
-      upsert: true,
-    });
+    .upload(path, bytes, { contentType: 'application/pdf', upsert: true });
   if (uErr) return j({ error: uErr.message }, 500);
 
   const { data: signed, error: sErr } = await admin.storage
@@ -118,11 +157,6 @@ function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]) + ' Place';
-}
-
-function esc(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }
 
 function j(payload: unknown, status = 200) {

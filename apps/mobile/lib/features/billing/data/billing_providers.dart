@@ -456,7 +456,7 @@ Future<Map<String, dynamic>> createRazorpayOrder(
   return Map<String, dynamic>.from(res.data as Map);
 }
 
-/// Wraps `generate-invoice-pdf` — returns a signed CSV URL.
+/// Wraps `generate-invoice-pdf` — returns a signed PDF URL (10-min TTL).
 Future<String> generateInvoiceReceipt(
   WidgetRef ref,
   String invoiceId,

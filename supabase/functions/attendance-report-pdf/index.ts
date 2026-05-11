@@ -1,14 +1,19 @@
-// On-demand: generate an attendance report (CSV in v0.5; pdf-lib
-// integration lands in v1.x once we ship a real PDF template). Caller
-// supplies academy_id, optional batch_id, and a date range. The result is
-// uploaded to a private `reports/` folder and returned as a signed URL.
-//
-// Auth: requires a valid Supabase Auth JWT; the user must be admin in the
-// requested academy. RLS isn't enough here — we run as service role so
-// the date join can pull names — so we re-validate the caller's role.
+// On-demand: generate an attendance report as a real PDF via pdf-lib.
+// Caller supplies academy_id, optional batch_id, and a date range. The
+// result is uploaded to a private `reports/` folder in performance_media
+// and returned as a signed URL valid for 10 minutes.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
+import {
+  drawFooter,
+  drawHeader,
+  drawKv,
+  drawSectionTitle,
+  drawTable,
+  finalizePdf,
+  startPdf,
+} from '../_shared/pdf.ts';
 
 interface Body {
   academy_id?: string;
@@ -20,23 +25,18 @@ interface Body {
 Deno.serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
-  if (req.method !== 'POST') {
-    return json({ error: 'method not allowed' }, 405);
-  }
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
   const url = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !anonKey || !serviceKey) {
-    return json({ error: 'missing env' }, 500);
-  }
+  if (!url || !anonKey || !serviceKey) return json({ error: 'missing env' }, 500);
 
   const auth = req.headers.get('authorization') ?? '';
   if (!auth.toLowerCase().startsWith('bearer ')) {
     return json({ error: 'unauthorised' }, 401);
   }
 
-  // Caller-scoped client (RLS-enforced) for the role check.
   const callerClient = createClient(url, anonKey, {
     global: { headers: { authorization: auth } },
   });
@@ -48,9 +48,7 @@ Deno.serve(async (req) => {
 
   const allowedRoles = new Set(
     ['super_admin', 'academy_owner', 'academy_admin', 'center_admin', 'head_coach']);
-  if (!allowedRoles.has(me.role)) {
-    return json({ error: 'forbidden' }, 403);
-  }
+  if (!allowedRoles.has(me.role)) return json({ error: 'forbidden' }, 403);
 
   const body = await req.json().catch(() => null) as Body | null;
   if (!body?.start_date || !body?.end_date) {
@@ -61,7 +59,6 @@ Deno.serve(async (req) => {
     return json({ error: 'cross-academy not allowed' }, 403);
   }
 
-  // Service-role client for the data pull + storage write.
   const adminClient = createClient(url, serviceKey);
 
   let q = adminClient
@@ -80,24 +77,63 @@ Deno.serve(async (req) => {
   const { data, error } = await q;
   if (error) return json({ error: error.message }, 500);
 
-  const rows = data ?? [];
-  const csv = ['date,batch,student,status'];
-  for (const r of rows) {
-    const sName = r.students
-      ? `${r.students.first_name} ${r.students.last_name}`
-      : '';
-    const bName = r.batches?.name ?? '';
-    csv.push([r.date, escape(bName), escape(sName), r.status].join(','));
-  }
-  const blob = new TextEncoder().encode(csv.join('\n'));
-  const path = `${academyId}/reports/attendance-${body.start_date}_${body.end_date}-${Date.now()}.csv`;
+  const { data: academy } = await adminClient
+    .from('academies')
+    .select('name')
+    .eq('id', academyId)
+    .single();
 
-  // We park reports in performance_media for now (private bucket, same
-  // path-prefix gate). A dedicated `reports` bucket lands when v1.1 adds
-  // pdf-lib rendering for true PDFs.
+  const rows = data ?? [];
+  const counts = { present: 0, absent: 0, late: 0, excused: 0 };
+  for (const r of rows) {
+    const k = (r.status ?? '').toLowerCase();
+    if (k in counts) counts[k as keyof typeof counts]++;
+  }
+
+  const ctx = await startPdf();
+  drawHeader(ctx, {
+    title: academy?.name ?? 'Attendance report',
+    subtitle: `${body.start_date} → ${body.end_date}`,
+    right: 'ATTENDANCE',
+  });
+
+  drawSectionTitle(ctx, 'Summary');
+  drawKv(ctx, [
+    ['Records', String(rows.length)],
+    ['Present', String(counts.present)],
+    ['Late', String(counts.late)],
+    ['Absent', String(counts.absent)],
+    ['Excused', String(counts.excused)],
+    ['Batch filter', body.batch_id ? 'Single batch' : 'All batches'],
+  ]);
+
+  drawSectionTitle(ctx, 'Records');
+  drawTable(ctx, {
+    columns: [
+      { header: 'Date', width: 0.18 },
+      { header: 'Batch', width: 0.32 },
+      { header: 'Student', width: 0.34 },
+      { header: 'Status', width: 0.16 },
+    ],
+    rows: rows.map((r) => {
+      const s = r.students as { first_name: string; last_name: string } | null;
+      const b = r.batches as { name: string } | null;
+      return [
+        String(r.date ?? ''),
+        b?.name ?? '',
+        s ? `${s.first_name} ${s.last_name}` : '',
+        String(r.status ?? '').toUpperCase(),
+      ];
+    }),
+  });
+
+  drawFooter(ctx, `Generated ${new Date().toISOString().substring(0, 10)} · PlayHub`);
+  const bytes = await finalizePdf(ctx);
+
+  const path = `${academyId}/reports/attendance-${body.start_date}_${body.end_date}-${Date.now()}.pdf`;
   const { error: uploadErr } = await adminClient.storage
     .from('performance_media')
-    .upload(path, blob, { contentType: 'text/csv', upsert: false });
+    .upload(path, bytes, { contentType: 'application/pdf', upsert: false });
   if (uploadErr) return json({ error: uploadErr.message }, 500);
 
   const { data: signed, error: sErr } = await adminClient.storage
@@ -118,9 +154,4 @@ function json(payload: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'content-type': 'application/json' },
   });
-}
-
-function escape(s: string) {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }
