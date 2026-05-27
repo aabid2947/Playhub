@@ -26,3 +26,5 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      # Integration harness + app-boot smoke, headless on flutter-tester.
+      - run: flutter test integration_test/app_boot_test.dart -d flutter-tester
