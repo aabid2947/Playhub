@@ -35,11 +35,60 @@ export type SeededAcademy = {
   email: string;
 };
 
+export type Role =
+  | "super_admin"
+  | "academy_owner"
+  | "academy_admin"
+  | "center_admin"
+  | "head_coach"
+  | "coach"
+  | "trainer"
+  | "parent"
+  | "student";
+
+/**
+ * A complete single-tenant fixture for the capability-matrix tests: one academy,
+ * two centers, coaches/students/batches, and one signed-in-able login per role,
+ * linked exactly as production does (the handle_new_auth_user trigger reads the
+ * user_metadata we pass to createUser).
+ *
+ *   centerA: coachA → batchA, studentA1 (also the `student`/`parent` target)
+ *   centerB: coachB → batchB, studentB1
+ *   `coach` login owns batchA; `trainer` login owns batchB; `head_coach` is in centerA.
+ */
+export type FullAcademy = {
+  academyId: string;
+  centerA: string;
+  centerB: string;
+  coachAId: string;
+  coachBId: string;
+  batchA: string;
+  batchB: string;
+  studentA1: string;
+  studentB1: string;
+  emails: Record<Role, string>;
+};
+
 /** Tracks everything created so afterAll can tear it down cleanly. */
 export class Fixture {
   userIds: string[] = [];
   academyIds: string[] = [];
   ticketIds: string[] = [];
+
+  /** A bare auth user (optionally with role/link metadata), tracked for teardown. */
+  async createPlainUser(meta: Record<string, string> = {}): Promise<SeededUser> {
+    const admin = adminClient();
+    const email = uniq("plain");
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password: PASSWORD,
+      email_confirm: true,
+      user_metadata: meta,
+    });
+    if (error || !data.user) throw error ?? new Error("createUser failed");
+    this.userIds.push(data.user.id);
+    return { id: data.user.id, email };
+  }
 
   async createSuperAdmin(): Promise<SeededUser> {
     const admin = adminClient();
@@ -80,6 +129,86 @@ export class Fixture {
     await admin.from("academies").update({ owner_id: u.user.id }).eq("id", acad.id);
 
     return { academyId: acad.id, ownerId: u.user.id, email };
+  }
+
+  /**
+   * Builds the full single-tenant fixture used by the capability matrix.
+   * Entities are inserted with the service role; the 9 role logins are created
+   * with metadata so the auth trigger does the coach/student/parent linking,
+   * exactly like the real invite/seed path.
+   */
+  async createFullAcademy(tag: string): Promise<FullAcademy> {
+    const admin = adminClient();
+
+    const acad = await this.#insert("academies", { name: `INT-FULL ${tag} ${Date.now()}` });
+    this.academyIds.push(acad.id);
+
+    const cA = await this.#insert("centers", { academy_id: acad.id, name: "Center A" });
+    const cB = await this.#insert("centers", { academy_id: acad.id, name: "Center B" });
+
+    const coachA = await this.#insert("coaches", { academy_id: acad.id, center_id: cA.id, first_name: "CoachA", last_name: "X" });
+    const coachB = await this.#insert("coaches", { academy_id: acad.id, center_id: cB.id, first_name: "CoachB", last_name: "Y" });
+    const coachHead = await this.#insert("coaches", { academy_id: acad.id, center_id: cA.id, first_name: "Head", last_name: "Z" });
+
+    const batchA = await this.#insert("batches", { academy_id: acad.id, center_id: cA.id, coach_id: coachA.id, name: "Batch A" });
+    const batchB = await this.#insert("batches", { academy_id: acad.id, center_id: cB.id, coach_id: coachB.id, name: "Batch B" });
+
+    const sA1 = await this.#insert("students", { academy_id: acad.id, center_id: cA.id, first_name: "StuA1", last_name: "S", parent_name: "P" });
+    const sB1 = await this.#insert("students", { academy_id: acad.id, center_id: cB.id, first_name: "StuB1", last_name: "S", parent_name: "P" });
+
+    const mk = async (role: Role, meta: Record<string, string>): Promise<string> => {
+      const email = uniq(`${tag}-${role}`);
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        password: PASSWORD,
+        email_confirm: true,
+        user_metadata: { role, ...meta },
+      });
+      if (error || !data.user) throw error ?? new Error(`${role} createUser failed`);
+      this.userIds.push(data.user.id);
+      return email;
+    };
+
+    const emails: Record<Role, string> = {
+      super_admin: await mk("super_admin", {}),
+      academy_owner: await mk("academy_owner", { academy_id: acad.id }),
+      academy_admin: await mk("academy_admin", { academy_id: acad.id }),
+      center_admin: await mk("center_admin", { academy_id: acad.id, center_id: cA.id }),
+      head_coach: await mk("head_coach", { academy_id: acad.id, center_id: cA.id, link_coach_id: coachHead.id }),
+      coach: await mk("coach", { academy_id: acad.id, center_id: cA.id, link_coach_id: coachA.id }),
+      trainer: await mk("trainer", { academy_id: acad.id, center_id: cB.id, link_coach_id: coachB.id }),
+      parent: await mk("parent", { academy_id: acad.id, link_to_student_id: sA1.id }),
+      student: await mk("student", { academy_id: acad.id, center_id: cA.id, link_student_login_id: sA1.id }),
+    };
+
+    // owner_id can only be set after the owner login exists.
+    const ownerId = (await adminClient().from("users").select("id").eq("email", emails.academy_owner).single()).data?.id;
+    if (ownerId) await admin.from("academies").update({ owner_id: ownerId }).eq("id", acad.id);
+
+    return {
+      academyId: acad.id,
+      centerA: cA.id,
+      centerB: cB.id,
+      coachAId: coachA.id,
+      coachBId: coachB.id,
+      batchA: batchA.id,
+      batchB: batchB.id,
+      studentA1: sA1.id,
+      studentB1: sB1.id,
+      emails,
+    };
+  }
+
+  /** Service-role insert returning the new row's id; throws on error. */
+  async #insert(table: string, row: Record<string, unknown>): Promise<{ id: string }> {
+    const admin = adminClient();
+    // Cast: this is a generic test helper across many tables.
+    const { data, error } = await (admin.from(table as never) as any)
+      .insert(row)
+      .select("id")
+      .single();
+    if (error || !data) throw error ?? new Error(`${table} insert failed`);
+    return data as { id: string };
   }
 
   async createTicket(

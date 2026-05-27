@@ -13,8 +13,8 @@
     "gen:types": "supabase gen types typescript --local --schema public > src/lib/database.types.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:unit": "vitest run --dir tests/unit",
-    "test:int": "vitest run --dir tests/integration",
+    "test:unit": "vitest run tests/unit",
+    "test:int": "vitest run tests/integration",
     "test:e2e": "playwright test"
   },
   "dependencies": {
