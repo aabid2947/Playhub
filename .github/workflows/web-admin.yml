@@ -1,0 +1,70 @@
+name: web-admin
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web-admin/**'
+      - '.github/workflows/web-admin.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web-admin/**'
+
+defaults:
+  run:
+    working-directory: apps/web-admin
+
+jobs:
+  # Fast, infra-free gate: types, lint, build, unit tests.
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # Build/typecheck never call Supabase; dummy values keep next build happy.
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web-admin/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:unit
+
+  # Integration gate: real RLS behaviour against a throwaway local Supabase.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web-admin/package-lock.json
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase + apply migrations
+        working-directory: .
+        run: |
+          supabase start
+          supabase db reset --no-seed
+      - name: Export Supabase env
+        working-directory: .
+        run: |
+          supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' > /tmp/sb.env
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$(grep '^API_URL=' /tmp/sb.env | cut -d= -f2- | tr -d '\"')"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep '^ANON_KEY=' /tmp/sb.env | cut -d= -f2- | tr -d '\"')"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' /tmp/sb.env | cut -d= -f2- | tr -d '\"')"
+          } >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run test:int
+      - name: Stop Supabase
+        if: always()
+        working-directory: .
+        run: supabase stop
