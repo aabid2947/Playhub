@@ -7,6 +7,7 @@ class Student {
     required this.parentName,
     required this.status,
     required this.enrollmentDate,
+    this.userId,
     this.centerId,
     this.dateOfBirth,
     this.gender,
@@ -31,6 +32,7 @@ class Student {
   factory Student.fromMap(Map<String, dynamic> m) => Student(
         id: m['id'] as String,
         academyId: m['academy_id'] as String,
+        userId: m['user_id'] as String?,
         centerId: m['center_id'] as String?,
         firstName: m['first_name'] as String,
         lastName: m['last_name'] as String,
@@ -61,6 +63,8 @@ class Student {
 
   final String id;
   final String academyId;
+  /// Set when an older student has been invited to their own login.
+  final String? userId;
   final String? centerId;
   final String firstName;
   final String lastName;

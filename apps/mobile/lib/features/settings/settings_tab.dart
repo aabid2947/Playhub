@@ -60,17 +60,17 @@ class SettingsTab extends ConsumerWidget {
             MaterialPageRoute(builder: (_) => const AuditLogPage()),
           ),
         ),
-        const Divider(height: 1),
-        ListTile(
-          leading: const Icon(Icons.group_outlined),
-          title: const Text('Team'),
-          subtitle: const Text('Invite admins, coaches, and trainers'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(builder: (_) => const TeamPage()),
-          ),
-        ),
         if (isOwnerOrAdmin) ...[
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.group_outlined),
+            title: const Text('Team'),
+            subtitle: const Text('Invite admins, coaches, and trainers'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const TeamPage()),
+            ),
+          ),
           const Divider(height: 1),
           ListTile(
             leading: const Icon(Icons.workspace_premium_outlined),

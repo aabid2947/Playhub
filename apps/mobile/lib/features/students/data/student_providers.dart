@@ -28,6 +28,29 @@ class StudentsFilter {
 final studentsFilterProvider =
     StateProvider<StudentsFilter>((_) => const StudentsFilter());
 
+/// A parent already linked to a student — used to show "parent linked" state
+/// instead of re-offering the invite. Readable by admin-or-higher via the
+/// parent_links_read policy.
+typedef LinkedParent = ({String name, String relationship});
+
+final studentParentLinksProvider =
+    FutureProvider.family<List<LinkedParent>, String>((ref, studentId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('parent_links')
+      .select('relationship, users(first_name, last_name, email)')
+      .eq('student_id', studentId);
+  return (rows as List).map((r) {
+    final m = r as Map<String, dynamic>;
+    final u = (m['users'] as Map<String, dynamic>?) ?? const {};
+    final name = '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+    return (
+      name: name.isEmpty ? (u['email'] as String? ?? 'Parent') : name,
+      relationship: (m['relationship'] as String?) ?? 'parent',
+    );
+  }).toList(growable: false);
+});
+
 final studentsProvider = FutureProvider<List<Student>>((ref) async {
   final profile = await ref.watch(currentProfileProvider.future);
   final academyId = profile?.academyId;

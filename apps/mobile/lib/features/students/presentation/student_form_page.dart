@@ -435,7 +435,7 @@ class _PerformanceShortcut extends StatelessWidget {
   }
 }
 
-class _InviteAccessRow extends StatelessWidget {
+class _InviteAccessRow extends ConsumerWidget {
   const _InviteAccessRow({required this.student});
   final Student student;
 
@@ -448,46 +448,79 @@ class _InviteAccessRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final linksAsync = ref.watch(studentParentLinksProvider(student.id));
     return Card(
       child: Column(
         children: [
-          ListTile(
-            leading: const Icon(Icons.family_restroom_outlined),
-            title: const Text('Invite parent'),
-            subtitle: const Text(
-                'Send a magic-link email; they get the parent dashboard '
-                'and only see this student.'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _open(
-              context,
-              InvitePreset(
-                role: 'parent',
-                title: 'Invite parent of ${student.firstName}',
-                linkToStudentId: student.id,
-                linkRelationship: 'parent',
-              ),
+          // Parent — reflects existing links instead of always re-inviting.
+          linksAsync.when(
+            loading: () => const ListTile(
+              leading: Icon(Icons.family_restroom_outlined),
+              title: Text('Invite parent'),
+              subtitle: LinearProgressIndicator(),
             ),
+            error: (_, __) => _inviteParentTile(context),
+            data: (links) => links.isEmpty
+                ? _inviteParentTile(context)
+                : ListTile(
+                    leading: const Icon(Icons.verified_user_outlined),
+                    title: const Text('Parent linked'),
+                    subtitle: Text(links
+                        .map((l) => '${l.name} (${l.relationship})')
+                        .join(', ')),
+                  ),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.school_outlined),
-            title: const Text('Invite student to log in'),
-            subtitle: const Text(
-                'For older students who manage their own attendance + '
-                'performance view.'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _open(
-              context,
-              InvitePreset(
-                role: 'student',
-                title: 'Invite ${student.firstName} to log in',
-                linkStudentLoginId: student.id,
+          // Student login — gated on whether the record already has a login.
+          if (student.userId != null)
+            const ListTile(
+              leading: Icon(Icons.verified_user_outlined),
+              title: Text('Student can log in'),
+              subtitle: Text('They already have their own login.'),
+            )
+          else
+            ListTile(
+              leading: const Icon(Icons.school_outlined),
+              title: const Text('Invite student to log in'),
+              subtitle: const Text(
+                  'For older students who manage their own attendance + '
+                  'performance view.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _open(
+                context,
+                InvitePreset(
+                  role: 'student',
+                  title: 'Invite ${student.firstName} to log in',
+                  email: student.email,
+                  firstName: student.firstName,
+                  lastName: student.lastName,
+                  linkStudentLoginId: student.id,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
+
+  Widget _inviteParentTile(BuildContext context) => ListTile(
+        leading: const Icon(Icons.family_restroom_outlined),
+        title: const Text('Invite parent'),
+        subtitle: const Text(
+            'Send a magic-link email; they get the parent dashboard '
+            'and only see this student.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _open(
+          context,
+          InvitePreset(
+            role: 'parent',
+            title: 'Invite parent of ${student.firstName}',
+            email: student.parentEmail,
+            firstName: student.parentName,
+            linkToStudentId: student.id,
+            linkRelationship: 'parent',
+          ),
+        ),
+      );
 }

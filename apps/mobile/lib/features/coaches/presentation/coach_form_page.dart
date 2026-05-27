@@ -345,6 +345,9 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                                   role: 'coach',
                                   title:
                                       'Invite ${widget.existing!.firstName} to log in',
+                                  email: widget.existing!.email,
+                                  firstName: widget.existing!.firstName,
+                                  lastName: widget.existing!.lastName,
                                   linkCoachId: widget.existing!.id,
                                 ),
                               ),

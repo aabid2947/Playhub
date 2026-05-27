@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 
 /// Bottom-sheet form to invite a team member by email.
@@ -25,6 +26,9 @@ class InvitePreset {
   const InvitePreset({
     required this.role,
     required this.title,
+    this.email,
+    this.firstName,
+    this.lastName,
     this.linkToStudentId,
     this.linkRelationship,
     this.linkCoachId,
@@ -33,6 +37,11 @@ class InvitePreset {
 
   final String role;
   final String title;
+  // Pre-fill values pulled from the source record (coach/student/parent),
+  // so the admin doesn't re-type details the app already holds.
+  final String? email;
+  final String? firstName;
+  final String? lastName;
   final String? linkToStudentId;
   final String? linkRelationship;
   final String? linkCoachId;
@@ -60,7 +69,13 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   @override
   void initState() {
     super.initState();
-    if (widget.preset != null) _role = widget.preset!.role;
+    final p = widget.preset;
+    if (p != null) {
+      _role = p.role;
+      if (p.email != null) _email.text = p.email!;
+      if (p.firstName != null) _first.text = p.firstName!;
+      if (p.lastName != null) _last.text = p.lastName!;
+    }
   }
 
   @override
@@ -73,6 +88,12 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+    if (widget.preset == null &&
+        _role == 'center_admin' &&
+        _centerId == null) {
+      setState(() => _error = 'Pick a center for the center admin.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -164,13 +185,49 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                   for (final r in _normalRoles)
                     DropdownMenuItem(value: r.$1, child: Text(r.$2)),
                 ],
-                onChanged: (v) => setState(() => _role = v ?? _role),
+                onChanged: (v) => setState(() {
+                  _role = v ?? _role;
+                  if (_role != 'center_admin') _centerId = null;
+                }),
               )
             else
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Chip(label: Text('Role: ${_roleLabel(_role)}')),
               ),
+            // A center admin must be scoped to a center — otherwise the
+            // center-narrowed RLS leaves them seeing nothing. Required.
+            if (preset == null && _role == 'center_admin') ...[
+              const SizedBox(height: 12),
+              ref.watch(centersProvider).when(
+                    loading: () =>
+                        const LinearProgressIndicator(minHeight: 2),
+                    error: (e, _) => Text('Centres error: $e'),
+                    data: (centres) {
+                      final active =
+                          centres.where((c) => c.isActive).toList();
+                      if (active.isEmpty) {
+                        return Text(
+                          'Create a center first — a center admin must be '
+                          'assigned to one.',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error),
+                        );
+                      }
+                      return DropdownButtonFormField<String>(
+                        initialValue: _centerId,
+                        decoration:
+                            const InputDecoration(labelText: 'Center *'),
+                        items: [
+                          for (final c in active)
+                            DropdownMenuItem(
+                                value: c.id, child: Text(c.name)),
+                        ],
+                        onChanged: (v) => setState(() => _centerId = v),
+                      );
+                    },
+                  ),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!,
