@@ -14,6 +14,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
+import { computeLateFee, daysLateSinceGrace } from '../_shared/billing.ts';
 
 interface InvoiceWithFee {
   id: string;
@@ -86,16 +87,15 @@ Deno.serve(async (req) => {
     }
 
     // Compute fee owed up to today. flat takes precedence; else pct of base.
-    const daysLate = Math.max(
-      1,
-      Math.floor((today.getTime() - graceUntil.getTime()) / 86400_000) + 1,
-    );
-    const periods = fs.late_fee_policy === 'daily' ? daysLate : 1;
-    const perPeriod = fs.late_fee_flat ?? (fs.late_fee_pct
-      ? round2(Number(inv.base_amount) * fs.late_fee_pct / 100)
-      : 0);
-    const targetFee = round2(perPeriod * periods);
-    const delta = round2(targetFee - Number(inv.late_fee_amount));
+    const daysLate = daysLateSinceGrace(graceUntil, today);
+    const { perPeriod, periods, targetFee, delta } = computeLateFee({
+      policy: fs.late_fee_policy,
+      baseAmount: Number(inv.base_amount),
+      lateFeePct: fs.late_fee_pct,
+      lateFeeFlat: fs.late_fee_flat,
+      daysLate,
+      alreadyCharged: Number(inv.late_fee_amount),
+    });
 
     if (delta > 0) {
       await admin.from('invoices').update({
@@ -123,10 +123,6 @@ Deno.serve(async (req) => {
 
   return j({ ok: true, scanned: (invoices ?? []).length, updated, fee_rows: feeRows });
 });
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 function j(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {

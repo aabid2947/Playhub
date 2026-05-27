@@ -8,6 +8,13 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
+import {
+  anchorPeriodStart,
+  computeDiscounts,
+  isoDate,
+  nextPeriodStart,
+  round2,
+} from '../_shared/billing.ts';
 
 interface Assignment {
   academy_id: string;
@@ -217,25 +224,7 @@ async function applyDiscounts(
   if (applied.length === 0) return;
 
   // Compute each discount's amount, clamping the running total at base+tax.
-  const cap = round2(args.baseAmount + args.taxAmount);
-  let used = 0;
-  const lines: Array<{ description: string; amount: number }> = [];
-  for (const a of applied) {
-    const nominal = a.discount.type === 'percentage'
-      ? round2(args.baseAmount * Number(a.discount.value) / 100)
-      : Number(a.discount.value);
-    const remaining = round2(cap - used);
-    const applyAmt = Math.min(nominal, Math.max(remaining, 0));
-    if (applyAmt <= 0) continue;
-    used = round2(used + applyAmt);
-    const valueLabel = a.discount.type === 'percentage'
-      ? `${a.discount.value}%`
-      : `₹${a.discount.value}`;
-    lines.push({
-      description: `Discount: ${a.discount.name} (${valueLabel}, ${a.source})`,
-      amount: applyAmt,
-    });
-  }
+  const { used, lines } = computeDiscounts(applied, args.baseAmount, args.taxAmount);
 
   if (used > 0) {
     await admin.from('invoices').update({ discount_amount: used })
@@ -307,39 +296,6 @@ async function collectBatchLevel(
     }
   }
   return out;
-}
-
-function anchorPeriodStart(
-  today: Date,
-  type: 'monthly' | 'quarterly' | 'annual' | 'one_time',
-  billingDay: number,
-): Date {
-  const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), billingDay));
-  if (type === 'monthly') return d;
-  if (type === 'quarterly') {
-    const q = Math.floor(today.getUTCMonth() / 3) * 3;
-    return new Date(Date.UTC(today.getUTCFullYear(), q, billingDay));
-  }
-  return new Date(Date.UTC(today.getUTCFullYear(), 0, billingDay));
-}
-
-function nextPeriodStart(
-  start: Date,
-  type: 'monthly' | 'quarterly' | 'annual' | 'one_time',
-): Date {
-  const d = new Date(start);
-  if (type === 'monthly') d.setUTCMonth(d.getUTCMonth() + 1);
-  else if (type === 'quarterly') d.setUTCMonth(d.getUTCMonth() + 3);
-  else d.setUTCFullYear(d.getUTCFullYear() + 1);
-  return d;
-}
-
-function isoDate(d: Date): string {
-  return d.toISOString().substring(0, 10);
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 function j(payload: unknown, status = 200) {

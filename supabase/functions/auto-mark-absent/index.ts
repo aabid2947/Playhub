@@ -7,8 +7,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
-
-const DOW_CODES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+import { dowCode, isSessionOver, toIst } from '../_shared/schedule.ts';
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -28,10 +27,10 @@ Deno.serve(async (req) => {
 
   const now = new Date();
   // Convert to Asia/Kolkata local time for India-first market.
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  const ist = toIst(now);
   const ymd = ist.toISOString().substring(0, 10);
   const hhmm = ist.toISOString().substring(11, 16);
-  const dow = DOW_CODES[(ist.getUTCDay() + 6) % 7];
+  const dow = dowCode(ist);
 
   // Pull all active batches scheduled today.
   const { data: batches, error: bErr } = await supabase
@@ -44,12 +43,7 @@ Deno.serve(async (req) => {
   }
 
   let inserted = 0;
-  const eligible = (batches ?? []).filter((b) => {
-    const days = (b.schedule?.days ?? []) as string[];
-    if (!days.map((d: string) => d.toLowerCase()).includes(dow)) return false;
-    const end = (b.schedule?.end_time ?? '23:59') as string;
-    return hhmm >= end;
-  });
+  const eligible = (batches ?? []).filter((b) => isSessionOver(b.schedule, dow, hhmm));
 
   for (const b of eligible) {
     // Active enrollments on this batch

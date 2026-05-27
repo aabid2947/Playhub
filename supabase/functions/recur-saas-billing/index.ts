@@ -9,6 +9,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
+import { nextPeriodEnd } from '../_shared/billing.ts';
 
 interface Sub {
   id: string;
@@ -122,13 +123,6 @@ Deno.serve(async (req) => {
 
   return j({ ok: true, scanned: list.length, created });
 });
-
-function nextPeriodEnd(start: Date, cycle: 'monthly' | 'yearly'): Date {
-  const d = new Date(start);
-  if (cycle === 'yearly') d.setUTCFullYear(d.getUTCFullYear() + 1);
-  else d.setUTCMonth(d.getUTCMonth() + 1);
-  return d;
-}
 
 function j(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {

@@ -9,6 +9,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
 import { createRazorpayOrder } from '../_shared/razorpay.ts';
+import { toPaise } from '../_shared/billing.ts';
 
 interface Body { invoice_id: string }
 
@@ -63,7 +64,7 @@ Deno.serve(async (req) => {
   let order: Awaited<ReturnType<typeof createRazorpayOrder>>;
   try {
     order = await createRazorpayOrder({
-      amount_paise: Math.round(balance * 100),
+      amount_paise: toPaise(balance),
       currency: 'INR',
       receipt: invoice.invoice_number,
       notes: {
