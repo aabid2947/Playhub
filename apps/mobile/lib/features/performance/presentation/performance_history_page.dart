@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_detail_page.dart';
@@ -17,6 +18,7 @@ class PerformanceHistoryPage extends ConsumerWidget {
     final assessmentsAsync =
         ref.watch(assessmentsForStudentProvider(student.id));
     final trend = ref.watch(performanceTrendProvider(student.id)).valueOrNull;
+    final canRecord = ref.watch(capabilitiesProvider).recordPerformance;
 
     return Scaffold(
       appBar: AppBar(title: Text('Performance · ${student.fullName}')),
@@ -47,15 +49,17 @@ class PerformanceHistoryPage extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) => PerformanceFormPage(student: student),
-          ),
-        ),
-        icon: const Icon(Icons.add_chart_outlined),
-        label: const Text('New assessment'),
-      ),
+      floatingActionButton: canRecord
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => PerformanceFormPage(student: student),
+                ),
+              ),
+              icon: const Icon(Icons.add_chart_outlined),
+              label: const Text('New assessment'),
+            )
+          : null,
     );
   }
 }

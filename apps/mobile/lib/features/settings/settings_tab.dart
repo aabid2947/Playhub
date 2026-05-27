@@ -21,16 +21,21 @@ class SettingsTab extends ConsumerWidget {
         role == 'academy_owner' || role == 'academy_admin';
     return ListView(
       children: [
-        ListTile(
-          leading: const Icon(Icons.business_outlined),
-          title: const Text('Academy settings'),
-          subtitle: const Text('Name, contact, address, branding'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push<void>(
-            MaterialPageRoute(builder: (_) => const AcademySettingsPage()),
+        // The academy record (name/branding) is owner-only at the RLS layer,
+        // so only owners get the entry point — admins/center admins would hit
+        // a save that RLS rejects.
+        if (role == 'academy_owner') ...[
+          ListTile(
+            leading: const Icon(Icons.business_outlined),
+            title: const Text('Academy settings'),
+            subtitle: const Text('Name, contact, address, branding'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const AcademySettingsPage()),
+            ),
           ),
-        ),
-        const Divider(height: 1),
+          const Divider(height: 1),
+        ],
         ListTile(
           leading: const Icon(Icons.location_on_outlined),
           title: const Text('Centers'),

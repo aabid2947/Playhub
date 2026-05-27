@@ -7,6 +7,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/auth/presentation/set_new_password_page.dart';
 import 'package:playhub/features/coach/presentation/coach_home_shell.dart';
 import 'package:playhub/features/dashboards/setup_academy_page.dart';
+import 'package:playhub/features/home/center_admin_home_tab.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
 import 'package:playhub/features/student/presentation/student_home_shell.dart';
@@ -44,13 +45,15 @@ class RoleDashboard extends ConsumerWidget {
             body: const SetupAcademyPage(),
           );
         }
-        // Owners + admins + (for now) center_admin all share the full
-        // OwnerHomeShell. Center-narrowed RLS lands later; until then a
-        // center_admin sees the whole academy.
+        // Owners + admins share the full academy-wide OwnerHomeShell.
         if (profile.role == 'academy_owner' ||
-            profile.role == 'academy_admin' ||
-            profile.role == 'center_admin') {
+            profile.role == 'academy_admin') {
           return const OwnerHomeShell();
+        }
+        // center_admin gets the same management nav but a center-scoped home
+        // dashboard; reads + writes are narrowed to their center by RLS.
+        if (profile.role == 'center_admin') {
+          return const OwnerHomeShell(home: CenterAdminHomeTab());
         }
         if (profile.role == 'parent') return const ParentHomeShell();
         if (profile.role == 'student') return const StudentHomeShell();

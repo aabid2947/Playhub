@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
@@ -20,6 +21,7 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
   @override
   Widget build(BuildContext context) {
     final batchesAsync = ref.watch(batchesProvider);
+    final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
       body: Column(
@@ -54,13 +56,15 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const BatchFormPage()),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('New batch'),
-      ),
+      floatingActionButton: caps.manageBatches
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const BatchFormPage()),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('New batch'),
+            )
+          : null,
     );
   }
 }

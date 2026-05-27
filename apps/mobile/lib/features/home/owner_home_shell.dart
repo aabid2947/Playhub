@@ -8,9 +8,14 @@ import 'package:playhub/features/students/presentation/students_tab.dart';
 import 'package:playhub/shared/widgets/verification_banner.dart';
 
 /// Bottom-nav scaffold for academy owners (and later, admins).
-/// Each tab keeps its own state via IndexedStack.
+/// Each tab keeps its own state via IndexedStack. The Home tab is injected so
+/// center_admin can get a center-scoped dashboard while sharing the rest of
+/// the management nav (students/coaches/batches/settings).
 class OwnerHomeShell extends StatefulWidget {
-  const OwnerHomeShell({super.key});
+  const OwnerHomeShell({super.key, this.home = const HomeTab()});
+
+  /// Widget shown on the first ("Home") tab.
+  final Widget home;
 
   @override
   State<OwnerHomeShell> createState() => _OwnerHomeShellState();
@@ -50,12 +55,12 @@ class _OwnerHomeShellState extends State<OwnerHomeShell> {
           Expanded(
             child: IndexedStack(
               index: _index,
-              children: const [
-                HomeTab(),
-                StudentsTab(),
-                CoachesTab(),
-                BatchesTab(),
-                SettingsTab(),
+              children: [
+                widget.home,
+                const StudentsTab(),
+                const CoachesTab(),
+                const BatchesTab(),
+                const SettingsTab(),
               ],
             ),
           ),

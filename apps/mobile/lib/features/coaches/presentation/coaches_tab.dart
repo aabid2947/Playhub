@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_bulk_import_page.dart';
@@ -12,6 +13,7 @@ class CoachesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coachesAsync = ref.watch(coachesProvider);
+    final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
       appBar: PreferredSize(
@@ -55,13 +57,15 @@ class CoachesTab extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const CoachFormPage()),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('New coach'),
-      ),
+      floatingActionButton: caps.manageCoaches
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const CoachFormPage()),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text('New coach'),
+            )
+          : null,
     );
   }
 }

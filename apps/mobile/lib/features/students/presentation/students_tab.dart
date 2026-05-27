@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
@@ -33,6 +34,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   Widget build(BuildContext context) {
     final studentsAsync = ref.watch(studentsProvider);
     final filter = ref.watch(studentsFilterProvider);
+    final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
       body: Column(
@@ -123,13 +125,15 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const StudentFormPage()),
-        ),
-        icon: const Icon(Icons.person_add),
-        label: const Text('New student'),
-      ),
+      floatingActionButton: caps.manageStudents
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const StudentFormPage()),
+              ),
+              icon: const Icon(Icons.person_add),
+              label: const Text('New student'),
+            )
+          : null,
     );
   }
 }
