@@ -22,6 +22,14 @@ jobs:
         run: supabase start
       - name: Apply migrations
         run: supabase db reset --no-seed
+      - name: Run RLS / pgTAP test suite
+        run: |
+          DB_URL="$(supabase status -o env | grep '^DB_URL' | cut -d= -f2- | tr -d '"')"
+          for f in supabase/tests/*.sql; do
+            echo "::group::$f"
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"
+            echo "::endgroup::"
+          done
       - name: Stop
         if: always()
         run: supabase stop
