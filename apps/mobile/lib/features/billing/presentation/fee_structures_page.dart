@@ -4,6 +4,7 @@ import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class FeeStructuresPage extends ConsumerWidget {
   const FeeStructuresPage({super.key});
@@ -14,7 +15,7 @@ class FeeStructuresPage extends ConsumerWidget {
     return Scaffold(
       body: feesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (fees) {
           if (fees.isEmpty) return const _EmptyState();
           return RefreshIndicator(

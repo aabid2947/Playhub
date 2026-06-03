@@ -5,6 +5,7 @@ import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/features/billing/presentation/invoice_detail_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class InvoiceListPage extends ConsumerWidget {
   const InvoiceListPage({super.key});
@@ -52,7 +53,7 @@ class InvoiceListPage extends ConsumerWidget {
           Expanded(
             child: invoicesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(friendlyError(e))),
               data: (invoices) {
                 if (invoices.isEmpty) return const _EmptyState();
                 return RefreshIndicator(

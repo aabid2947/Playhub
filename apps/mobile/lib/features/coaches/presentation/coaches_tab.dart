@@ -6,6 +6,7 @@ import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_bulk_import_page.dart';
 import 'package:playhub/features/coaches/presentation/coach_form_page.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class CoachesTab extends ConsumerWidget {
   const CoachesTab({super.key});
@@ -42,7 +43,7 @@ class CoachesTab extends ConsumerWidget {
       ),
       body: coachesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (coaches) {
           if (coaches.isEmpty) {
             return const _EmptyState();

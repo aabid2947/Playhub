@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/academy/data/academy.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class AcademySettingsPage extends ConsumerStatefulWidget {
   const AcademySettingsPage({super.key});
@@ -142,7 +143,7 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
       appBar: AppBar(title: const Text('Academy settings')),
       body: academyAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (academy) {
           if (academy == null) {
             return const Center(child: Text('No academy found.'));

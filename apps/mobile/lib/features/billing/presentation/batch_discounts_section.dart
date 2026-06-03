@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class BatchDiscountsSection extends ConsumerWidget {
   const BatchDiscountsSection({required this.batchId, super.key});
@@ -39,7 +40,7 @@ class BatchDiscountsSection extends ConsumerWidget {
             padding: EdgeInsets.all(8),
             child: LinearProgressIndicator(minHeight: 2),
           ),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             if (rows.isEmpty) {
               return const Padding(
@@ -185,7 +186,7 @@ class _SheetState extends State<_Sheet> {
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Assign failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     } finally {

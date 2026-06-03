@@ -5,6 +5,7 @@ import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_form_page.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_page.dart';
 import 'package:playhub/features/inventory/presentation/vendors_page.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Three-tab landing for inventory: All, Low stock, Vendors.
 class InventoryPage extends ConsumerStatefulWidget {
@@ -85,7 +86,7 @@ class _ItemsList extends ConsumerWidget {
     final async = ref.watch(inventoryItemsProvider);
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(child: Text(friendlyError(e))),
       data: (items) {
         final list = showOnlyLow
             ? items.where((i) => i.lowStock).toList()

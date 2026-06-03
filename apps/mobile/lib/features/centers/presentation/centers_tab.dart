@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/centers/presentation/center_form_page.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class CentersTab extends ConsumerWidget {
   const CentersTab({super.key});
@@ -13,7 +14,7 @@ class CentersTab extends ConsumerWidget {
     return Scaffold(
       body: centersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (centers) {
           if (centers.isEmpty) {
             return const _EmptyState();

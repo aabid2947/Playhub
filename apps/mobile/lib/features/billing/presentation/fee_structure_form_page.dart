@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class FeeStructureFormPage extends ConsumerStatefulWidget {
   const FeeStructureFormPage({super.key, this.existing});
@@ -86,7 +87,7 @@ class _FeeStructureFormPageState
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     } finally {
       if (mounted) setState(() => _busy = false);

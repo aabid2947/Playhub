@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({super.key});
@@ -66,14 +66,9 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         setState(() => _message =
             'Account created. Verify your email, then sign in to finish setup.');
       }
-    } on AuthException catch (e) {
+    } on Object catch (e) {
       setState(() {
-        _message = e.message;
-        _isError = true;
-      });
-    } on PostgrestException catch (e) {
-      setState(() {
-        _message = e.message;
+        _message = friendlyError(e);
         _isError = true;
       });
     } finally {

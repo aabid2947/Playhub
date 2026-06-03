@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/audit/data/audit_log.dart';
 import 'package:playhub/features/audit/data/audit_log_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class AuditLogPage extends ConsumerWidget {
   const AuditLogPage({super.key});
@@ -22,7 +23,7 @@ class AuditLogPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (logs) {
           if (logs.isEmpty) {
             return const Center(

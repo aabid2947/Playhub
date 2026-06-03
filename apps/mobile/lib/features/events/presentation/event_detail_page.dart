@@ -8,6 +8,7 @@ import 'package:playhub/features/events/presentation/event_register_sheet.dart';
 import 'package:playhub/features/events/presentation/event_results_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class EventDetailPage extends ConsumerWidget {
   const EventDetailPage({required this.eventId, super.key});
@@ -37,7 +38,7 @@ class EventDetailPage extends ConsumerWidget {
       ),
       body: eventAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (event) {
           if (event == null) {
             return const Center(child: Text('Not found'));
@@ -155,7 +156,7 @@ class _RegistrationsSection extends ConsumerWidget {
             title: const Text('Registrations'),
             subtitle: regsAsync.when(
               loading: () => const Text('…'),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (rs) => Text(
                 rs.isEmpty ? 'No registrations yet' : '${rs.length} registered',
               ),

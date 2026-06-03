@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
@@ -49,7 +50,7 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
       ),
       body: studentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (students) {
           if (students.isEmpty) {
             return const Center(
@@ -240,7 +241,7 @@ class _UpcomingSessionsCard extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: LinearProgressIndicator(),
               ),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (sessions) {
                 if (sessions.isEmpty) {
                   return const Text('No sessions scheduled this week');
@@ -291,7 +292,7 @@ class _BatchesCard extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: LinearProgressIndicator(),
               ),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (rows) {
                 if (rows.isEmpty) return const Text('No active batches');
                 return Column(
@@ -407,7 +408,7 @@ class _AttendanceCard extends ConsumerWidget {
                   const Padding(
                       padding: EdgeInsets.all(8),
                       child: LinearProgressIndicator()),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (days) {
                 if (days.isEmpty) return const Text('No records yet');
                 final total = days.length;
@@ -462,7 +463,7 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
         height: 40,
         child: LinearProgressIndicator(),
       ),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text(friendlyError(e)),
       data: (weeks) {
         if (weeks.every((w) => w.total == 0)) {
           return const Text('Not enough data');
@@ -579,7 +580,7 @@ class _PerformanceCard extends ConsumerWidget {
               loading: () => const Padding(
                   padding: EdgeInsets.all(8),
                   child: LinearProgressIndicator()),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (pts) {
                 if (pts.isEmpty) {
                   return const Text('No assessments yet');
@@ -699,10 +700,10 @@ class _OutstandingCard extends ConsumerWidget {
             SnackBar(content: Text('Payment failed: $message')),
           );
       }
-    } catch (e) {
+    } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed: $e')));
+            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
       }
     }
   }
@@ -723,7 +724,7 @@ class _OutstandingCard extends ConsumerWidget {
               loading: () => const Padding(
                   padding: EdgeInsets.all(8),
                   child: LinearProgressIndicator()),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (rows) {
                 if (rows.isEmpty) {
                   return const Text('Nothing due 🎉');

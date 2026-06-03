@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/presentation/academy_settings_page.dart';
 import 'package:playhub/features/audit/presentation/audit_log_page.dart';
@@ -101,7 +102,16 @@ class SettingsTab extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.logout),
           title: const Text('Sign out'),
-          onTap: () => client.auth.signOut(),
+          onTap: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await client.auth.signOut();
+            } on Object catch (e) {
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyError(e))),
+              );
+            }
+          },
         ),
       ],
     );

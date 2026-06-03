@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class DiscountStructureFormPage extends ConsumerStatefulWidget {
   const DiscountStructureFormPage({super.key, this.existing});
@@ -60,7 +61,7 @@ class _DiscountStructureFormPageState
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     } finally {

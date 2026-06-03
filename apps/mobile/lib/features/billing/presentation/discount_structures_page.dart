@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/features/billing/presentation/discount_structure_form_page.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class DiscountStructuresPage extends ConsumerWidget {
   const DiscountStructuresPage({super.key});
@@ -13,7 +14,7 @@ class DiscountStructuresPage extends ConsumerWidget {
     return Scaffold(
       body: asyncRows.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (rows) {
           if (rows.isEmpty) return const _EmptyState();
           return RefreshIndicator(

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/attendance/data/attendance.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
@@ -97,7 +98,7 @@ class AdminAttendanceOverview extends ConsumerWidget {
       appBar: AppBar(title: const Text('Live attendance')),
       body: feedAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (records) {
           final present = records
               .where((r) =>

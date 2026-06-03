@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/auth_recovery.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -72,9 +73,9 @@ class _SetNewPasswordPageState extends ConsumerState<SetNewPasswordPage> {
       // Sign out so the user re-authenticates with the new password.
       await client.auth.signOut();
       if (mounted) context.go('/login');
-    } on AuthException catch (e) {
+    } on Object catch (e) {
       setState(() {
-        _message = e.message;
+        _message = friendlyError(e);
         _isError = true;
       });
     } finally {

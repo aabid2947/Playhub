@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -36,7 +37,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         password: _password.text,
       );
     } on AuthException catch (e) {
-      setState(() => _error = e.message);
+      setState(() => _error = friendlyError(e));
+    } on Object catch (e) {
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

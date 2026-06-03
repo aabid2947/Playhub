@@ -7,6 +7,7 @@ import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class BatchesTab extends ConsumerStatefulWidget {
   const BatchesTab({super.key});
@@ -33,7 +34,7 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
           Expanded(
             child: batchesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(friendlyError(e))),
               data: (batches) {
                 final list = _sportFilter == null
                     ? batches

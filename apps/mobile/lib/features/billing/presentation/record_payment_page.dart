@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/features/billing/data/payment.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class RecordPaymentPage extends ConsumerStatefulWidget {
   const RecordPaymentPage({required this.invoice, super.key});
@@ -55,7 +56,7 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Record failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     } finally {

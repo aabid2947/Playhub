@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class VendorsPage extends ConsumerWidget {
   const VendorsPage({super.key});
@@ -30,7 +31,7 @@ class VendorsPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (rows) {
           if (rows.isEmpty) return const Center(child: Text('No vendors yet'));
           return ListView.separated(

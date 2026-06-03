@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/announcements/data/announcement_providers.dart';
 import 'package:playhub/features/announcements/presentation/announcement_composer_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Admin sees ALL announcements (history + drafts); other roles see their
 /// targeted feed (with read receipts).
@@ -15,7 +16,7 @@ class AnnouncementsPage extends ConsumerWidget {
     return profileAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+      error: (e, _) => Scaffold(body: Center(child: Text(friendlyError(e)))),
       data: (profile) {
         final isAdmin = profile?.role == 'academy_owner' ||
             profile?.role == 'academy_admin';
@@ -58,7 +59,7 @@ class _AdminList extends ConsumerWidget {
     final async = ref.watch(announcementsListProvider);
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(child: Text(friendlyError(e))),
       data: (list) {
         if (list.isEmpty) {
           return const Center(child: Text('No announcements yet'));
@@ -94,7 +95,7 @@ class _Feed extends ConsumerWidget {
     final async = ref.watch(announcementFeedProvider);
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(child: Text(friendlyError(e))),
       data: (items) {
         if (items.isEmpty) return const Center(child: Text('No announcements'));
         return ListView.separated(

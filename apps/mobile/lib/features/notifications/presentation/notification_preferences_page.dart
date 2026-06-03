@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class NotificationPreferencesPage extends ConsumerWidget {
   const NotificationPreferencesPage({super.key});
@@ -25,7 +26,7 @@ class NotificationPreferencesPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Notification preferences')),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (prefs) {
           // Build a quick lookup. Default to enabled when no row exists.
           bool isOn(String cat, String ch) {

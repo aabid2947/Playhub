@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class PlansPage extends ConsumerWidget {
   const PlansPage({super.key});
@@ -20,7 +21,7 @@ class PlansPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (rows) {
           if (rows.isEmpty) return const Center(child: Text('No plans yet'));
           return ListView.separated(

@@ -5,6 +5,7 @@ import 'package:playhub/features/attendance/presentation/attendance_marking_page
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Coach (and admin) entry point for daily attendance — chronological list
 /// of today's batches. Tap → AttendanceMarkingPage.
@@ -19,7 +20,7 @@ class TodaysSessionsPage extends ConsumerWidget {
       appBar: AppBar(title: const Text("Today's sessions")),
       body: batchesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (batches) {
           if (batches.isEmpty) {
             return const _EmptyState();

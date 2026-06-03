@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/reports/data/report_builder.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Lightweight ad-hoc report builder. The user picks an entity, columns,
 /// filters, and an optional group-by; the result table is rendered below.
@@ -260,7 +261,7 @@ class _ResultTable extends ConsumerWidget {
     final async = ref.watch(reportRunnerProvider(spec));
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text(friendlyError(e)),
       data: (rows) {
         if (rows.isEmpty) {
           return const Padding(

@@ -12,6 +12,7 @@ import 'package:playhub/features/coach/presentation/coach_student_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class BatchDetailPage extends ConsumerWidget {
   const BatchDetailPage({required this.batch, super.key});
@@ -139,7 +140,7 @@ class BatchDetailPage extends ConsumerWidget {
           const SizedBox(height: 16),
           enrollmentsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (enrollments) {
               if (enrollments.isEmpty) {
                 return const Padding(
@@ -274,7 +275,7 @@ class BatchDetailPage extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Transfer failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }

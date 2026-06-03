@@ -5,6 +5,7 @@ import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Six-column kanban scrolling horizontally. Tap a card → detail page.
 class LeadsKanbanPage extends ConsumerWidget {
@@ -32,7 +33,7 @@ class LeadsKanbanPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (leads) => _Board(leads: leads),
       ),
     );
@@ -49,7 +50,11 @@ class _Board extends StatelessWidget {
       for (final s in LeadStatus.kanbanOrder) s: <Lead>[],
     };
     for (final l in leads) {
-      byStatus[l.status]!.add(l);
+      // Skip leads whose status isn't part of the kanban view (e.g. a new
+      // enum value added on the DB side that the app doesn't render yet).
+      final column = byStatus[l.status];
+      if (column == null) continue;
+      column.add(l);
     }
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,

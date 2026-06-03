@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Bottom-sheet form to invite a team member by email.
 ///
@@ -202,7 +203,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
               ref.watch(centersProvider).when(
                     loading: () =>
                         const LinearProgressIndicator(minHeight: 2),
-                    error: (e, _) => Text('Centres error: $e'),
+                    error: (e, _) => Text(friendlyError(e)),
                     data: (centres) {
                       final active =
                           centres.where((c) => c.isActive).toList();

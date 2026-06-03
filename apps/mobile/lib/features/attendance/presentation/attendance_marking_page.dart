@@ -6,6 +6,7 @@ import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Per-batch attendance marking screen. Shows enrolled students for the given
 /// batch, lets the coach toggle each student's status, bulk mark all-present,
@@ -90,7 +91,7 @@ class _AttendanceMarkingPageState extends ConsumerState<AttendanceMarkingPage> {
     } on Object catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(content: Text(friendlyError(e))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -127,7 +128,7 @@ class _AttendanceMarkingPageState extends ConsumerState<AttendanceMarkingPage> {
       ),
       body: enrollmentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (enrollments) {
           final allStudents = studentsAsync.valueOrNull ?? const <Student>[];
           final roster = _rosterFromState(enrollments, allStudents);

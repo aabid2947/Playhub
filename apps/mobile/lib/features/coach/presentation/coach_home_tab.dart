@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
@@ -75,7 +76,7 @@ class CoachHomeTab extends ConsumerWidget {
                 loading: () =>
                     const Card(child: ListTile(title: Text('Loading…'))),
                 error: (e, _) =>
-                    Card(child: ListTile(title: Text('Error: $e'))),
+                    Card(child: ListTile(title: Text(friendlyError(e)))),
                 data: (coach) {
                   if (coach == null) {
                     return const Card(
@@ -99,7 +100,7 @@ class CoachHomeTab extends ConsumerWidget {
                 title: const Text("Today's sessions"),
                 subtitle: todays.when(
                   loading: () => const Text('Loading…'),
-                  error: (e, _) => Text('Error: $e'),
+                  error: (e, _) => Text(friendlyError(e)),
                   data: (list) => Text(list.isEmpty
                       ? 'No batches scheduled for you today'
                       : '${list.length} ${list.length == 1 ? 'batch' : 'batches'} to mark'),
@@ -153,7 +154,7 @@ class _AttendanceTrendCard extends ConsumerWidget {
             padding: EdgeInsets.symmetric(vertical: 8),
             child: LinearProgressIndicator(),
           ),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (weeks) {
             if (weeks.isEmpty || weeks.every((w) => w.total == 0)) {
               return Column(
@@ -282,7 +283,7 @@ class _StatsRow extends StatelessWidget {
           child: LinearProgressIndicator(),
         ),
       ),
-      error: (e, _) => Card(child: ListTile(title: Text('Error: $e'))),
+      error: (e, _) => Card(child: ListTile(title: Text(friendlyError(e)))),
       data: (s) => Row(
         children: [
           Expanded(

@@ -5,6 +5,7 @@ import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Per-event results entry — staff records placement / score per registered
 /// student and triggers certificate generation.
@@ -33,7 +34,7 @@ class EventResultsPage extends ConsumerWidget {
       ),
       body: regsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (regs) {
           if (regs.isEmpty) {
             return const Center(child: Text('No participants yet'));

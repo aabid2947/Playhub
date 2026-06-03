@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 
@@ -60,7 +61,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+          .showSnackBar(SnackBar(content: Text(friendlyError(e))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -89,7 +90,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+          .showSnackBar(SnackBar(content: Text(friendlyError(e))));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -102,7 +103,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       appBar: AppBar(title: const Text('Profile')),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (profile) {
           if (profile == null) {
             return const Center(child: Text('Not signed in'));

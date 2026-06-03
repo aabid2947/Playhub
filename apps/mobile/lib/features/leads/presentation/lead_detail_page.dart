@@ -4,6 +4,7 @@ import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_convert_sheet.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class LeadDetailPage extends ConsumerWidget {
   const LeadDetailPage({required this.leadId, super.key});
@@ -17,7 +18,7 @@ class LeadDetailPage extends ConsumerWidget {
       appBar: AppBar(title: const Text('Lead')),
       body: leadAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (lead) {
           if (lead == null) return const Center(child: Text('Not found'));
           return ListView(
@@ -39,7 +40,7 @@ class LeadDetailPage extends ConsumerWidget {
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (e, _) => Text('Error: $e'),
+                error: (e, _) => Text(friendlyError(e)),
                 data: (acts) => Column(
                   children: [for (final a in acts) _ActivityTile(a: a)],
                 ),

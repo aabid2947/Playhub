@@ -8,6 +8,7 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
@@ -47,6 +48,7 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
   bool _busy = false;
   int? _imported;
   int? _failed;
+  String? _firstFailureMessage;
 
   Future<void> _pick() async {
     final res = await FilePicker.platform.pickFiles(
@@ -134,6 +136,7 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
     final client = ref.read(supabaseClientProvider);
     var ok = 0;
     var fail = 0;
+    String? firstError;
     for (final r in rows) {
       if (!_isValid(r)) {
         fail++;
@@ -156,8 +159,9 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
           if (r['payment_type'] != null) 'payment_type': r['payment_type'],
         });
         ok++;
-      } on Object {
+      } on Object catch (e) {
         fail++;
+        firstError ??= friendlyError(e);
       }
     }
     ref.invalidate(coachesProvider);
@@ -165,6 +169,7 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
       _busy = false;
       _imported = ok;
       _failed = fail;
+      _firstFailureMessage = firstError;
     });
   }
 
@@ -257,9 +262,21 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
                   : Colors.green.withValues(alpha: 0.15),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Imported $_imported · failed ${_failed ?? 0}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Imported $_imported · failed ${_failed ?? 0}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (_firstFailureMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'First error: $_firstFailureMessage',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
     show SupportTicketRow, ticketMessagesProvider;
 import 'package:playhub/features/support/data/support_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class SupportPage extends ConsumerWidget {
   const SupportPage({super.key});
@@ -33,7 +34,7 @@ class SupportPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (rows) {
           if (rows.isEmpty) {
             return const Center(
@@ -264,7 +265,7 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                 const SizedBox(height: 8),
                 msgsAsync.when(
                   loading: () => const LinearProgressIndicator(),
-                  error: (e, _) => Text('Error: $e'),
+                  error: (e, _) => Text(friendlyError(e)),
                   data: (msgs) => Column(
                     children: [
                       for (final m in msgs)

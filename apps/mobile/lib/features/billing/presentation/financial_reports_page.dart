@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class FinancialReportsPage extends ConsumerWidget {
   const FinancialReportsPage({super.key});
@@ -11,7 +12,7 @@ class FinancialReportsPage extends ConsumerWidget {
     final invoicesAsync = ref.watch(invoicesProvider);
     return invoicesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(child: Text(friendlyError(e))),
       data: (invoices) {
         final now = DateTime.now();
         final thirtyDays = now.subtract(const Duration(days: 30));

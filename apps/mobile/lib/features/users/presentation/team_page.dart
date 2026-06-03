@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class TeamPage extends ConsumerWidget {
   const TeamPage({super.key});
@@ -25,7 +26,7 @@ class TeamPage extends ConsumerWidget {
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (members) {
           if (members.isEmpty) {
             return const Center(child: Text('No team members yet'));

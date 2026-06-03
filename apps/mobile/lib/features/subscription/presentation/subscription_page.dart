@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/features/subscription/data/subscription_providers.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart' show PlanRow;
+import 'package:playhub/core/error_messages.dart';
 
 /// Academy-owner facing subscription management.
 /// - Shows current plan + status + period_end
@@ -40,7 +41,7 @@ class SubscriptionPage extends ConsumerWidget {
         children: [
           subAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (sub) {
               if (sub == null) return const Text('No subscription on file.');
               return _CurrentPlanCard(sub: sub);
@@ -50,7 +51,7 @@ class SubscriptionPage extends ConsumerWidget {
           Text('Plans', style: Theme.of(context).textTheme.titleMedium),
           plansAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (plans) {
               final currentPlanId = subAsync.valueOrNull?.planId;
               return Column(
@@ -66,7 +67,7 @@ class SubscriptionPage extends ConsumerWidget {
               style: Theme.of(context).textTheme.titleMedium),
           invoicesAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (rows) {
               if (rows.isEmpty) {
                 return const Padding(
@@ -141,7 +142,7 @@ class _CurrentPlanCard extends ConsumerWidget {
             const SizedBox(height: 8),
             plansAsync.when(
               loading: () => const Text('…'),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (plans) {
                 final p = plans.where((p) => p.id == sub.planId).firstOrNull;
                 return Text(

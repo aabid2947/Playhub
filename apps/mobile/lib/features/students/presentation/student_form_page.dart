@@ -12,6 +12,7 @@ import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class StudentFormPage extends ConsumerStatefulWidget {
   const StudentFormPage({super.key, this.existing});
@@ -245,7 +246,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               centresAsync.when(
                 loading: () =>
                     const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text('Centres error: $e'),
+                error: (e, _) => Text(friendlyError(e)),
                 data: (centres) => DropdownButtonFormField<String>(
                   initialValue: _centerId,
                   decoration: const InputDecoration(labelText: 'Center'),
@@ -379,7 +380,7 @@ class _AttendanceSummaryCard extends ConsumerWidget {
     final summaryAsync = ref.watch(attendanceSummaryProvider(student.id));
     return summaryAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text(friendlyError(e)),
       data: (s) {
         if (s == null || s.totalSessions == 0) {
           return const Card(

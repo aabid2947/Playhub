@@ -7,6 +7,7 @@ import 'package:playhub/features/performance/presentation/performance_detail_pag
 import 'package:playhub/features/performance/presentation/performance_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class PerformanceHistoryPage extends ConsumerWidget {
   const PerformanceHistoryPage({required this.student, super.key});
@@ -24,7 +25,7 @@ class PerformanceHistoryPage extends ConsumerWidget {
       appBar: AppBar(title: Text('Performance · ${student.fullName}')),
       body: assessmentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (list) {
           if (list.isEmpty) {
             return const _EmptyState();

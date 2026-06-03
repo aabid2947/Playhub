@@ -8,6 +8,7 @@ import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
 import 'package:playhub/features/students/presentation/student_form_page.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class StudentsTab extends ConsumerStatefulWidget {
   const StudentsTab({super.key});
@@ -106,7 +107,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
           Expanded(
             child: studentsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(friendlyError(e))),
               data: (students) {
                 if (students.isEmpty) {
                   return const _EmptyState();

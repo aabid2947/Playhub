@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:playhub/features/analytics/data/analytics_providers.dart';
 import 'package:playhub/features/analytics/data/sport_breakdown.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// KPI dashboard backed by the analytics_* materialized views (refreshed
 /// hourly by the analytics-aggregations Edge Function). Shape adapts to
@@ -72,7 +73,7 @@ class _CollectionSummaryCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (s) {
             if (s == null) return const Text('No invoice data yet');
             final f = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
@@ -110,7 +111,7 @@ class _RevenueTrendCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             if (rows.isEmpty) {
               return Column(
@@ -245,7 +246,7 @@ class _EnrollmentTrendCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             final maxV = rows
                 .map((r) => r.count.toDouble())
@@ -368,7 +369,7 @@ class _BatchUtilizationCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             if (rows.isEmpty) return const Text('No active batches');
             final sorted = [...rows]..sort((a, b) {
@@ -417,7 +418,7 @@ class _SportBreakdownCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,7 +505,7 @@ class _LeadFunnelCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         child: async.when(
           loading: () => const LinearProgressIndicator(),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             final byStatus = <String, int>{};
             for (final r in rows) {

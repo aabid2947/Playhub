@@ -8,6 +8,7 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
@@ -51,6 +52,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
   bool _busy = false;
   int? _imported;
   int? _failed;
+  String? _firstFailureMessage;
 
   Future<void> _pick() async {
     final res = await FilePicker.platform.pickFiles(
@@ -149,6 +151,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
 
     var ok = 0;
     var fail = 0;
+    String? firstError;
     for (final r in rows) {
       if (!_isValid(r)) {
         fail++;
@@ -172,8 +175,9 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
           if (r['city'] != null) 'city': r['city'],
         });
         ok++;
-      } on Object {
+      } on Object catch (e) {
         fail++;
+        firstError ??= friendlyError(e);
       }
     }
     ref.invalidate(studentsProvider);
@@ -181,6 +185,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
       _busy = false;
       _imported = ok;
       _failed = fail;
+      _firstFailureMessage = firstError;
     });
   }
 
@@ -269,9 +274,21 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
                   : Colors.green.withValues(alpha: 0.15),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  'Imported $_imported · failed ${_failed ?? 0}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Imported $_imported · failed ${_failed ?? 0}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (_firstFailureMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'First error: $_firstFailureMessage',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

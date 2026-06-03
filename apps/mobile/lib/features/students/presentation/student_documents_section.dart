@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/students/data/student_document.dart';
 import 'package:playhub/features/students/data/student_document_providers.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
+import 'package:playhub/core/error_messages.dart';
 
 /// Embedded section listing a student's documents and offering upload + open
 /// + delete. Caller should only render this once the student row exists in
@@ -39,7 +40,7 @@ class StudentDocumentsSection extends ConsumerWidget {
             padding: EdgeInsets.all(8),
             child: LinearProgressIndicator(minHeight: 2),
           ),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(friendlyError(e)),
           data: (docs) {
             if (docs.isEmpty) {
               return const Padding(
@@ -97,7 +98,7 @@ class StudentDocumentsSection extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }
@@ -112,7 +113,7 @@ class StudentDocumentsSection extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open file: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }

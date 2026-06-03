@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Settings → Sports. Pick a center, manage which sports it offers.
 /// Defaults to the user's center_id when set; falls back to the first
@@ -38,7 +39,7 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
       ),
       body: centersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (centers) {
           if (centers.isEmpty) {
             return const Center(
@@ -100,7 +101,7 @@ class _CenterSportsList extends ConsumerWidget {
     final async = ref.watch(centerSportsProvider(centerId));
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) => Center(child: Text(friendlyError(e))),
       data: (rows) {
         if (rows.isEmpty) {
           return const Center(
@@ -248,7 +249,7 @@ class _AddSportSheet extends ConsumerWidget {
             const SizedBox(height: 12),
             allAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('Error: $e'),
+              error: (e, _) => Text(friendlyError(e)),
               data: (all) {
                 final enabledIds = (enabledAsync.valueOrNull ?? const [])
                     .map((s) => s.sport.id)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
@@ -51,7 +52,7 @@ class PerformanceDetailPage extends ConsumerWidget {
           const SizedBox(height: 8),
           skillsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (skills) => Card(
               child: Column(
                 children: [
@@ -85,7 +86,7 @@ class PerformanceDetailPage extends ConsumerWidget {
           const SizedBox(height: 8),
           mediaAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (media) {
               if (media.isEmpty) {
                 return const Card(
@@ -143,7 +144,7 @@ class PerformanceDetailPage extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Open failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }

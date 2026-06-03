@@ -1,25 +1,46 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/auth_recovery.dart';
 import 'package:playhub/core/env.dart';
+import 'package:playhub/core/error_handler.dart';
 import 'package:playhub/core/router.dart';
 import 'package:playhub/core/theme.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // runZonedGuarded catches any async error that escapes our other hooks
+  // (e.g. unawaited Futures inside third-party packages).
+  await runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Install global error hooks after binding init so we can detect
+    // whether we're running under a test binding (which forbids
+    // ErrorWidget.builder / FlutterError.onError overrides).
+    AppErrorHandler.install();
 
-  if (!Env.isConfigured) {
-    runApp(const _ConfigErrorApp());
-    return;
-  }
+    if (!Env.isConfigured) {
+      runApp(const _ConfigErrorApp());
+      return;
+    }
 
-  await Supabase.initialize(
-    url: Env.supabaseUrl,
-    anonKey: Env.supabaseAnonKey,
-  );
+    try {
+      await Supabase.initialize(
+        url: Env.supabaseUrl,
+        anonKey: Env.supabaseAnonKey,
+      );
+    } on Object catch (e, st) {
+      debugPrint('Supabase init failed: $e\n$st');
+      AppErrorHandler.showError(
+        "Couldn't connect to the server. Please check your connection.",
+      );
+    }
 
-  runApp(const ProviderScope(child: PlayHubApp()));
+    runApp(const ProviderScope(child: PlayHubApp()));
+  }, (error, stack) {
+    debugPrint('Uncaught zoned error: $error\n$stack');
+    AppErrorHandler.showError('Something went wrong.');
+  });
 }
 
 class PlayHubApp extends ConsumerWidget {
@@ -36,6 +57,7 @@ class PlayHubApp extends ConsumerWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       routerConfig: router,
+      scaffoldMessengerKey: AppErrorHandler.rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
     );
   }

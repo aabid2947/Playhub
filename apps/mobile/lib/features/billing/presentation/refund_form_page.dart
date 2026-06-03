@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/payment.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class RefundFormPage extends ConsumerStatefulWidget {
   const RefundFormPage({required this.payment, super.key});
@@ -56,7 +57,7 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
     } on Object catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Refund failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     } finally {

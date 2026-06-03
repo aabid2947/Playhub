@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// System health + global revenue snapshot.
 class GlobalHealthPage extends ConsumerWidget {
@@ -23,7 +24,7 @@ class GlobalHealthPage extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (k) {
               final f = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
               return Column(

@@ -8,6 +8,7 @@ import 'package:playhub/features/events/presentation/event_detail_page.dart';
 import 'package:playhub/features/events/presentation/event_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Events list with status-based filtering. Tap a card → detail page.
 class EventsPage extends ConsumerStatefulWidget {
@@ -63,7 +64,7 @@ class _EventsPageState extends ConsumerState<EventsPage> {
           Expanded(
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(friendlyError(e))),
               data: (events) {
                 final list = events.where((e) {
                   if (_filter != null && e.status != _filter) return false;

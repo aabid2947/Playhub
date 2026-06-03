@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/push_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile.dart';
@@ -27,7 +28,7 @@ class RoleDashboard extends ConsumerWidget {
 
     return profileAsync.when(
       loading: () => const _Centered(child: CircularProgressIndicator()),
-      error: (e, _) => _Centered(child: Text('Error: $e')),
+      error: (e, _) => _Centered(child: Text(friendlyError(e))),
       data: (profile) {
         if (profile == null) {
           return const _Centered(child: Text('No profile row found.'));

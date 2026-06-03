@@ -40,11 +40,34 @@ class RazorpayCheckout {
     String? prefillEmail,
     String? prefillContact,
   }) async {
-    final res = await _client.functions
-        .invoke('create-razorpay-order', body: {'invoice_id': invoiceId});
-    final body = res.data as Map<String, dynamic>;
+    final Map<String, dynamic> body;
+    try {
+      final res = await _client.functions
+          .invoke('create-razorpay-order', body: {'invoice_id': invoiceId});
+      final data = res.data;
+      if (data is! Map<String, dynamic>) {
+        return const CheckoutFailure(
+          code: -3,
+          message: 'Could not start payment. Please try again.',
+        );
+      }
+      body = data;
+    } on Object catch (e) {
+      return CheckoutFailure(
+        code: -3,
+        message: _humanizeOrderError(e),
+      );
+    }
     if (body['order_id'] == null) {
-      throw StateError(body['error']?.toString() ?? 'order create failed');
+      // Edge function reported a business-rule failure (e.g. invoice already
+      // paid, attempt cap reached). Surface its short message if usable.
+      final raw = body['error']?.toString() ?? '';
+      return CheckoutFailure(
+        code: -4,
+        message: raw.isEmpty || raw.length > 140
+            ? 'Could not start payment. Please try again.'
+            : raw,
+      );
     }
     final orderId = body['order_id'] as String;
     final keyId = body['key_id'] as String;
@@ -100,4 +123,17 @@ class RazorpayCheckout {
       razorpay.clear();
     }
   }
+}
+
+String _humanizeOrderError(Object e) {
+  final s = e.toString().toLowerCase();
+  if (s.contains('socketexception') ||
+      s.contains('failed host lookup') ||
+      s.contains('network')) {
+    return 'Network error. Please check your connection.';
+  }
+  if (s.contains('timed out') || s.contains('timeout')) {
+    return 'The request timed out. Please try again.';
+  }
+  return 'Could not start payment. Please try again.';
 }

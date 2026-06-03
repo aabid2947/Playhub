@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class AcademiesPage extends ConsumerStatefulWidget {
   const AcademiesPage({super.key});
@@ -33,7 +34,7 @@ class _AcademiesPageState extends ConsumerState<AcademiesPage> {
         Expanded(
           child: async.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => Center(child: Text(friendlyError(e))),
             data: (rows) {
               final list = _query.isEmpty
                   ? rows

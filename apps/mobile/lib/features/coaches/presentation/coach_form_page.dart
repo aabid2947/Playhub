@@ -9,6 +9,7 @@ import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class CoachFormPage extends ConsumerStatefulWidget {
   const CoachFormPage({super.key, this.existing});
@@ -233,7 +234,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                     child: centresAsync.when(
                       loading: () =>
                           const LinearProgressIndicator(minHeight: 2),
-                      error: (e, _) => Text('Centres error: $e'),
+                      error: (e, _) => Text(friendlyError(e)),
                       data: (centres) => DropdownButtonFormField<String>(
                         initialValue: _centerId,
                         decoration: const InputDecoration(labelText: 'Center'),

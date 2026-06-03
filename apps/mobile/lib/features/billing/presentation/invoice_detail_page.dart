@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
@@ -30,7 +31,7 @@ class InvoiceDetailPage extends ConsumerWidget {
     return invoiceAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text('Error: $e'))),
+      error: (e, _) => Scaffold(body: Center(child: Text(friendlyError(e)))),
       data: (invoice) => _Body(invoice: invoice),
     );
   }
@@ -79,7 +80,7 @@ class _Body extends ConsumerWidget {
           const SizedBox(height: 8),
           lines.when(
             loading: () => const LinearProgressIndicator(minHeight: 2),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (items) => Card(
               child: Column(
                 children: [
@@ -102,7 +103,7 @@ class _Body extends ConsumerWidget {
           const SizedBox(height: 8),
           payments.when(
             loading: () => const LinearProgressIndicator(minHeight: 2),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (list) {
               if (list.isEmpty) {
                 return const Card(
@@ -141,7 +142,7 @@ class _Body extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Receipt failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }
@@ -291,7 +292,7 @@ class _OutstandingActions extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Order failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     }

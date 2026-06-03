@@ -5,6 +5,7 @@ import 'package:playhub/features/parent/data/parent_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_history_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/core/error_messages.dart';
 
 /// Read-only student summary page for the coach context. Avoids the
 /// admin-only sections of StudentFormPage (fees, discounts, documents).
@@ -69,7 +70,7 @@ class CoachStudentPage extends ConsumerWidget {
                   const SizedBox(height: 8),
                   attendance.when(
                     loading: () => const LinearProgressIndicator(),
-                    error: (e, _) => Text('Error: $e'),
+                    error: (e, _) => Text(friendlyError(e)),
                     data: (days) {
                       if (days.isEmpty) {
                         return const Text('No records yet');

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/storage_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
@@ -111,7 +112,7 @@ class _ThreadDetailPageState extends ConsumerState<ThreadDetailPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Attachment failed: $e')),
+          SnackBar(content: Text(friendlyError(e))),
         );
       }
     } finally {
@@ -140,7 +141,7 @@ class _ThreadDetailPageState extends ConsumerState<ThreadDetailPage> {
             child: messagesAsync.when(
               loading: () =>
                   const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(child: Text(friendlyError(e))),
               data: (msgs) {
                 if (msgs.isEmpty) {
                   return const Center(child: Text('Say hi 👋'));

@@ -7,6 +7,7 @@ import 'package:playhub/features/batches/presentation/schedule_picker.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class BatchFormPage extends ConsumerStatefulWidget {
   const BatchFormPage({super.key, this.existing});
@@ -132,7 +133,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               const SizedBox(height: 12),
               centresAsync.when(
                 loading: () => const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text('Centres error: $e'),
+                error: (e, _) => Text(friendlyError(e)),
                 data: (centres) => DropdownButtonFormField<String>(
                   initialValue: _centerId,
                   decoration: const InputDecoration(labelText: 'Center'),
@@ -147,7 +148,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               const SizedBox(height: 12),
               coachesAsync.when(
                 loading: () => const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text('Coaches error: $e'),
+                error: (e, _) => Text(friendlyError(e)),
                 data: (coaches) => DropdownButtonFormField<String>(
                   initialValue: _coachId,
                   decoration: const InputDecoration(labelText: 'Coach'),

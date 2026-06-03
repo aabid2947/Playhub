@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -51,9 +51,9 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
           );
       setState(() => _message =
           'If an account exists for $email, a reset link has been sent.');
-    } on AuthException catch (e) {
+    } on Object catch (e) {
       setState(() {
-        _message = e.message;
+        _message = friendlyError(e);
         _isError = true;
       });
     } finally {

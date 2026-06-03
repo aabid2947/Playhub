@@ -5,6 +5,7 @@ import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_form_page.dart';
 import 'package:playhub/features/inventory/presentation/movement_sheet.dart';
+import 'package:playhub/core/error_messages.dart';
 
 class InventoryItemPage extends ConsumerWidget {
   const InventoryItemPage({required this.itemId, super.key});
@@ -56,7 +57,7 @@ class InventoryItemPage extends ConsumerWidget {
           const SizedBox(height: 8),
           movesAsync.when(
             loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => Text(friendlyError(e)),
             data: (moves) {
               if (moves.isEmpty) {
                 return const Text('No movements logged yet.');
