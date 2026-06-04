@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom-sheet form to invite a team member by email.
 ///
@@ -12,10 +14,7 @@ import 'package:playhub/core/error_messages.dart';
 ///   - coach-login mode (preset)    — role=coach, locks coachId.
 ///   - student-login mode (preset)  — role=student, locks studentId.
 class InviteUserSheet extends ConsumerStatefulWidget {
-  const InviteUserSheet({
-    super.key,
-    this.preset,
-  });
+  const InviteUserSheet({super.key, this.preset});
 
   final InvitePreset? preset;
 
@@ -89,9 +88,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    if (widget.preset == null &&
-        _role == 'center_admin' &&
-        _centerId == null) {
+    if (widget.preset == null && _role == 'center_admin' && _centerId == null) {
       setState(() => _error = 'Pick a center for the center admin.');
       return;
     }
@@ -116,13 +113,11 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         final email = _email.text.trim();
         final msg = result.resent
             ? (result.hasSignedIn
-                ? '$email has already signed in once. A fresh invite link '
-                    'was sent — they can use it as a magic-link login.'
-                : 'Resent invite to $email')
+                  ? '$email has already signed in once. A fresh invite link '
+                        'was sent — they can use it as a magic-link login.'
+                  : 'Resent invite to $email')
             : 'Invite sent to $email';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        AppSnackbar.success(context, msg);
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -137,46 +132,47 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
     final preset = widget.preset;
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        16,
+        16,
+        16,
+        16 + MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Form(
         key: _form,
         child: ListView(
           shrinkWrap: true,
           children: [
-            Text(preset?.title ?? 'Invite team member',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              preset?.title ?? 'Invite team member',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 4),
             Text(
               'They\'ll get a magic-link email to set their password and '
               'sign in.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 16),
-            TextFormField(
+            const SizedBox(height: AppSpacing.lg),
+            AppFormField(
               controller: _email,
-              decoration: const InputDecoration(labelText: 'Email *'),
+              label: 'Email *',
               keyboardType: TextInputType.emailAddress,
               validator: (v) => (v == null || !v.contains('@'))
-                  ? 'Valid email required' : null,
+                  ? 'Valid email required'
+                  : null,
             ),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _first,
-                  decoration:
-                      const InputDecoration(labelText: 'First name'),
+            Row(
+              children: [
+                Expanded(
+                  child: AppFormField(controller: _first, label: 'First name'),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextFormField(
-                  controller: _last,
-                  decoration:
-                      const InputDecoration(labelText: 'Last name'),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppFormField(controller: _last, label: 'Last name'),
                 ),
-              ),
-            ]),
+              ],
+            ),
             const SizedBox(height: 12),
             if (preset == null)
               DropdownButtonFormField<String>(
@@ -200,29 +196,30 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
             // center-narrowed RLS leaves them seeing nothing. Required.
             if (preset == null && _role == 'center_admin') ...[
               const SizedBox(height: 12),
-              ref.watch(centersProvider).when(
-                    loading: () =>
-                        const LinearProgressIndicator(minHeight: 2),
+              ref
+                  .watch(centersProvider)
+                  .when(
+                    loading: () => const LinearProgressIndicator(minHeight: 2),
                     error: (e, _) => Text(friendlyError(e)),
                     data: (centres) {
-                      final active =
-                          centres.where((c) => c.isActive).toList();
+                      final active = centres.where((c) => c.isActive).toList();
                       if (active.isEmpty) {
                         return Text(
                           'Create a center first — a center admin must be '
                           'assigned to one.',
                           style: TextStyle(
-                              color: Theme.of(context).colorScheme.error),
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                         );
                       }
                       return DropdownButtonFormField<String>(
                         initialValue: _centerId,
-                        decoration:
-                            const InputDecoration(labelText: 'Center *'),
+                        decoration: const InputDecoration(
+                          labelText: 'Center *',
+                        ),
                         items: [
                           for (final c in active)
-                            DropdownMenuItem(
-                                value: c.id, child: Text(c.name)),
+                            DropdownMenuItem(value: c.id, child: Text(c.name)),
                         ],
                         onChanged: (v) => setState(() => _centerId = v),
                       );
@@ -231,9 +228,10 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(_error!,
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
             const SizedBox(height: 24),
             FilledButton.icon(
@@ -256,6 +254,6 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         'trainer': 'Trainer',
         'parent': 'Parent',
         'student': 'Student',
-      }[r] ?? r;
+      }[r] ??
+      r;
 }
-

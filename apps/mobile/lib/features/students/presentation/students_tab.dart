@@ -7,8 +7,9 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
 import 'package:playhub/features/students/presentation/student_form_page.dart';
-import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/avatar_picker.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class StudentsTab extends ConsumerStatefulWidget {
   const StudentsTab({super.key});
@@ -27,8 +28,9 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   }
 
   void _applySearch() {
-    ref.read(studentsFilterProvider.notifier).state =
-        ref.read(studentsFilterProvider).copyWith(search: _search.text);
+    ref.read(studentsFilterProvider.notifier).state = ref
+        .read(studentsFilterProvider)
+        .copyWith(search: _search.text);
   }
 
   @override
@@ -71,16 +73,15 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                   icon: const Icon(Icons.filter_list),
                   initialValue: filter.status,
                   onSelected: (v) {
-                    ref.read(studentsFilterProvider.notifier).state =
-                        filter.copyWith(status: v);
+                    ref.read(studentsFilterProvider.notifier).state = filter
+                        .copyWith(status: v);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem<String?>(child: Text('All')),
                     PopupMenuItem(value: 'active', child: Text('Active')),
                     PopupMenuItem(value: 'paused', child: Text('Paused')),
                     PopupMenuItem(value: 'inactive', child: Text('Inactive')),
-                    PopupMenuItem(
-                        value: 'graduated', child: Text('Graduated')),
+                    PopupMenuItem(value: 'graduated', child: Text('Graduated')),
                   ],
                 ),
                 IconButton(
@@ -98,16 +99,15 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
           SportFilterChipBar(
             selectedId: filter.sportId,
             onSelected: (id) {
-              ref.read(studentsFilterProvider.notifier).state =
-                  id == null
-                      ? filter.copyWith(clearSport: true)
-                      : filter.copyWith(sportId: id);
+              ref.read(studentsFilterProvider.notifier).state = id == null
+                  ? filter.copyWith(clearSport: true)
+                  : filter.copyWith(sportId: id);
             },
           ),
           Expanded(
             child: studentsAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(friendlyError(e))),
+              loading: () => const AppLoading(),
+              error: (e, _) => AppErrorView(message: friendlyError(e)),
               data: (students) {
                 if (students.isEmpty) {
                   return const _EmptyState();
@@ -145,13 +145,12 @@ class _StudentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final initials = (student.firstName.isNotEmpty
-            ? student.firstName[0]
-            : '?') +
+    final initials =
+        (student.firstName.isNotEmpty ? student.firstName[0] : '?') +
         (student.lastName.isNotEmpty ? student.lastName[0] : '');
-    final sportLabel = ref.watch(sportDisplayProvider((
-      sportId: student.sportId,
-    )));
+    final sportLabel = ref.watch(
+      sportDisplayProvider((sportId: student.sportId)),
+    );
     return ListTile(
       leading: AvatarView(url: student.photo, fallbackInitials: initials),
       title: Text(student.fullName),
@@ -162,36 +161,28 @@ class _StudentTile extends ConsumerWidget {
           'parent: ${student.parentName}',
         ].join(' • '),
       ),
-      trailing: _StatusChip(status: student.status),
+      trailing: _StatusBadge(status: student.status),
       onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => StudentFormPage(existing: student),
-        ),
+        MaterialPageRoute(builder: (_) => StudentFormPage(existing: student)),
       ),
     );
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
   final String status;
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (status) {
-      'active' => Colors.green,
-      'paused' => Colors.orange,
-      'inactive' => Colors.grey,
-      'graduated' => Colors.blue,
-      _ => Colors.grey,
+    final tone = switch (status) {
+      'active' => AppBadgeTone.success,
+      'paused' => AppBadgeTone.warning,
+      'inactive' => AppBadgeTone.neutral,
+      'graduated' => AppBadgeTone.info,
+      _ => AppBadgeTone.neutral,
     };
-    return Chip(
-      label: Text(status, style: const TextStyle(fontSize: 11)),
-      backgroundColor: color.withValues(alpha: 0.15),
-      side: BorderSide(color: color.withValues(alpha: 0.4)),
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-    );
+    return AppBadge(text: status, tone: tone);
   }
 }
 
@@ -200,26 +191,10 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.group_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'No students yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap "New student" to enroll your first one.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    return const AppEmptyState(
+      icon: Icons.group_outlined,
+      title: 'No students yet',
+      subtitle: 'Tap "New student" to enroll your first one.',
     );
   }
 }

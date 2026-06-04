@@ -52,8 +52,11 @@ function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
+    <Card className="w-full max-w-sm bg-surface-elevated shadow-[var(--shadow-lg)]">
+      <CardHeader className="items-center text-center">
+        <div className="mb-1 text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-brand)]">
+          PlayHub Admin
+        </div>
         <CardTitle className="text-base">PlayHub · Super Admin</CardTitle>
         <p className="text-xs text-[var(--color-muted)]">
           Platform operations console
@@ -62,7 +65,12 @@ function LoginForm() {
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label
+              htmlFor="email"
+              className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-fg)]"
+            >
+              Email
+            </Label>
             <Input
               id="email"
               type="email"
@@ -70,10 +78,16 @@ function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className="focus-ring"
             />
           </div>
           <div>
-            <Label htmlFor="password">Password</Label>
+            <Label
+              htmlFor="password"
+              className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-fg)]"
+            >
+              Password
+            </Label>
             <Input
               id="password"
               type="password"
@@ -81,6 +95,7 @@ function LoginForm() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className="focus-ring"
             />
           </div>
           {error && (

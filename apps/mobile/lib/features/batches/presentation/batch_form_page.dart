@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/schedule_picker.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchFormPage extends ConsumerStatefulWidget {
   const BatchFormPage({super.key, this.existing});
@@ -20,10 +22,12 @@ class BatchFormPage extends ConsumerStatefulWidget {
 
 class _BatchFormPageState extends ConsumerState<BatchFormPage> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
-  late final _ageGroup =
-      TextEditingController(text: widget.existing?.ageGroup ?? '');
+  late final _ageGroup = TextEditingController(
+    text: widget.existing?.ageGroup ?? '',
+  );
   late final _capacity = TextEditingController(
-      text: widget.existing?.capacity?.toString() ?? '');
+    text: widget.existing?.capacity?.toString() ?? '',
+  );
 
   String? _centerId;
   String? _coachId;
@@ -65,8 +69,9 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
       final patch = <String, dynamic>{
         'name': _name.text.trim(),
         'sport_id': _sportId,
-        'age_group':
-            _ageGroup.text.trim().isEmpty ? null : _ageGroup.text.trim(),
+        'age_group': _ageGroup.text.trim().isEmpty
+            ? null
+            : _ageGroup.text.trim(),
         'capacity': _capacity.text.trim().isEmpty
             ? null
             : int.tryParse(_capacity.text.trim()),
@@ -102,9 +107,9 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextFormField(
+              AppFormField(
                 controller: _name,
-                decoration: const InputDecoration(labelText: 'Batch name *'),
+                label: 'Batch name *',
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
@@ -120,12 +125,10 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _ageGroup,
-                      decoration: const InputDecoration(
-                        labelText: 'Age group',
-                        hintText: '6-10, U-15',
-                      ),
+                      label: 'Age group',
+                      hint: '6-10, U-15',
                     ),
                   ),
                 ],
@@ -153,7 +156,9 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                   initialValue: _coachId,
                   decoration: const InputDecoration(labelText: 'Coach'),
                   items: [
-                    const DropdownMenuItem<String>(child: Text('— unassigned —')),
+                    const DropdownMenuItem<String>(
+                      child: Text('— unassigned —'),
+                    ),
                     for (final c in coaches)
                       DropdownMenuItem(value: c.id, child: Text(c.fullName)),
                   ],
@@ -167,28 +172,30 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                 items: const [
                   DropdownMenuItem(value: 'beginner', child: Text('Beginner')),
                   DropdownMenuItem(
-                      value: 'intermediate', child: Text('Intermediate')),
+                    value: 'intermediate',
+                    child: Text('Intermediate'),
+                  ),
                   DropdownMenuItem(value: 'advanced', child: Text('Advanced')),
                   DropdownMenuItem(value: 'mixed', child: Text('Mixed')),
                 ],
                 onChanged: (v) => setState(() => _skillLevel = v),
               ),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Schedule'),
+              const SizedBox(height: AppSpacing.sm),
+              SchedulePicker(value: _schedule, onChanged: (s) => _schedule = s),
               const SizedBox(height: 24),
-              Text('Schedule', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              SchedulePicker(
-                value: _schedule,
-                onChanged: (s) => _schedule = s,
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
+              AppFormField(
                 controller: _capacity,
+                label: 'Capacity',
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Capacity'),
               ),
               if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
               const SizedBox(height: 24),
               FilledButton(

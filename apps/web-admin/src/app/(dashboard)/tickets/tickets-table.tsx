@@ -1,7 +1,9 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import { DataTable, type ColumnDef } from "@/components/data-table";
 import { Badge, statusTone } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fmtDate, humanize } from "@/lib/format";
 import type { TicketRow } from "@/lib/data/tickets";
 
@@ -53,6 +55,15 @@ const columns: ColumnDef<TicketRow, unknown>[] = [
 ];
 
 export function TicketsTable({ data }: { data: TicketRow[] }) {
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={Inbox}
+        title="No tickets yet"
+        description="When customers file support tickets they'll appear here."
+      />
+    );
+  }
   return (
     <DataTable
       columns={columns}

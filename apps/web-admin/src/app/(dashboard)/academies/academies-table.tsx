@@ -1,7 +1,9 @@
 "use client";
 
+import { Building2 } from "lucide-react";
 import { DataTable, type ColumnDef } from "@/components/data-table";
 import { Badge, statusTone } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { fmtDate, humanize } from "@/lib/format";
 import type { AcademyRow } from "@/lib/data/academies";
 
@@ -54,6 +56,15 @@ const columns: ColumnDef<AcademyRow, unknown>[] = [
 ];
 
 export function AcademiesTable({ data }: { data: AcademyRow[] }) {
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={Building2}
+        title="No academies yet"
+        description="Academies that sign up on PlayHub will appear here."
+      />
+    );
+  }
   return (
     <DataTable
       columns={columns}

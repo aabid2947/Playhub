@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Shown when the signed-in user is an academy_owner with no academy yet
 /// (e.g. arrived after email verification, or completed signup before the
@@ -45,7 +47,7 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -57,24 +59,22 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
                 'Set up your academy',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               const Text(
                 "You're signed in but have no academy yet. "
                 'Give yours a name to finish setup.',
               ),
-              const SizedBox(height: 24),
-              TextField(
+              const SizedBox(height: AppSpacing.xl),
+              AppFormField(
                 controller: _name,
-                decoration: const InputDecoration(
-                  labelText: 'Academy name',
-                  hintText: 'e.g. Elite Cricket Academy',
-                ),
+                label: 'Academy name',
+                hint: 'e.g. Elite Cricket Academy',
               ),
               if (_error != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(
                 onPressed: _busy ? null : _go,
                 child: _busy

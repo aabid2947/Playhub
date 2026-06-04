@@ -5,6 +5,7 @@ import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class CoachBatchesTab extends ConsumerWidget {
   const CoachBatchesTab({super.key});
@@ -23,18 +24,13 @@ class CoachBatchesTab extends ConsumerWidget {
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(message: friendlyError(e)),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No active batches assigned to you yet.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return const AppEmptyState(
+              icon: Icons.group_work_outlined,
+              title: 'No active batches assigned to you yet.',
             );
           }
           return ListView.separated(
@@ -42,10 +38,10 @@ class CoachBatchesTab extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final b = list[i];
-              final sportLabel = ref.watch(sportDisplayProvider((
-                sportId: b.sportId,
-              )));
-              return ListTile(
+              final sportLabel = ref.watch(
+                sportDisplayProvider((sportId: b.sportId)),
+              );
+              return AppListTile(
                 leading: const Icon(Icons.group_work_outlined),
                 title: Text(b.name),
                 subtitle: Text(
@@ -60,8 +56,7 @@ class CoachBatchesTab extends ConsumerWidget {
                   ],
                 ),
                 onTap: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                      builder: (_) => BatchDetailPage(batch: b)),
+                  MaterialPageRoute(builder: (_) => BatchDetailPage(batch: b)),
                 ),
               );
             },

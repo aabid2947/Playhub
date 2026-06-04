@@ -28,8 +28,7 @@ class _SuperAdminHomeShellState extends ConsumerState<SuperAdminHomeShell> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () =>
-                ref.read(supabaseClientProvider).auth.signOut(),
+            onPressed: () => ref.read(supabaseClientProvider).auth.signOut(),
           ),
         ],
       ),

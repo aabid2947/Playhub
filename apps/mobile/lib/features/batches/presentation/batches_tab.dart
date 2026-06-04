@@ -8,6 +8,7 @@ import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchesTab extends ConsumerStatefulWidget {
   const BatchesTab({super.key});
@@ -33,14 +34,12 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
           ),
           Expanded(
             child: batchesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(friendlyError(e))),
+              loading: () => const AppLoading(),
+              error: (e, _) => AppErrorView(message: friendlyError(e)),
               data: (batches) {
                 final list = _sportFilter == null
                     ? batches
-                    : batches
-                        .where((b) => b.sportId == _sportFilter)
-                        .toList();
+                    : batches.where((b) => b.sportId == _sportFilter).toList();
                 if (list.isEmpty) {
                   return const _EmptyState();
                 }
@@ -80,11 +79,11 @@ class _BatchTile extends ConsumerWidget {
     final utilLabel = cap == null
         ? '${batch.enrolledCount}'
         : '${batch.enrolledCount}/$cap';
-    final sportLabel = ref.watch(sportDisplayProvider((
-      sportId: batch.sportId,
-    )));
+    final sportLabel = ref.watch(
+      sportDisplayProvider((sportId: batch.sportId)),
+    );
 
-    return ListTile(
+    return AppListTile(
       leading: const Icon(Icons.schedule_outlined),
       title: Text(batch.name),
       subtitle: Text(
@@ -98,16 +97,12 @@ class _BatchTile extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(utilLabel,
-              style: Theme.of(context).textTheme.titleMedium),
-          Text('enrolled',
-              style: Theme.of(context).textTheme.bodySmall),
+          Text(utilLabel, style: Theme.of(context).textTheme.titleMedium),
+          Text('enrolled', style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
       onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => BatchDetailPage(batch: batch),
-        ),
+        MaterialPageRoute(builder: (_) => BatchDetailPage(batch: batch)),
       ),
     );
   }
@@ -118,26 +113,10 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.schedule_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'No batches yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap "New batch" to schedule your first session.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    return const AppEmptyState(
+      icon: Icons.schedule_outlined,
+      title: 'No batches yet',
+      subtitle: 'Tap "New batch" to schedule your first session.',
     );
   }
 }

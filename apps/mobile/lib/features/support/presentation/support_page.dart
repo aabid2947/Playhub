@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
     show SupportTicketRow, ticketMessagesProvider;
 import 'package:playhub/features/support/data/support_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class SupportPage extends ConsumerWidget {
   const SupportPage({super.key});
@@ -33,18 +35,17 @@ class SupportPage extends ConsumerWidget {
         ),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(myAcademyTicketsProvider),
+        ),
         data: (rows) {
           if (rows.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  "No tickets yet. Tap 'New ticket' to reach out.",
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return const AppEmptyState(
+              icon: Icons.support_agent_outlined,
+              title: 'No tickets yet',
+              subtitle: "Tap 'New ticket' to reach out.",
             );
           }
           return ListView.separated(
@@ -52,9 +53,12 @@ class SupportPage extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final t = rows[i];
-              return ListTile(
-                title: Text(t.subject,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              return AppListTile(
+                title: Text(
+                  t.subject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Text('${t.status} · ${df.format(t.createdAt)}'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -107,8 +111,7 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        AppSnackbar.error(context, '$e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -128,21 +131,19 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('New support ticket',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _subject,
-            decoration: const InputDecoration(labelText: 'Subject'),
+          Text(
+            'New support ticket',
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(controller: _subject, label: 'Subject'),
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _body,
-            minLines: 4,
+            label: 'Describe the issue',
             maxLines: 10,
-            decoration: const InputDecoration(labelText: 'Describe the issue'),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
@@ -159,7 +160,7 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
                   onChanged: (v) => setState(() => _category = v),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: DropdownButtonFormField<String>(
                   initialValue: _priority,
@@ -170,13 +171,12 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
                     DropdownMenuItem(value: 'high', child: Text('High')),
                     DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
                   ],
-                  onChanged: (v) =>
-                      setState(() => _priority = v ?? 'normal'),
+                  onChanged: (v) => setState(() => _priority = v ?? 'normal'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
@@ -223,8 +223,7 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
       ref.invalidate(ticketMessagesProvider(widget.ticket.id));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        AppSnackbar.error(context, '$e');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -236,33 +235,34 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.ticket.subject,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          widget.ticket.subject,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: Column(
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Status: ${widget.ticket.status} · '
-                          'Priority: ${widget.ticket.priority}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(widget.ticket.body),
-                      ],
-                    ),
+                AppCard(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Status: ${widget.ticket.status} · '
+                        'Priority: ${widget.ticket.priority}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(widget.ticket.body),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 msgsAsync.when(
                   loading: () => const LinearProgressIndicator(),
                   error: (e, _) => Text(friendlyError(e)),
@@ -276,9 +276,9 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                           child: Card(
                             color: m.isStaff
                                 ? null
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer,
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
                             child: Padding(
                               padding: const EdgeInsets.all(10),
                               child: Text(m.body),
@@ -293,14 +293,15 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               child: Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _reply,
-                      decoration:
-                          const InputDecoration(hintText: 'Your reply…'),
+                      decoration: const InputDecoration(
+                        hintText: 'Your reply…',
+                      ),
                       minLines: 1,
                       maxLines: 4,
                     ),

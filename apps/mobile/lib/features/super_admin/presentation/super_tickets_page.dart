@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class SuperTicketsPage extends ConsumerWidget {
   const SuperTicketsPage({super.key});
@@ -12,11 +14,17 @@ class SuperTicketsPage extends ConsumerWidget {
     final async = ref.watch(allTicketsProvider);
     final df = DateFormat('dd MMM · HH:mm');
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppLoading(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(allTicketsProvider),
+      ),
       data: (rows) {
         if (rows.isEmpty) {
-          return const Center(child: Text('No tickets'));
+          return const AppEmptyState(
+            icon: Icons.support_agent_outlined,
+            title: 'No tickets',
+          );
         }
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(allTicketsProvider),
@@ -25,12 +33,19 @@ class SuperTicketsPage extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final t = rows[i];
+              // Kept as a bare ListTile because the leading CircleAvatar is a
+              // priority-coloured indicator that must not be re-tinted by
+              // AppListTile's primaryContainer wrapper.
               return ListTile(
                 leading: CircleAvatar(
                   backgroundColor: _priorityColor(context, t.priority),
                   child: Text(t.priority[0].toUpperCase()),
                 ),
-                title: Text(t.subject, maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: Text(
+                  t.subject,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Text('${t.status} · ${df.format(t.createdAt)}'),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -81,7 +96,9 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
     if (body.isEmpty) return;
     setState(() => _busy = true);
     try {
-      await ref.read(superAdminRepoProvider).postStaffReply(
+      await ref
+          .read(superAdminRepoProvider)
+          .postStaffReply(
             ticketId: widget.ticket.id,
             academyId: widget.ticket.academyId,
             body: body,
@@ -90,8 +107,7 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
       ref.invalidate(ticketMessagesProvider(widget.ticket.id));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        AppSnackbar.error(context, '$e');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -111,7 +127,11 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.ticket.subject, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          widget.ticket.subject,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           PopupMenuButton<String>(
             onSelected: _setStatus,
@@ -119,7 +139,9 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
               PopupMenuItem(value: 'open', child: Text('Mark open')),
               PopupMenuItem(value: 'in_progress', child: Text('In progress')),
               PopupMenuItem(
-                  value: 'waiting_on_user', child: Text('Waiting on user')),
+                value: 'waiting_on_user',
+                child: Text('Waiting on user'),
+              ),
               PopupMenuItem(value: 'resolved', child: Text('Resolved')),
               PopupMenuItem(value: 'closed', child: Text('Close')),
             ],
@@ -130,26 +152,24 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Status: ${widget.ticket.status} · '
-                          'Priority: ${widget.ticket.priority}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(widget.ticket.body),
-                      ],
-                    ),
+                AppCard(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Status: ${widget.ticket.status} · '
+                        'Priority: ${widget.ticket.priority}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(widget.ticket.body),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 msgsAsync.when(
                   loading: () => const LinearProgressIndicator(),
                   error: (e, _) => Text(friendlyError(e)),
@@ -160,16 +180,12 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                           alignment: m.isStaff
                               ? Alignment.centerRight
                               : Alignment.centerLeft,
-                          child: Card(
+                          child: AppCard(
+                            padding: const EdgeInsets.all(AppSpacing.sm + 2),
                             color: m.isStaff
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .primaryContainer
+                                ? Theme.of(context).colorScheme.primaryContainer
                                 : null,
-                            child: Padding(
-                              padding: const EdgeInsets.all(10),
-                              child: Text(m.body),
-                            ),
+                            child: Text(m.body),
                           ),
                         ),
                     ],
@@ -180,14 +196,15 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.sm),
               child: Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _reply,
-                      decoration:
-                          const InputDecoration(hintText: 'Staff reply…'),
+                      decoration: const InputDecoration(
+                        hintText: 'Staff reply…',
+                      ),
                       minLines: 1,
                       maxLines: 4,
                     ),

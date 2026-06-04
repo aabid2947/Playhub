@@ -4,6 +4,7 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class EventFormPage extends ConsumerStatefulWidget {
   const EventFormPage({super.key});
@@ -37,7 +38,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
     super.dispose();
   }
 
-  Future<void> _pickDate(DateTime initial, ValueChanged<DateTime> onPick) async {
+  Future<void> _pickDate(
+    DateTime initial,
+    ValueChanged<DateTime> onPick,
+  ) async {
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -78,8 +82,7 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        AppSnackbar.error(context, '$e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -96,9 +99,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            TextFormField(
+            AppFormField(
               controller: _title,
-              decoration: const InputDecoration(labelText: 'Title *'),
+              label: 'Title *',
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
@@ -110,7 +113,8 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                 for (final k in EventKind.values)
                   DropdownMenuItem(value: k, child: Text(k.label)),
               ],
-              onChanged: (v) => setState(() => _kind = v ?? EventKind.tournament),
+              onChanged: (v) =>
+                  setState(() => _kind = v ?? EventKind.tournament),
             ),
             const SizedBox(height: 12),
             SportPicker(
@@ -124,7 +128,8 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               title: const Text('Starts at *'),
               subtitle: Text(_startsAt.toLocal().toString()),
               trailing: const Icon(Icons.event),
-              onTap: () => _pickDate(_startsAt, (v) => setState(() => _startsAt = v)),
+              onTap: () =>
+                  _pickDate(_startsAt, (v) => setState(() => _startsAt = v)),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -158,18 +163,13 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               ),
             ),
             const Divider(),
-            TextFormField(
-              controller: _location,
-              decoration: const InputDecoration(labelText: 'Location'),
-            ),
+            AppFormField(controller: _location, label: 'Location'),
             const SizedBox(height: 12),
             DropdownButtonFormField<String?>(
               initialValue: _centerId,
               decoration: const InputDecoration(labelText: 'Center (optional)'),
               items: [
-                const DropdownMenuItem<String?>(
-                  child: Text('— None —'),
-                ),
+                const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in centers)
                   DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
               ],
@@ -179,19 +179,18 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _capacity,
+                    label: 'Capacity (optional)',
                     keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Capacity (optional)'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _fee,
+                    label: 'Fee (₹)',
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Fee (₹)'),
                   ),
                 ),
               ],

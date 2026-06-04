@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class PlansPage extends ConsumerWidget {
   const PlansPage({super.key});
@@ -20,16 +22,24 @@ class PlansPage extends ConsumerWidget {
         ),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(allPlansProvider),
+        ),
         data: (rows) {
-          if (rows.isEmpty) return const Center(child: Text('No plans yet'));
+          if (rows.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.workspace_premium_outlined,
+              title: 'No plans yet',
+            );
+          }
           return ListView.separated(
             itemCount: rows.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final p = rows[i];
-              return ListTile(
+              return AppListTile(
                 title: Text('${p.name} (${p.code})'),
                 subtitle: Text(
                   '₹${p.monthlyPrice.toStringAsFixed(0)}/mo'
@@ -72,18 +82,24 @@ class _PlanSheet extends ConsumerStatefulWidget {
 class _PlanSheetState extends ConsumerState<_PlanSheet> {
   late final _code = TextEditingController(text: widget.existing?.code ?? '');
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
-  late final _desc =
-      TextEditingController(text: widget.existing?.description ?? '');
+  late final _desc = TextEditingController(
+    text: widget.existing?.description ?? '',
+  );
   late final _monthly = TextEditingController(
-      text: widget.existing?.monthlyPrice.toString() ?? '');
+    text: widget.existing?.monthlyPrice.toString() ?? '',
+  );
   late final _yearly = TextEditingController(
-      text: widget.existing?.yearlyPrice?.toString() ?? '');
+    text: widget.existing?.yearlyPrice?.toString() ?? '',
+  );
   late final _maxStudents = TextEditingController(
-      text: widget.existing?.maxStudents?.toString() ?? '');
+    text: widget.existing?.maxStudents?.toString() ?? '',
+  );
   late final _maxCoaches = TextEditingController(
-      text: widget.existing?.maxCoaches?.toString() ?? '');
+    text: widget.existing?.maxCoaches?.toString() ?? '',
+  );
   late final _maxCenters = TextEditingController(
-      text: widget.existing?.maxCenters?.toString() ?? '');
+    text: widget.existing?.maxCenters?.toString() ?? '',
+  );
   bool _active = true;
   bool _saving = false;
 
@@ -113,7 +129,9 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await ref.read(superAdminRepoProvider).upsertPlan(
+      await ref
+          .read(superAdminRepoProvider)
+          .upsertPlan(
             id: widget.existing?.id,
             code: _code.text.trim(),
             name: _name.text.trim(),
@@ -129,8 +147,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        AppSnackbar.error(context, '$e');
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -141,85 +158,80 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.existing == null ? 'New plan' : 'Edit plan',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          Text(
+            widget.existing == null ? 'New plan' : 'Edit plan',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _code,
-                  decoration:
-                      const InputDecoration(labelText: 'Code (e.g. basic)'),
+                  label: 'Code (e.g. basic)',
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TextField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
+                child: AppFormField(controller: _name, label: 'Name'),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _desc,
-            decoration: const InputDecoration(labelText: 'Description'),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(controller: _desc, label: 'Description'),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _monthly,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Monthly ₹'),
+                  label: 'Monthly ₹',
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _yearly,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Yearly ₹'),
+                  label: 'Yearly ₹',
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _maxStudents,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Max students'),
+                  label: 'Max students',
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _maxCoaches,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Max coaches'),
+                  label: 'Max coaches',
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _maxCenters,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Max centers'),
+                  label: 'Max centers',
                 ),
               ),
             ],
@@ -230,7 +242,7 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             onChanged: (v) => setState(() => _active = v),
             title: const Text('Active'),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving

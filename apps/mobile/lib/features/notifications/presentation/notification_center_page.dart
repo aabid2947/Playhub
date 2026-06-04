@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/features/notifications/data/notification.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class NotificationCenterPage extends ConsumerWidget {
   const NotificationCenterPage({super.key});
@@ -31,17 +32,22 @@ class NotificationCenterPage extends ConsumerWidget {
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(notificationsStreamProvider),
+        ),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(child: Text('You\'re all caught up'));
+            return const AppEmptyState(
+              icon: Icons.notifications_none_outlined,
+              title: "You're all caught up",
+            );
           }
           return ListView.separated(
             itemCount: list.length,
             separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) =>
-                _Tile(n: list[i]),
+            itemBuilder: (_, i) => _Tile(n: list[i]),
           );
         },
       ),
@@ -76,8 +82,8 @@ class _Tile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      leading: CircleAvatar(child: Icon(_iconFor(n.category))),
+    return AppListTile(
+      leading: Icon(_iconFor(n.category)),
       title: Text(
         n.title,
         style: TextStyle(

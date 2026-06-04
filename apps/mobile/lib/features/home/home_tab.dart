@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/attendance/presentation/admin_attendance_overview.dart';
@@ -19,6 +20,7 @@ import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
 import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class HomeTab extends ConsumerWidget {
   const HomeTab({super.key});
@@ -42,68 +44,62 @@ class HomeTab extends ConsumerWidget {
           ..invalidate(centersProvider);
       },
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: <Widget>[
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hello, ${profile?.displayName ?? '...'}',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  profile?.role ?? '',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (academy != null)
+            AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Hello, ${profile?.displayName ?? '...'}',
-                    style: Theme.of(context).textTheme.titleLarge,
+                    academy.name,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    profile?.role ?? '',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  if (academy.city != null || academy.address != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      [academy.address, academy.city]
+                          .whereType<String>()
+                          .where((s) => s.isNotEmpty)
+                          .join(', '),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          if (academy != null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      academy.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    if (academy.city != null || academy.address != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        [academy.address, academy.city]
-                            .whereType<String>()
-                            .where((s) => s.isNotEmpty)
-                            .join(', '),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _ActionsCard(todaysCount: todays.length),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: _StatTile(
+                child: AppStatTile(
                   icon: Icons.location_on_outlined,
                   label: 'Centers',
                   value: '${centers.length}',
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: _StatTile(
+                child: AppStatTile(
                   icon: Icons.group_outlined,
                   label: 'Students',
                   value: '${students.length}',
@@ -111,19 +107,19 @@ class HomeTab extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
-                child: _StatTile(
+                child: AppStatTile(
                   icon: Icons.sports_outlined,
                   label: 'Coaches',
                   value: '${coaches.length}',
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: _StatTile(
+                child: AppStatTile(
                   icon: Icons.schedule_outlined,
                   label: 'Batches',
                   value: '${batches.length}',
@@ -146,7 +142,7 @@ class _ActionsCard extends StatelessWidget {
     return Card(
       child: Column(
         children: [
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.event_available_outlined),
             title: const Text("Today's sessions"),
             subtitle: Text(
@@ -154,17 +150,15 @@ class _ActionsCard extends StatelessWidget {
                   ? 'No batches scheduled today'
                   : '$todaysCount ${todaysCount == 1 ? 'batch' : 'batches'} to mark',
             ),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const TodaysSessionsPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.dashboard_outlined),
             title: const Text('Live attendance overview'),
             subtitle: const Text('Realtime view across all batches'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
                 builder: (_) => const AdminAttendanceOverview(),
@@ -172,48 +166,44 @@ class _ActionsCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.account_balance_wallet_outlined),
             title: const Text('Billing'),
             subtitle: const Text('Invoices, fees, payments, reports'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => const BillingDashboardPage(),
-              ),
+              MaterialPageRoute(builder: (_) => const BillingDashboardPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.person_search_outlined),
             title: const Text('Leads'),
             subtitle: const Text('Funnel kanban + new lead intake'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const LeadsKanbanPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.emoji_events_outlined),
             title: const Text('Events'),
             subtitle: const Text('Tournaments, workshops, certificates'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const EventsPage()),
-            ),
+            onTap: () => Navigator.of(
+              context,
+            ).push<void>(MaterialPageRoute(builder: (_) => const EventsPage())),
           ),
           const Divider(height: 1),
           Consumer(
             builder: (_, ref, __) {
               final low = ref.watch(lowStockItemsProvider).length;
-              return ListTile(
+              return AppListTile(
                 leading: const Icon(Icons.inventory_2_outlined),
                 title: const Text('Inventory'),
-                subtitle: Text(low == 0
-                    ? 'Equipment + low-stock alerts'
-                    : '$low item${low == 1 ? '' : 's'} below threshold'),
-                trailing: const Icon(Icons.chevron_right),
+                subtitle: Text(
+                  low == 0
+                      ? 'Equipment + low-stock alerts'
+                      : '$low item${low == 1 ? '' : 's'} below threshold',
+                ),
                 onTap: () => Navigator.of(context).push<void>(
                   MaterialPageRoute(builder: (_) => const InventoryPage()),
                 ),
@@ -221,89 +211,51 @@ class _ActionsCard extends StatelessWidget {
             },
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.insights_outlined),
             title: const Text('KPI dashboard'),
             subtitle: const Text('Revenue, enrollment, batch utilization'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const KpiDashboardPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.table_chart_outlined),
             title: const Text('Custom report'),
             subtitle: const Text('Pick fields, filters, group by'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const ReportBuilderPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.campaign_outlined),
             title: const Text('Announcements'),
             subtitle: const Text('Compose + send to roles, batches, centers'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const AnnouncementsPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.chat_outlined),
             title: const Text('Messages'),
             subtitle: const Text('1:1 + batch group chat'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute(builder: (_) => const ThreadsPage()),
             ),
           ),
           const Divider(height: 1),
-          ListTile(
+          AppListTile(
             leading: const Icon(Icons.notifications_outlined),
             title: const Text('Notifications'),
             subtitle: const Text('In-app feed'),
-            trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => const NotificationCenterPage(),
-              ),
+              MaterialPageRoute(builder: (_) => const NotificationCenterPage()),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 28),
-            const SizedBox(height: 8),
-            Text(value, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 2),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
       ),
     );
   }

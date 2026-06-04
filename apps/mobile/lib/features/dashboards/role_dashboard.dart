@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/push_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile.dart';
@@ -13,6 +13,7 @@ import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
 import 'package:playhub/features/student/presentation/student_home_shell.dart';
 import 'package:playhub/features/super_admin/presentation/super_admin_home_shell.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Top-level home router. Decides which shell to show based on the
 /// current user's profile state.
@@ -27,8 +28,8 @@ class RoleDashboard extends ConsumerWidget {
     final profileAsync = ref.watch(currentProfileProvider);
 
     return profileAsync.when(
-      loading: () => const _Centered(child: CircularProgressIndicator()),
-      error: (e, _) => _Centered(child: Text(friendlyError(e))),
+      loading: () => const Scaffold(body: AppLoading()),
+      error: (e, _) => Scaffold(body: AppErrorView(message: e.toString())),
       data: (profile) {
         if (profile == null) {
           return const _Centered(child: Text('No profile row found.'));
@@ -75,8 +76,7 @@ class _Centered extends StatelessWidget {
   const _Centered({required this.child});
   final Widget child;
   @override
-  Widget build(BuildContext context) =>
-      Scaffold(body: Center(child: child));
+  Widget build(BuildContext context) => Scaffold(body: Center(child: child));
 }
 
 class _RoleStub extends ConsumerWidget {
@@ -104,9 +104,9 @@ class _RoleStub extends ConsumerWidget {
               'Hello, ${profile.displayName}',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Chip(label: Text(profile.role)),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             const Text(
               'Per-role experience lands in later sprints.',
               textAlign: TextAlign.center,

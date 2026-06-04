@@ -31,18 +31,25 @@ export default async function HealthPage() {
           label="Academies"
           value={kpi.academiesTotal}
           hint={`${kpi.academiesActive} active`}
+          className="transition-shadow hover:shadow-[var(--shadow-md)]"
         />
         <StatCard
           label="Platform revenue"
           value={inr(kpi.platformRevenue)}
           hint="All SaaS payments"
+          className="transition-shadow hover:shadow-[var(--shadow-md)]"
         />
         <StatCard
           label="Outstanding"
           value={inr(kpi.outstanding)}
           hint="Unpaid SaaS invoices"
+          className="transition-shadow hover:shadow-[var(--shadow-md)]"
         />
-        <StatCard label="Open tickets" value={kpi.openTickets} />
+        <StatCard
+          label="Open tickets"
+          value={kpi.openTickets}
+          className="transition-shadow hover:shadow-[var(--shadow-md)]"
+        />
       </div>
 
       <Card className="mt-4">

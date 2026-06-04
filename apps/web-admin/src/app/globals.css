@@ -36,3 +36,34 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+
+/* ---------------------------------------------------------------
+ * Additive design tokens & utilities (do not modify existing vars).
+ * ------------------------------------------------------------- */
+:root {
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-md:
+    0 4px 6px -1px rgba(0, 0, 0, 0.4),
+    0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg:
+    0 10px 15px -3px rgba(0, 0, 0, 0.5),
+    0 4px 6px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* Subtle elevated surface — gradient from base surface to slightly lighter. */
+.bg-surface-elevated {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-surface) 0%,
+    var(--color-surface-2) 100%
+  );
+}
+
+/* Consistent focus ring for interactive elements that opt-in. */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-brand);
+}

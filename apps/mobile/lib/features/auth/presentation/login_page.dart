@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
@@ -50,29 +52,34 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('PlayHub')),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 32),
+            const SizedBox(height: AppSpacing.xxl),
             Text('Sign in', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 24),
-            TextField(
+            const SizedBox(height: AppSpacing.xl),
+            AppFormField(
               controller: _email,
+              label: 'Email',
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
+              textInputAction: TextInputAction.next,
+              prefixIcon: const Icon(Icons.mail_outline),
             ),
-            const SizedBox(height: 12),
-            TextField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _password,
+              label: 'Password',
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password'),
+              textInputAction: TextInputAction.done,
+              prefixIcon: const Icon(Icons.lock_outline),
+              onFieldSubmitted: (_) => _busy ? null : _signIn(),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: AppSpacing.md),
+              AppErrorView(message: _error),
             ],
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _busy ? null : _signIn,
               child: _busy
@@ -83,7 +90,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     )
                   : const Text('Sign in'),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             TextButton(
               onPressed: () => context.go('/forgot-password'),
               child: const Text('Forgot password?'),

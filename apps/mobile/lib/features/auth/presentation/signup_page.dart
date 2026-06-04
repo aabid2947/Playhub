@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
   const SignupPage({super.key});
@@ -63,8 +65,10 @@ class _SignupPageState extends ConsumerState<SignupPage> {
         );
         if (mounted) context.go('/home');
       } else {
-        setState(() => _message =
-            'Account created. Verify your email, then sign in to finish setup.');
+        setState(
+          () => _message =
+              'Account created. Verify your email, then sign in to finish setup.',
+        );
       }
     } on Object catch (e) {
       setState(() {
@@ -81,73 +85,81 @@ class _SignupPageState extends ConsumerState<SignupPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Create your academy')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               const Text(
                 'Sign up to create a new sports academy. You will be the owner.',
               ),
-              const SizedBox(height: 24),
-              TextFormField(
+              const SizedBox(height: AppSpacing.xl),
+              AppFormField(
                 controller: _academyName,
-                decoration: const InputDecoration(
-                  labelText: 'Academy name',
-                  hintText: 'e.g. Elite Cricket Academy',
-                ),
+                label: 'Academy name',
+                hint: 'e.g. Elite Cricket Academy',
+                prefixIcon: const Icon(Icons.sports_outlined),
+                textInputAction: TextInputAction.next,
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _firstName,
-                      decoration: const InputDecoration(labelText: 'First name'),
+                      label: 'First name',
+                      textInputAction: TextInputAction.next,
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _lastName,
-                      decoration: const InputDecoration(labelText: 'Last name'),
+                      label: 'Last name',
+                      textInputAction: TextInputAction.next,
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              TextFormField(
+              const SizedBox(height: AppSpacing.lg),
+              AppFormField(
                 controller: _email,
+                label: 'Email',
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'Email'),
-                validator: (v) =>
-                    (v == null || !v.contains('@')) ? 'Valid email required' : null,
+                textInputAction: TextInputAction.next,
+                prefixIcon: const Icon(Icons.mail_outline),
+                validator: (v) => (v == null || !v.contains('@'))
+                    ? 'Valid email required'
+                    : null,
               ),
-              const SizedBox(height: 12),
-              TextFormField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _password,
+                label: 'Password',
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Password'),
+                textInputAction: TextInputAction.done,
+                prefixIcon: const Icon(Icons.lock_outline),
                 validator: (v) => (v == null || v.length < 8)
                     ? 'At least 8 characters'
                     : null,
               ),
               if (_message != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   _message!,
                   style: TextStyle(color: _isError ? Colors.red : Colors.green),
                 ),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(
                 onPressed: _busy ? null : _signUp,
                 child: _busy
@@ -158,7 +170,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
                       )
                     : const Text('Create academy'),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               TextButton(
                 onPressed: () => context.go('/login'),
                 child: const Text('Already have an account? Sign in'),

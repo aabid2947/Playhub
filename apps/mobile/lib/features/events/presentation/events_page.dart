@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
@@ -9,6 +10,7 @@ import 'package:playhub/features/events/presentation/event_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Events list with status-based filtering. Tap a card → detail page.
 class EventsPage extends ConsumerStatefulWidget {
@@ -26,9 +28,14 @@ class _EventsPageState extends ConsumerState<EventsPage> {
   Widget build(BuildContext context) {
     final async = ref.watch(eventsListProvider);
     final profile = ref.watch(currentProfileProvider).valueOrNull;
-    final canCreate = profile != null &&
-        const ['academy_owner', 'academy_admin', 'center_admin', 'head_coach']
-            .contains(profile.role);
+    final canCreate =
+        profile != null &&
+        const [
+          'academy_owner',
+          'academy_admin',
+          'center_admin',
+          'head_coach',
+        ].contains(profile.role);
 
     return Scaffold(
       appBar: AppBar(
@@ -45,9 +52,7 @@ class _EventsPageState extends ConsumerState<EventsPage> {
               icon: const Icon(Icons.add),
               label: const Text('New event'),
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const EventFormPage(),
-                ),
+                MaterialPageRoute<void>(builder: (_) => const EventFormPage()),
               ),
             )
           : null,
@@ -63,8 +68,11 @@ class _EventsPageState extends ConsumerState<EventsPage> {
           ),
           Expanded(
             child: async.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(friendlyError(e))),
+              loading: () => const AppLoading(),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(eventsListProvider),
+              ),
               data: (events) {
                 final list = events.where((e) {
                   if (_filter != null && e.status != _filter) return false;
@@ -74,12 +82,16 @@ class _EventsPageState extends ConsumerState<EventsPage> {
                   return true;
                 }).toList();
                 if (list.isEmpty) {
-                  return const Center(child: Text('No events'));
+                  return const AppEmptyState(
+                    icon: Icons.event_outlined,
+                    title: 'No events',
+                  );
                 }
                 return ListView.separated(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 4),
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(height: AppSpacing.xs),
                   itemBuilder: (_, i) => _EventCard(event: list[i]),
                 );
               },
@@ -134,26 +146,27 @@ class _EventCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('EEE, dd MMM yyyy · h:mma');
-    return Card(
+    final subtitleLines = <String>[
+      '${event.kind.label} · ${df.format(event.startsAt)}',
+      if (event.location != null && event.location!.isNotEmpty) event.location!,
+    ];
+    return AppCard(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: ListTile(
-        leading: CircleAvatar(child: Icon(_iconFor(event.kind))),
+      padding: EdgeInsets.zero,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => EventDetailPage(eventId: event.id),
+        ),
+      ),
+      child: AppListTile(
+        leading: Icon(_iconFor(event.kind)),
         title: Text(event.title),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${event.kind.label} · ${df.format(event.startsAt)}'),
-            if (event.location != null && event.location!.isNotEmpty)
-              Text(event.location!),
-          ],
+          children: [for (final line in subtitleLines) Text(line)],
         ),
         trailing: _StatusChip(status: event.status),
         isThreeLine: event.location != null && event.location!.isNotEmpty,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => EventDetailPage(eventId: event.id),
-          ),
-        ),
       ),
     );
   }
@@ -180,20 +193,14 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (status) {
-      EventStatus.draft => Colors.grey,
-      EventStatus.published => Colors.blue,
-      EventStatus.registrationClosed => Colors.orange,
-      EventStatus.inProgress => Colors.green,
-      EventStatus.completed => Colors.purple,
-      EventStatus.cancelled => Colors.red,
+    final tone = switch (status) {
+      EventStatus.draft => AppBadgeTone.neutral,
+      EventStatus.published => AppBadgeTone.info,
+      EventStatus.registrationClosed => AppBadgeTone.warning,
+      EventStatus.inProgress => AppBadgeTone.success,
+      EventStatus.completed => AppBadgeTone.brand,
+      EventStatus.cancelled => AppBadgeTone.danger,
     };
-    return Chip(
-      label: Text(status.label, style: const TextStyle(fontSize: 11)),
-      backgroundColor: color.withValues(alpha: 0.15),
-      side: BorderSide.none,
-      padding: EdgeInsets.zero,
-      visualDensity: VisualDensity.compact,
-    );
+    return AppBadge(text: status.label, tone: tone);
   }
 }

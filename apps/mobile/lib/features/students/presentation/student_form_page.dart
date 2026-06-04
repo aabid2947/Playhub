@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/billing/presentation/student_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/student_fees_section.dart';
@@ -12,7 +14,7 @@ import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class StudentFormPage extends ConsumerStatefulWidget {
   const StudentFormPage({super.key, this.existing});
@@ -24,19 +26,25 @@ class StudentFormPage extends ConsumerStatefulWidget {
 }
 
 class _StudentFormPageState extends ConsumerState<StudentFormPage> {
-  late final _firstName =
-      TextEditingController(text: widget.existing?.firstName ?? '');
-  late final _lastName =
-      TextEditingController(text: widget.existing?.lastName ?? '');
-  late final _parentName =
-      TextEditingController(text: widget.existing?.parentName ?? '');
-  late final _parentPhone =
-      TextEditingController(text: widget.existing?.parentPhone ?? '');
-  late final _parentEmail =
-      TextEditingController(text: widget.existing?.parentEmail ?? '');
+  late final _firstName = TextEditingController(
+    text: widget.existing?.firstName ?? '',
+  );
+  late final _lastName = TextEditingController(
+    text: widget.existing?.lastName ?? '',
+  );
+  late final _parentName = TextEditingController(
+    text: widget.existing?.parentName ?? '',
+  );
+  late final _parentPhone = TextEditingController(
+    text: widget.existing?.parentPhone ?? '',
+  );
+  late final _parentEmail = TextEditingController(
+    text: widget.existing?.parentEmail ?? '',
+  );
   late final _city = TextEditingController(text: widget.existing?.city ?? '');
-  late final _medical =
-      TextEditingController(text: widget.existing?.medicalNotes ?? '');
+  late final _medical = TextEditingController(
+    text: widget.existing?.medicalNotes ?? '',
+  );
 
   String? _gender;
   String? _skillLevel;
@@ -154,24 +162,23 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 ),
               ),
               const SizedBox(height: 24),
-              const _SectionLabel('Student'),
+              const AppSectionHeader(title: 'Student'),
+              const SizedBox(height: AppSpacing.sm),
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _firstName,
-                      decoration:
-                          const InputDecoration(labelText: 'First name *'),
+                      label: 'First name *',
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _lastName,
-                      decoration:
-                          const InputDecoration(labelText: 'Last name *'),
+                      label: 'Last name *',
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
@@ -185,8 +192,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                     child: InkWell(
                       onTap: _pickDob,
                       child: InputDecorator(
-                        decoration:
-                            const InputDecoration(labelText: 'Date of birth'),
+                        decoration: const InputDecoration(
+                          labelText: 'Date of birth',
+                        ),
                         child: Text(
                           _dob == null
                               ? 'Tap to pick'
@@ -203,7 +211,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                       items: const [
                         DropdownMenuItem(value: 'male', child: Text('Male')),
                         DropdownMenuItem(
-                            value: 'female', child: Text('Female')),
+                          value: 'female',
+                          child: Text('Female'),
+                        ),
                         DropdownMenuItem(value: 'other', child: Text('Other')),
                       ],
                       onChanged: (v) => setState(() => _gender = v),
@@ -212,10 +222,11 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 ],
               ),
               const SizedBox(height: 24),
-              const _SectionLabel('Parent / Guardian'),
-              TextFormField(
+              const AppSectionHeader(title: 'Parent / Guardian'),
+              const SizedBox(height: AppSpacing.sm),
+              AppFormField(
                 controller: _parentName,
-                decoration: const InputDecoration(labelText: 'Parent name *'),
+                label: 'Parent name *',
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
@@ -223,29 +234,27 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               Row(
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _parentPhone,
+                      label: 'Parent phone',
                       keyboardType: TextInputType.phone,
-                      decoration:
-                          const InputDecoration(labelText: 'Parent phone'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _parentEmail,
+                      label: 'Parent email',
                       keyboardType: TextInputType.emailAddress,
-                      decoration:
-                          const InputDecoration(labelText: 'Parent email'),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
-              const _SectionLabel('Training'),
+              const AppSectionHeader(title: 'Training'),
+              const SizedBox(height: AppSpacing.sm),
               centresAsync.when(
-                loading: () =>
-                    const LinearProgressIndicator(minHeight: 2),
+                loading: () => const LinearProgressIndicator(minHeight: 2),
                 error: (e, _) => Text(friendlyError(e)),
                 data: (centres) => DropdownButtonFormField<String>(
                   initialValue: _centerId,
@@ -272,16 +281,22 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _skillLevel,
-                      decoration:
-                          const InputDecoration(labelText: 'Skill level'),
+                      decoration: const InputDecoration(
+                        labelText: 'Skill level',
+                      ),
                       items: const [
                         DropdownMenuItem(
-                            value: 'beginner', child: Text('Beginner')),
+                          value: 'beginner',
+                          child: Text('Beginner'),
+                        ),
                         DropdownMenuItem(
-                            value: 'intermediate',
-                            child: Text('Intermediate')),
+                          value: 'intermediate',
+                          child: Text('Intermediate'),
+                        ),
                         DropdownMenuItem(
-                            value: 'advanced', child: Text('Advanced')),
+                          value: 'advanced',
+                          child: Text('Advanced'),
+                        ),
                       ],
                       onChanged: (v) => setState(() => _skillLevel = v),
                     ),
@@ -297,24 +312,22 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   DropdownMenuItem(value: 'paused', child: Text('Paused')),
                   DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
                   DropdownMenuItem(
-                      value: 'graduated', child: Text('Graduated')),
+                    value: 'graduated',
+                    child: Text('Graduated'),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _status = v ?? 'active'),
               ),
               const SizedBox(height: 24),
-              const _SectionLabel('Other'),
-              TextFormField(
-                controller: _city,
-                decoration: const InputDecoration(labelText: 'City'),
-              ),
+              const AppSectionHeader(title: 'Other'),
+              const SizedBox(height: AppSpacing.sm),
+              AppFormField(controller: _city, label: 'City'),
               const SizedBox(height: 12),
-              TextFormField(
+              AppFormField(
                 controller: _medical,
+                label: 'Medical notes',
+                hint: 'Allergies, conditions, medications',
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Medical notes',
-                  hintText: 'Allergies, conditions, medications',
-                ),
               ),
               if (isEdit) ...[
                 const SizedBox(height: 32),
@@ -330,12 +343,16 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 const SizedBox(height: 24),
                 StudentDocumentsSection(studentId: widget.existing!.id),
                 const SizedBox(height: 24),
-                _SectionLabel('Logins & access'),
+                const AppSectionHeader(title: 'Logins & access'),
+                const SizedBox(height: AppSpacing.sm),
                 _InviteAccessRow(student: widget.existing!),
               ],
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
               const SizedBox(height: 24),
               FilledButton(
@@ -356,21 +373,6 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   }
 }
 
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-    );
-  }
-}
-
 class _AttendanceSummaryCard extends ConsumerWidget {
   const _AttendanceSummaryCard({required this.student});
   final Student student;
@@ -383,18 +385,18 @@ class _AttendanceSummaryCard extends ConsumerWidget {
       error: (e, _) => Text(friendlyError(e)),
       data: (s) {
         if (s == null || s.totalSessions == 0) {
-          return const Card(
-            child: ListTile(
+          return const AppCard(
+            padding: EdgeInsets.zero,
+            child: AppListTile(
               leading: Icon(Icons.event_available_outlined),
               title: Text('Attendance'),
-              subtitle: Text(
-                'No sessions in the last 30 days yet.',
-              ),
+              subtitle: Text('No sessions in the last 30 days yet.'),
             ),
           );
         }
-        return Card(
-          child: ListTile(
+        return AppCard(
+          padding: EdgeInsets.zero,
+          child: AppListTile(
             leading: const Icon(Icons.event_available_outlined),
             title: Text(
               '${s.attendancePct?.toStringAsFixed(0) ?? '—'}% attendance',
@@ -404,8 +406,7 @@ class _AttendanceSummaryCard extends ConsumerWidget {
               '(last 30 days)',
             ),
             trailing: s.attendancePct != null && s.attendancePct! < 60
-                ? const Icon(Icons.warning_amber_outlined,
-                    color: Colors.orange)
+                ? const Icon(Icons.warning_amber_outlined, color: Colors.orange)
                 : null,
           ),
         );
@@ -420,12 +421,12 @@ class _PerformanceShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: AppListTile(
         leading: const Icon(Icons.insights_outlined),
         title: const Text('Performance assessments'),
         subtitle: const Text('View history or record a new assessment'),
-        trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push<void>(
           MaterialPageRoute(
             builder: (_) => PerformanceHistoryPage(student: student),
@@ -451,12 +452,13 @@ class _InviteAccessRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final linksAsync = ref.watch(studentParentLinksProvider(student.id));
-    return Card(
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           // Parent — reflects existing links instead of always re-inviting.
           linksAsync.when(
-            loading: () => const ListTile(
+            loading: () => const AppListTile(
               leading: Icon(Icons.family_restroom_outlined),
               title: Text('Invite parent'),
               subtitle: LinearProgressIndicator(),
@@ -464,30 +466,32 @@ class _InviteAccessRow extends ConsumerWidget {
             error: (_, __) => _inviteParentTile(context),
             data: (links) => links.isEmpty
                 ? _inviteParentTile(context)
-                : ListTile(
+                : AppListTile(
                     leading: const Icon(Icons.verified_user_outlined),
                     title: const Text('Parent linked'),
-                    subtitle: Text(links
-                        .map((l) => '${l.name} (${l.relationship})')
-                        .join(', ')),
+                    subtitle: Text(
+                      links
+                          .map((l) => '${l.name} (${l.relationship})')
+                          .join(', '),
+                    ),
                   ),
           ),
           const Divider(height: 1),
           // Student login — gated on whether the record already has a login.
           if (student.userId != null)
-            const ListTile(
+            const AppListTile(
               leading: Icon(Icons.verified_user_outlined),
               title: Text('Student can log in'),
               subtitle: Text('They already have their own login.'),
             )
           else
-            ListTile(
+            AppListTile(
               leading: const Icon(Icons.school_outlined),
               title: const Text('Invite student to log in'),
               subtitle: const Text(
-                  'For older students who manage their own attendance + '
-                  'performance view.'),
-              trailing: const Icon(Icons.chevron_right),
+                'For older students who manage their own attendance + '
+                'performance view.',
+              ),
               onTap: () => _open(
                 context,
                 InvitePreset(
@@ -505,23 +509,23 @@ class _InviteAccessRow extends ConsumerWidget {
     );
   }
 
-  Widget _inviteParentTile(BuildContext context) => ListTile(
-        leading: const Icon(Icons.family_restroom_outlined),
-        title: const Text('Invite parent'),
-        subtitle: const Text(
-            'Send a magic-link email; they get the parent dashboard '
-            'and only see this student.'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => _open(
-          context,
-          InvitePreset(
-            role: 'parent',
-            title: 'Invite parent of ${student.firstName}',
-            email: student.parentEmail,
-            firstName: student.parentName,
-            linkToStudentId: student.id,
-            linkRelationship: 'parent',
-          ),
-        ),
-      );
+  Widget _inviteParentTile(BuildContext context) => AppListTile(
+    leading: const Icon(Icons.family_restroom_outlined),
+    title: const Text('Invite parent'),
+    subtitle: const Text(
+      'Send a magic-link email; they get the parent dashboard '
+      'and only see this student.',
+    ),
+    onTap: () => _open(
+      context,
+      InvitePreset(
+        role: 'parent',
+        title: 'Invite parent of ${student.firstName}',
+        email: student.parentEmail,
+        firstName: student.parentName,
+        linkToStudentId: student.id,
+        linkRelationship: 'parent',
+      ),
+    ),
+  );
 }
