@@ -5,12 +5,12 @@ name: ui-revamp-apk
 # revamp can be tried on a real device without a local Flutter toolchain.
 on:
   push:
-    branches: [ui-revamp]
+    branches: [ui-revamo]
   workflow_dispatch:
 
 # A newer push to the branch cancels an in-flight build.
 concurrency:
-  group: ui-revamp-apk-${{ github.ref }}
+  group: ui-revamo-apk-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
