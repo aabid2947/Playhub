@@ -2,23 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
+import 'package:playhub/features/analytics/presentation/kpi_dashboard_page.dart';
+import 'package:playhub/features/announcements/presentation/announcements_page.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/attendance/presentation/admin_attendance_overview.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
-import 'package:playhub/features/announcements/presentation/announcements_page.dart';
 import 'package:playhub/features/billing/presentation/billing_dashboard_page.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
-import 'package:playhub/features/analytics/presentation/kpi_dashboard_page.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_page.dart';
 import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
-import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
+import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -57,7 +57,9 @@ class HomeTab extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   profile?.role ?? '',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ],
             ),
@@ -79,7 +81,10 @@ class HomeTab extends ConsumerWidget {
                           .whereType<String>()
                           .where((s) => s.isNotEmpty)
                           .join(', '),
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ],
@@ -139,7 +144,8 @@ class _ActionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
           AppListTile(

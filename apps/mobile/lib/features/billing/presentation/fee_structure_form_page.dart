@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class FeeStructureFormPage extends ConsumerStatefulWidget {
   const FeeStructureFormPage({super.key, this.existing});
@@ -83,12 +85,11 @@ class _FeeStructureFormPageState
       } else {
         await createFeeStructure(ref, patch);
       }
-      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, isEdit ? 'Fee updated.' : 'Fee created.');
+      Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -101,48 +102,43 @@ class _FeeStructureFormPageState
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            TextFormField(
+            const AppSectionHeader(title: 'Fee details'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Name *',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Name *',
+              hint: 'e.g. Monthly coaching fee',
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<FeeType>(
-              initialValue: _type,
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<FeeType>(
+              label: 'Frequency',
+              value: _type,
               items: FeeType.values
                   .map((t) =>
                       DropdownMenuItem(value: t, child: Text(t.label)))
                   .toList(),
               onChanged: (v) => setState(() => _type = v ?? FeeType.monthly),
-              decoration: const InputDecoration(
-                labelText: 'Frequency',
-                border: OutlineInputBorder(),
-              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             SportPicker(
               value: _sportId,
               onChanged: (v) => setState(() => _sportId = v),
               label: 'Sport (optional)',
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _base,
+                    label: 'Base amount (₹) *',
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Base amount (₹) *',
-                      border: OutlineInputBorder(),
-                    ),
                     validator: (v) {
                       final n = double.tryParse(v?.trim() ?? '');
                       if (n == null || n < 0) return 'Required';
@@ -150,26 +146,23 @@ class _FeeStructureFormPageState
                     },
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _tax,
+                    label: 'Tax %',
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Tax %',
-                      border: OutlineInputBorder(),
-                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            Text('Late fee',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: _latePolicy,
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Late fee'),
+            const SizedBox(height: AppSpacing.sm),
+            AppDropdownField<String>(
+              label: 'Policy',
+              value: _latePolicy,
               items: const [
                 DropdownMenuItem(value: 'none', child: Text('No late fee')),
                 DropdownMenuItem(
@@ -177,61 +170,52 @@ class _FeeStructureFormPageState
                 DropdownMenuItem(
                     value: 'daily', child: Text('Per-day after grace')),
               ],
-              onChanged: (v) =>
-                  setState(() => _latePolicy = v ?? 'one_time'),
-              decoration: const InputDecoration(
-                labelText: 'Policy',
-                border: OutlineInputBorder(),
-              ),
+              onChanged: (v) => setState(() => _latePolicy = v ?? 'one_time'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _lateFlat,
+                    label: 'Flat ₹ / period',
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Flat ₹ / period',
-                      border: OutlineInputBorder(),
-                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _latePct,
+                    label: 'Or % of base',
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Or % of base',
-                      border: OutlineInputBorder(),
-                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _grace,
+              label: 'Grace days',
+              hint: 'Days after due date before fee applies',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Grace days',
-                hintText: 'Days after due date before fee applies',
-                border: OutlineInputBorder(),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Status'),
+            const SizedBox(height: AppSpacing.xs),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: SwitchListTile(
+                value: _isActive,
+                onChanged: (v) => setState(() => _isActive = v),
+                title: const Text('Active'),
+                subtitle: const Text(
+                  'When off, recurring invoices stop generating.',
+                ),
               ),
             ),
-            const SizedBox(height: 24),
-            SwitchListTile(
-              value: _isActive,
-              onChanged: (v) => setState(() => _isActive = v),
-              title: const Text('Active'),
-              subtitle: const Text(
-                'When off, recurring invoices stop generating.',
-              ),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _busy ? null : _save,
               child: _busy

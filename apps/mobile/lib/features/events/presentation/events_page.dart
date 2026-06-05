@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/events/presentation/event_detail_page.dart';
 import 'package:playhub/features/events/presentation/event_form_page.dart';
-import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Events list with status-based filtering. Tap a card → detail page.
@@ -114,10 +113,14 @@ class _FilterBar extends StatelessWidget {
       height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
         children: [
           Padding(
-            padding: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+            padding: const EdgeInsets.only(
+              right: AppSpacing.sm,
+              top: AppSpacing.sm,
+              bottom: AppSpacing.sm,
+            ),
             child: ChoiceChip(
               label: const Text('All'),
               selected: selected == null,
@@ -126,7 +129,11 @@ class _FilterBar extends StatelessWidget {
           ),
           for (final s in EventStatus.values)
             Padding(
-              padding: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+              padding: const EdgeInsets.only(
+                right: AppSpacing.sm,
+                top: AppSpacing.sm,
+                bottom: AppSpacing.sm,
+              ),
               child: ChoiceChip(
                 label: Text(s.label),
                 selected: selected == s,
@@ -151,7 +158,7 @@ class _EventCard extends StatelessWidget {
       if (event.location != null && event.location!.isNotEmpty) event.location!,
     ];
     return AppCard(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       padding: EdgeInsets.zero,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(

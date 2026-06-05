@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/features/billing/presentation/discount_structure_form_page.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class DiscountStructuresPage extends ConsumerWidget {
   const DiscountStructuresPage({super.key});
@@ -13,10 +14,20 @@ class DiscountStructuresPage extends ConsumerWidget {
     final asyncRows = ref.watch(discountStructuresProvider);
     return Scaffold(
       body: asyncRows.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(discountStructuresProvider),
+        ),
         data: (rows) {
-          if (rows.isEmpty) return const _EmptyState();
+          if (rows.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.local_offer_outlined,
+              title: 'No discounts yet',
+              subtitle: 'Define a sibling, scholarship, or promo discount, '
+                  'then assign it to a student or a batch.',
+            );
+          }
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(discountStructuresProvider),
             child: ListView.separated(
@@ -44,7 +55,7 @@ class _DiscountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return AppListTile(
       leading: const Icon(Icons.local_offer_outlined),
       title: Text(item.name),
       subtitle: Text(
@@ -55,42 +66,10 @@ class _DiscountTile extends StatelessWidget {
             item.description,
         ].whereType<String>().join(' · '),
       ),
-      trailing: !item.isActive
-          ? const Chip(
-              label: Text('inactive'),
-              visualDensity: VisualDensity.compact,
-            )
-          : null,
+      trailing: item.isActive ? null : const AppBadge(text: 'Inactive'),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => DiscountStructureFormPage(existing: item),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.local_offer_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text('No discounts yet',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            const Text(
-              'Define a sibling, scholarship, or promo discount, then '
-              'assign it to a student or a batch.',
-              textAlign: TextAlign.center,
-            ),
-          ],
         ),
       ),
     );

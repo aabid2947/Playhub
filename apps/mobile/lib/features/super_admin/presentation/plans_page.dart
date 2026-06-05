@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class PlansPage extends ConsumerWidget {
@@ -144,11 +144,12 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             isActive: _active,
           );
       ref.invalidate(allPlansProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.error(context, '$e');
-      }
+      if (!mounted) return;
+      AppSnackbar.success(
+          context, widget.existing == null ? 'Plan created.' : 'Plan updated.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -169,9 +170,9 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
         children: [
           Text(
             widget.existing == null ? 'New plan' : 'Edit plan',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           Row(
             children: [
               Expanded(

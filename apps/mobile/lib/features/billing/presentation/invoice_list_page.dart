@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/features/billing/presentation/invoice_detail_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
+
+final _dateFmt = DateFormat('dd MMM yyyy');
 
 class InvoiceListPage extends ConsumerWidget {
   const InvoiceListPage({super.key});
@@ -22,12 +27,17 @@ class InvoiceListPage extends ConsumerWidget {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xs,
+            ),
             child: Row(
               children: [
                 Expanded(
                   child: Wrap(
-                    spacing: 6,
+                    spacing: AppSpacing.sm,
                     children: [
                       _StatusFilterChip(
                         label: 'All',
@@ -52,10 +62,21 @@ class InvoiceListPage extends ConsumerWidget {
           ),
           Expanded(
             child: invoicesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text(friendlyError(e))),
+              loading: () => const AppLoading(),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(invoicesProvider),
+              ),
               data: (invoices) {
-                if (invoices.isEmpty) return const _EmptyState();
+                if (invoices.isEmpty) {
+                  return const AppEmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No invoices yet',
+                    subtitle:
+                        'Recurring invoices generate via cron when fees are '
+                        'assigned.',
+                  );
+                }
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(invoicesProvider),
                   child: ListView.separated(
@@ -104,16 +125,26 @@ class _InvoiceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(invoice.status);
-    final due = invoice.dueDate.toIso8601String().substring(0, 10);
-    return ListTile(
+    final scheme = Theme.of(context).colorScheme;
+    final sem = AppSemanticColors.of(context);
+    final tone = _tone(invoice.status);
+    final (fg, bg) = switch (tone) {
+      AppBadgeTone.success => (sem.success, sem.successContainer),
+      AppBadgeTone.warning => (sem.warning, sem.warningContainer),
+      AppBadgeTone.danger => (sem.danger, sem.dangerContainer),
+      AppBadgeTone.info => (sem.info, sem.infoContainer),
+      _ => (scheme.onSurfaceVariant, scheme.surfaceContainerHighest),
+    };
+    return AppListTile(
+      wrapLeading: false,
       leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.15),
-        child: Icon(_statusIcon(invoice.status), color: color, size: 18),
+        backgroundColor: bg,
+        child: Icon(_statusIcon(invoice.status), color: fg, size: 18),
       ),
       title: Text(invoice.invoiceNumber),
       subtitle: Text(
-        '${student?.fullName ?? 'unknown student'} · due $due',
+        '${student?.fullName ?? 'unknown student'} · '
+        'due ${_dateFmt.format(invoice.dueDate)}',
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -121,30 +152,25 @@ class _InvoiceTile extends StatelessWidget {
         children: [
           Text('₹${invoice.amount.toStringAsFixed(0)}',
               style: Theme.of(context).textTheme.titleMedium),
-          Text(
-            invoice.status.label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: color,
-                ),
-          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppBadge(text: invoice.status.label, tone: tone),
         ],
       ),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
-          builder: (_) =>
-              InvoiceDetailPage(invoiceId: invoice.id),
+          builder: (_) => InvoiceDetailPage(invoiceId: invoice.id),
         ),
       ),
     );
   }
 
-  Color _statusColor(InvoiceStatus s) => switch (s) {
-        InvoiceStatus.paid => Colors.green,
-        InvoiceStatus.partial => Colors.orange,
-        InvoiceStatus.overdue => Colors.red,
-        InvoiceStatus.cancelled => Colors.grey,
-        InvoiceStatus.draft => Colors.grey,
-        InvoiceStatus.issued => Colors.blue,
+  AppBadgeTone _tone(InvoiceStatus s) => switch (s) {
+        InvoiceStatus.paid => AppBadgeTone.success,
+        InvoiceStatus.partial => AppBadgeTone.warning,
+        InvoiceStatus.overdue => AppBadgeTone.danger,
+        InvoiceStatus.issued => AppBadgeTone.info,
+        InvoiceStatus.cancelled => AppBadgeTone.neutral,
+        InvoiceStatus.draft => AppBadgeTone.neutral,
       };
 
   IconData _statusIcon(InvoiceStatus s) => switch (s) {
@@ -155,30 +181,4 @@ class _InvoiceTile extends StatelessWidget {
         InvoiceStatus.draft => Icons.drafts_outlined,
         InvoiceStatus.issued => Icons.description_outlined,
       };
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.receipt_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text('No invoices yet',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            const Text(
-              'Recurring invoices generate via cron when fees are assigned.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

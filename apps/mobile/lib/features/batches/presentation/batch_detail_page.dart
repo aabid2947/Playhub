@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
@@ -12,7 +14,7 @@ import 'package:playhub/features/coach/presentation/coach_student_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchDetailPage extends ConsumerWidget {
   const BatchDetailPage({required this.batch, super.key});
@@ -62,41 +64,38 @@ class BatchDetailPage extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    batch.schedule.summary,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Consumer(builder: (_, ref, __) {
-                    final sportLabel = ref.watch(sportDisplayProvider((
-                      sportId: batch.sportId,
-                    )));
-                    return Text(
-                      [
-                        if (sportLabel != '—') sportLabel,
-                        if (batch.ageGroup != null) batch.ageGroup!,
-                        if (batch.skillLevel != null) batch.skillLevel!,
-                        if (batch.capacity != null)
-                          '${batch.enrolledCount}/${batch.capacity} enrolled'
-                        else
-                          '${batch.enrolledCount} enrolled',
-                      ].join(' • '),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    );
-                  }),
-                ],
-              ),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  batch.schedule.summary,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Consumer(builder: (_, ref, __) {
+                  final sportLabel = ref.watch(sportDisplayProvider((
+                    sportId: batch.sportId,
+                  )));
+                  return Text(
+                    [
+                      if (sportLabel != '—') sportLabel,
+                      if (batch.ageGroup != null) batch.ageGroup!,
+                      if (batch.skillLevel != null) batch.skillLevel!,
+                      if (batch.capacity != null)
+                        '${batch.enrolledCount}/${batch.capacity} enrolled'
+                      else
+                        '${batch.enrolledCount} enrolled',
+                    ].join(' • '),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  );
+                }),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           Row(
             children: [
               Text(
@@ -133,18 +132,17 @@ class BatchDetailPage extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           BatchFeesSection(batchId: batch.id),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           BatchDiscountsSection(batchId: batch.id),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           enrollmentsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const AppLoading(),
             error: (e, _) => Text(friendlyError(e)),
             data: (enrollments) {
               if (enrollments.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(24),
+                return const AppCard(
                   child: Center(child: Text('No students enrolled yet.')),
                 );
               }
@@ -180,7 +178,7 @@ class BatchDetailPage extends ConsumerWidget {
                           _showTransferSheet(context, ref, e),
                     ),
                   if (waitlisted.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     _EnrollmentSection(
                       title: 'Waitlist (${waitlisted.length})',
                       enrollments: waitlisted,
@@ -204,7 +202,7 @@ class BatchDetailPage extends ConsumerWidget {
                     ),
                   ],
                   if (withdrawn.isNotEmpty) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     _EnrollmentSection(
                       title: 'Withdrawn (${withdrawn.length})',
                       enrollments: withdrawn,
@@ -228,9 +226,7 @@ class BatchDetailPage extends ConsumerWidget {
     final batches = ref.read(batchesProvider).valueOrNull ?? const <Batch>[];
     final targets = batches.where((b) => b.id != batch.id).toList();
     if (targets.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No other batches to transfer to.')),
-      );
+      AppSnackbar.info(context, 'No other batches to transfer to.');
       return;
     }
     final picked = await showModalBottomSheet<Batch>(
@@ -273,11 +269,7 @@ class BatchDetailPage extends ConsumerWidget {
         toBatchId: picked.id,
       );
     } on Object catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
   }
 
@@ -288,11 +280,7 @@ class BatchDetailPage extends ConsumerWidget {
     required bool waitlist,
   }) async {
     if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('All your students are already enrolled.'),
-        ),
-      );
+      AppSnackbar.info(context, 'All your students are already enrolled.');
       return;
     }
     await showModalBottomSheet<void>(
@@ -359,21 +347,17 @@ class _EnrollmentSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-        ),
-        Card(
+        AppSectionHeader(title: title),
+        AppCard(
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
               for (final e in enrollments)
-                ListTile(
+                AppListTile(
                   leading: const Icon(Icons.person_outline),
-                  title: Text(byStudent[e.studentId]?.fullName ??
-                      '(unknown student)'),
+                  title: Text(
+                    byStudent[e.studentId]?.fullName ?? '(unknown student)',
+                  ),
                   subtitle: Text(e.status),
                   onTap: () {
                     final s = byStudent[e.studentId];

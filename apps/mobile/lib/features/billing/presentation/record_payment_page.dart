@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/features/billing/data/payment.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class RecordPaymentPage extends ConsumerStatefulWidget {
   const RecordPaymentPage({required this.invoice, super.key});
@@ -32,15 +34,11 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
   Future<void> _save() async {
     final amount = double.tryParse(_amount.text.trim());
     if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid amount')),
-      );
+      AppSnackbar.error(context, 'Enter a valid amount.');
       return;
     }
     if (amount > widget.invoice.balance) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Amount exceeds invoice balance')),
-      );
+      AppSnackbar.error(context, 'Amount exceeds invoice balance.');
       return;
     }
     setState(() => _busy = true);
@@ -52,13 +50,11 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
         method: _method,
         notes: _notes.text.trim(),
       );
-      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Payment recorded.');
+      Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -69,60 +65,67 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Record payment')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.invoice.invoiceNumber,
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Balance: ₹${widget.invoice.balance.toStringAsFixed(2)}',
-                  ),
-                ],
-              ),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.invoice.invoiceNumber,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Balance due',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    Text(
+                      '₹${widget.invoice.balance.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: AppType.semibold,
+                          ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<PaymentMethod>(
-            initialValue: _method,
+          const SizedBox(height: AppSpacing.xl),
+          const AppSectionHeader(title: 'Payment'),
+          const SizedBox(height: AppSpacing.sm),
+          AppDropdownField<PaymentMethod>(
+            label: 'Method',
+            value: _method,
             items: PaymentMethod.values
                 .where((m) => m != PaymentMethod.razorpay)
-                .map((m) =>
-                    DropdownMenuItem(value: m, child: Text(m.label)))
+                .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
                 .toList(),
             onChanged: (v) =>
                 setState(() => _method = v ?? PaymentMethod.cash),
-            decoration: const InputDecoration(
-              labelText: 'Method',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _amount,
+            label: 'Amount (₹)',
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount (₹)',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _notes,
+            label: 'Notes (optional)',
+            hint: 'Cheque #, transaction ID, …',
             maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Notes (optional)',
-              hintText: 'Cheque #, transaction ID, …',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: _busy ? null : _save,
             child: _busy

@@ -5,6 +5,7 @@ import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
 import 'package:playhub/features/parent/presentation/parent_dashboard_tab.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class ParentHomeShell extends ConsumerStatefulWidget {
   const ParentHomeShell({super.key});
@@ -47,15 +48,13 @@ class _ParentHomeShellState extends ConsumerState<ParentHomeShell> {
             label: 'Messages',
           ),
           NavigationDestination(
-            icon: Badge(
-              isLabelVisible: unread > 0,
-              label: Text('$unread'),
-              child: const Icon(Icons.notifications_outlined),
+            icon: CountBadgeIcon(
+              icon: Icons.notifications_outlined,
+              count: unread,
             ),
-            selectedIcon: Badge(
-              isLabelVisible: unread > 0,
-              label: Text('$unread'),
-              child: const Icon(Icons.notifications),
+            selectedIcon: CountBadgeIcon(
+              icon: Icons.notifications,
+              count: unread,
             ),
             label: 'Alerts',
           ),

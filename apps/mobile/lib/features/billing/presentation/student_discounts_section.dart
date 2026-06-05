@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class StudentDiscountsSection extends ConsumerWidget {
   const StudentDiscountsSection({required this.studentId, super.key});
@@ -18,40 +20,36 @@ class StudentDiscountsSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Text('Discounts',
-                style: Theme.of(context).textTheme.titleMedium),
-            const Spacer(),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Assign discount'),
-              onPressed: () => _showAssignSheet(
-                context,
-                ref,
-                structuresAsync.valueOrNull ?? const [],
-              ),
+        AppSectionHeader(
+          title: 'Discounts',
+          trailing: FilledButton.tonalIcon(
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Assign discount'),
+            onPressed: () => _showAssignSheet(
+              context,
+              ref,
+              structuresAsync.valueOrNull ?? const [],
             ),
-          ],
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(AppSpacing.sm),
             child: LinearProgressIndicator(minHeight: 2),
           ),
           error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             if (rows.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
+              return const AppCard(
                 child: Text('No discounts assigned to this student.'),
               );
             }
             final structures =
                 structuresAsync.valueOrNull ?? const <DiscountStructure>[];
             final byId = {for (final s in structures) s.id: s};
-            return Card(
+            return AppCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   for (final a in rows)
@@ -82,11 +80,7 @@ class StudentDiscountsSection extends ConsumerWidget {
   ) async {
     final active = structures.where((s) => s.isActive).toList();
     if (active.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No active discounts. Create one first.'),
-        ),
-      );
+      AppSnackbar.info(context, 'No active discounts. Create one first.');
       return;
     }
     await showModalBottomSheet<void>(
@@ -115,10 +109,12 @@ class _Tile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = assignment.isActive;
-    return ListTile(
+    final scheme = Theme.of(context).colorScheme;
+    return AppListTile(
+      wrapLeading: false,
       leading: Icon(
         Icons.local_offer_outlined,
-        color: active ? null : Colors.grey,
+        color: active ? scheme.onSurfaceVariant : scheme.outline,
       ),
       title: Text(structure?.name ?? '(unknown discount)'),
       subtitle: Text(
@@ -136,10 +132,7 @@ class _Tile extends StatelessWidget {
               icon: const Icon(Icons.stop_circle_outlined),
               onPressed: onDeactivate,
             )
-          : const Chip(
-              label: Text('inactive'),
-              visualDensity: VisualDensity.compact,
-            ),
+          : const AppBadge(text: 'Inactive'),
     );
   }
 }
@@ -171,6 +164,16 @@ class _SheetState extends State<_Sheet> {
     _id = widget.structures.first.id;
   }
 
+  Future<void> _pickStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _start,
+      firstDate: DateTime.now().subtract(const Duration(days: 60)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked != null) setState(() => _start = picked);
+  }
+
   Future<void> _save() async {
     if (_id == null || _saving) return;
     setState(() => _saving = true);
@@ -184,11 +187,7 @@ class _SheetState extends State<_Sheet> {
       );
       if (mounted) Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -198,75 +197,64 @@ class _SheetState extends State<_Sheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Assign discount',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _id,
+          Text(
+            'Assign discount',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppDropdownField<String>(
+            label: 'Discount',
+            value: _id,
             items: widget.structures
-                .map((s) => DropdownMenuItem(
-                      value: s.id,
-                      child: Text(
-                        '${s.name} · ${s.summary}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ))
+                .map(
+                  (s) => DropdownMenuItem(
+                    value: s.id,
+                    child: Text(
+                      '${s.name} · ${s.summary}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
                 .toList(),
             onChanged: (v) => setState(() => _id = v),
-            decoration: const InputDecoration(
-              labelText: 'Discount',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 12),
-          InkWell(
-            onTap: () async {
-              final picked = await showDatePicker(
-                context: context,
-                initialDate: _start,
-                firstDate:
-                    DateTime.now().subtract(const Duration(days: 60)),
-                lastDate:
-                    DateTime.now().add(const Duration(days: 365 * 2)),
-              );
-              if (picked != null) setState(() => _start = picked);
-            },
-            child: InputDecorator(
-              decoration: const InputDecoration(
-                labelText: 'Start date',
-                border: OutlineInputBorder(),
-              ),
-              child: Text(_start.toIso8601String().substring(0, 10)),
-            ),
+          const SizedBox(height: AppSpacing.md),
+          AppDateField(
+            label: 'Start date',
+            value: _start,
+            onTap: _pickStart,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           SwitchListTile(
             value: _stack,
             onChanged: (v) => setState(() => _stack = v),
+            contentPadding: EdgeInsets.zero,
             title: const Text('Stack with batch discounts'),
             subtitle: Text(
               _stack
                   ? 'Both this discount and any batch-level discounts will apply.'
-                  : 'Only this discount applies. Batch-level discounts are suppressed for this student.',
+                  : 'Only this discount applies. Batch-level discounts are '
+                      'suppressed for this student.',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Assign'),
           ),
         ],

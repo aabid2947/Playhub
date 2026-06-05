@@ -6,6 +6,7 @@ import 'package:playhub/features/coach/presentation/coach_batches_tab.dart';
 import 'package:playhub/features/coach/presentation/coach_home_tab.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Shell for coach / head_coach / trainer roles. Five-tab nav:
 /// Home, My batches, Announcements, Messages, Alerts.
@@ -56,15 +57,13 @@ class _CoachHomeShellState extends ConsumerState<CoachHomeShell> {
             label: 'Messages',
           ),
           NavigationDestination(
-            icon: Badge(
-              isLabelVisible: unread > 0,
-              label: Text('$unread'),
-              child: const Icon(Icons.notifications_outlined),
+            icon: CountBadgeIcon(
+              icon: Icons.notifications_outlined,
+              count: unread,
             ),
-            selectedIcon: Badge(
-              isLabelVisible: unread > 0,
-              label: Text('$unread'),
-              child: const Icon(Icons.notifications),
+            selectedIcon: CountBadgeIcon(
+              icon: Icons.notifications,
+              count: unread,
             ),
             label: 'Alerts',
           ),

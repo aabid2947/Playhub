@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class FeeStructuresPage extends ConsumerWidget {
   const FeeStructuresPage({super.key});
@@ -14,10 +15,19 @@ class FeeStructuresPage extends ConsumerWidget {
     final feesAsync = ref.watch(feeStructuresProvider);
     return Scaffold(
       body: feesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(feeStructuresProvider),
+        ),
         data: (fees) {
-          if (fees.isEmpty) return const _EmptyState();
+          if (fees.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No fee structures yet',
+              subtitle: 'Create one to start billing students.',
+            );
+          }
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(feeStructuresProvider),
             child: ListView.separated(
@@ -46,7 +56,7 @@ class _FeeTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sportLabel = ref.watch(sportDisplayProvider((sportId: fee.sportId)));
-    return ListTile(
+    return AppListTile(
       leading: const Icon(Icons.receipt_long_outlined),
       title: Text(fee.name),
       subtitle: Text(
@@ -56,42 +66,10 @@ class _FeeTile extends ConsumerWidget {
           '₹${fee.baseAmount.toStringAsFixed(0)}${fee.taxPct > 0 ? ' + ${fee.taxPct.toStringAsFixed(0)}% tax' : ''}',
         ].join(' • '),
       ),
-      trailing: !fee.isActive
-          ? const Chip(
-              label: Text('inactive'),
-              visualDensity: VisualDensity.compact,
-            )
-          : null,
+      trailing: fee.isActive ? null : const AppBadge(text: 'Inactive'),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => FeeStructureFormPage(existing: fee),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.receipt_long_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text('No fee structures yet',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 4),
-            const Text(
-              'Create one to start billing students.',
-              textAlign: TextAlign.center,
-            ),
-          ],
         ),
       ),
     );

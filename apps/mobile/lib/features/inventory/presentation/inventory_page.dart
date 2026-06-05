@@ -6,6 +6,7 @@ import 'package:playhub/features/inventory/presentation/inventory_item_form_page
 import 'package:playhub/features/inventory/presentation/inventory_item_page.dart';
 import 'package:playhub/features/inventory/presentation/vendors_page.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Three-tab landing for inventory: All, Low stock, Vendors.
 class InventoryPage extends ConsumerStatefulWidget {
@@ -85,21 +86,35 @@ class _ItemsList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(inventoryItemsProvider);
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppSkeletonList(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(inventoryItemsProvider),
+      ),
       data: (items) {
         final list = showOnlyLow
             ? items.where((i) => i.lowStock).toList()
             : items;
         if (list.isEmpty) {
-          return Center(
-            child: Text(showOnlyLow ? 'Nothing low' : 'No items yet'),
-          );
+          return showOnlyLow
+              ? const AppEmptyState(
+                  icon: Icons.check_circle_outline,
+                  title: 'Nothing low',
+                  subtitle: 'All items are above their reorder threshold.',
+                )
+              : const AppEmptyState(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'No items yet',
+                  subtitle: 'Add equipment to start tracking stock.',
+                );
         }
-        return ListView.separated(
-          itemCount: list.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) => _ItemRow(item: list[i]),
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(inventoryItemsProvider),
+          child: ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) => _ItemRow(item: list[i]),
+          ),
         );
       },
     );
@@ -112,13 +127,8 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: item.lowStock
-            ? Theme.of(context).colorScheme.errorContainer
-            : null,
-        child: const Icon(Icons.inventory_2_outlined),
-      ),
+    return AppListTile(
+      leading: const Icon(Icons.inventory_2_outlined),
       title: Text(item.name),
       subtitle: Text(
         [
@@ -128,8 +138,7 @@ class _ItemRow extends StatelessWidget {
         ].join(' · '),
       ),
       trailing: item.lowStock
-          ? Icon(Icons.warning_amber_rounded,
-              color: Theme.of(context).colorScheme.error)
+          ? const AppBadge(text: 'Low stock', tone: AppBadgeTone.warning)
           : null,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(

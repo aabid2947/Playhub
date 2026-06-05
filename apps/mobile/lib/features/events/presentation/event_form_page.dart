@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
@@ -15,6 +18,7 @@ class EventFormPage extends ConsumerStatefulWidget {
 
 class _EventFormPageState extends ConsumerState<EventFormPage> {
   final _form = GlobalKey<FormState>();
+  final _df = DateFormat('EEE, dd MMM yyyy · HH:mm');
   final _title = TextEditingController();
   final _desc = TextEditingController();
   final _location = TextEditingController();
@@ -79,14 +83,39 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
         status: _publish ? EventStatus.published : EventStatus.draft,
       );
       ref.invalidate(eventsListProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.error(context, '$e');
-      }
+      if (!mounted) return;
+      AppSnackbar.success(
+          context, _publish ? 'Event published.' : 'Saved as draft.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Widget _dateRow({
+    required String label,
+    required DateTime? value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Builder(
+      builder: (context) => ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(label),
+        subtitle: Text(
+          value == null ? '—' : _df.format(value.toLocal()),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: value == null
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                    : null,
+              ),
+        ),
+        trailing: Icon(icon),
+        onTap: onTap,
+      ),
+    );
   }
 
   @override
@@ -97,18 +126,20 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
+            const AppSectionHeader(title: 'Event details'),
+            const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _title,
               label: 'Title *',
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<EventKind>(
-              initialValue: _kind,
-              decoration: const InputDecoration(labelText: 'Kind'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<EventKind>(
+              label: 'Kind',
+              value: _kind,
               items: [
                 for (final k in EventKind.values)
                   DropdownMenuItem(value: k, child: Text(k.label)),
@@ -116,58 +147,57 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               onChanged: (v) =>
                   setState(() => _kind = v ?? EventKind.tournament),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             SportPicker(
               value: _sportId,
               onChanged: (v) => setState(() => _sportId = v),
               centerId: _centerId,
             ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Starts at *'),
-              subtitle: Text(_startsAt.toLocal().toString()),
-              trailing: const Icon(Icons.event),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Schedule'),
+            const SizedBox(height: AppSpacing.xs),
+            _dateRow(
+              label: 'Starts at *',
+              value: _startsAt,
+              icon: Icons.event,
               onTap: () =>
                   _pickDate(_startsAt, (v) => setState(() => _startsAt = v)),
             ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Ends at'),
-              subtitle: Text(_endsAt?.toLocal().toString() ?? '—'),
-              trailing: const Icon(Icons.event),
+            _dateRow(
+              label: 'Ends at',
+              value: _endsAt,
+              icon: Icons.event,
               onTap: () => _pickDate(
                 _endsAt ?? _startsAt,
                 (v) => setState(() => _endsAt = v),
               ),
             ),
-            const Divider(),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Registration opens'),
-              subtitle: Text(_regOpens?.toLocal().toString() ?? '—'),
-              trailing: const Icon(Icons.lock_open),
+            _dateRow(
+              label: 'Registration opens',
+              value: _regOpens,
+              icon: Icons.lock_open,
               onTap: () => _pickDate(
-                _regOpens ?? DateTime.now(),
+                _regOpens ?? _startsAt,
                 (v) => setState(() => _regOpens = v),
               ),
             ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Registration closes'),
-              subtitle: Text(_regCloses?.toLocal().toString() ?? '—'),
-              trailing: const Icon(Icons.lock),
+            _dateRow(
+              label: 'Registration closes',
+              value: _regCloses,
+              icon: Icons.lock,
               onTap: () => _pickDate(
                 _regCloses ?? _startsAt,
                 (v) => setState(() => _regCloses = v),
               ),
             ),
-            const Divider(),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Location & capacity'),
+            const SizedBox(height: AppSpacing.sm),
             AppFormField(controller: _location, label: 'Location'),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _centerId,
-              decoration: const InputDecoration(labelText: 'Center (optional)'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String?>(
+              label: 'Center (optional)',
+              value: _centerId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in centers)
@@ -175,8 +205,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               ],
               onChanged: (v) => setState(() => _centerId = v),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: AppFormField(
@@ -185,7 +216,7 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                     keyboardType: TextInputType.number,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: AppFormField(
                     controller: _fee,
@@ -195,22 +226,25 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Description'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _desc,
-              minLines: 3,
-              maxLines: 6,
-              decoration: const InputDecoration(labelText: 'Description'),
+              label: 'Details',
+              maxLines: 5,
             ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _publish,
-              onChanged: (v) => setState(() => _publish = v),
-              title: const Text('Publish immediately'),
-              subtitle: const Text('Otherwise saved as draft'),
+            const SizedBox(height: AppSpacing.lg),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: SwitchListTile(
+                value: _publish,
+                onChanged: (v) => setState(() => _publish = v),
+                title: const Text('Publish immediately'),
+                subtitle: const Text('Otherwise saved as draft'),
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Embedded section listing a batch's fee assignments. Mirrors
 /// StudentFeesSection but at the batch level — every active enrollment
@@ -14,42 +16,34 @@ class BatchFeesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final assignmentsAsync =
-        ref.watch(assignmentsForBatchProvider(batchId));
+    final assignmentsAsync = ref.watch(assignmentsForBatchProvider(batchId));
     final feesAsync = ref.watch(feeStructuresProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Text(
-              'Batch fees',
-              style: Theme.of(context).textTheme.titleMedium,
+        AppSectionHeader(
+          title: 'Batch fees',
+          trailing: FilledButton.tonalIcon(
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Assign fee'),
+            onPressed: () => _showAssignSheet(
+              context,
+              ref,
+              feesAsync.valueOrNull ?? const [],
             ),
-            const Spacer(),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Assign fee'),
-              onPressed: () => _showAssignSheet(
-                context,
-                ref,
-                feesAsync.valueOrNull ?? const [],
-              ),
-            ),
-          ],
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(AppSpacing.sm),
             child: LinearProgressIndicator(minHeight: 2),
           ),
           error: (e, _) => Text(friendlyError(e)),
           data: (rows) {
             if (rows.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
+              return const AppCard(
                 child: Text(
                   'No fees assigned to this batch yet. Each active '
                   'enrollment will be billed for assigned fees by the '
@@ -59,7 +53,8 @@ class BatchFeesSection extends ConsumerWidget {
             }
             final fees = feesAsync.valueOrNull ?? const <FeeStructure>[];
             final byId = {for (final f in fees) f.id: f};
-            return Card(
+            return AppCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   for (final a in rows)
@@ -90,11 +85,7 @@ class BatchFeesSection extends ConsumerWidget {
   ) async {
     final active = fees.where((f) => f.isActive).toList();
     if (active.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No active fee structures. Create one first.'),
-        ),
-      );
+      AppSnackbar.info(context, 'No active fee structures. Create one first.');
       return;
     }
     await showModalBottomSheet<void>(
@@ -123,10 +114,12 @@ class _AssignmentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isActive = assignment.isActive;
-    return ListTile(
+    final scheme = Theme.of(context).colorScheme;
+    return AppListTile(
+      wrapLeading: false,
       leading: Icon(
         Icons.receipt_long_outlined,
-        color: isActive ? null : Colors.grey,
+        color: isActive ? scheme.onSurfaceVariant : scheme.outline,
       ),
       title: Text(fee?.name ?? '(unknown fee)'),
       subtitle: Text(
@@ -145,10 +138,7 @@ class _AssignmentTile extends StatelessWidget {
               icon: const Icon(Icons.stop_circle_outlined),
               onPressed: onDeactivate,
             )
-          : const Chip(
-              label: Text('inactive'),
-              visualDensity: VisualDensity.compact,
-            ),
+          : const AppBadge(text: 'Inactive'),
     );
   }
 }
@@ -187,6 +177,16 @@ class _AssignSheetState extends State<_AssignSheet> {
     super.dispose();
   }
 
+  Future<void> _pickStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _start,
+      firstDate: DateTime.now().subtract(const Duration(days: 60)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked != null) setState(() => _start = picked);
+  }
+
   Future<void> _save() async {
     if (_feeId == null || _saving) return;
     setState(() => _saving = true);
@@ -200,11 +200,7 @@ class _AssignSheetState extends State<_AssignSheet> {
       );
       if (mounted) Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -214,81 +210,66 @@ class _AssignSheetState extends State<_AssignSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: AppSpacing.lg,
+        right: AppSpacing.lg,
+        top: AppSpacing.lg,
+        bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Assign fee to batch',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _feeId,
+          Text(
+            'Assign fee to batch',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppDropdownField<String>(
+            label: 'Fee structure',
+            value: _feeId,
             items: widget.fees
-                .map((f) => DropdownMenuItem(
-                      value: f.id,
-                      child: Text(
-                        '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ))
+                .map(
+                  (f) => DropdownMenuItem(
+                    value: f.id,
+                    child: Text(
+                      '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
                 .toList(),
             onChanged: (v) => setState(() => _feeId = v),
-            decoration: const InputDecoration(
-              labelText: 'Fee structure',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: InkWell(
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _start,
-                      firstDate:
-                          DateTime.now().subtract(const Duration(days: 60)),
-                      lastDate:
-                          DateTime.now().add(const Duration(days: 365 * 2)),
-                    );
-                    if (picked != null) setState(() => _start = picked);
-                  },
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Start date',
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Text(_start.toIso8601String().substring(0, 10)),
-                  ),
+                child: AppDateField(
+                  label: 'Start date',
+                  value: _start,
+                  onTap: _pickStart,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _billingDay,
+                  label: 'Billing day (1–28)',
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Billing day (1–28)',
-                    border: OutlineInputBorder(),
-                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Assign'),
           ),
         ],

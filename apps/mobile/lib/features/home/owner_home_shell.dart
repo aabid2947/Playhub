@@ -6,6 +6,7 @@ import 'package:playhub/features/home/home_tab.dart';
 import 'package:playhub/features/settings/settings_tab.dart';
 import 'package:playhub/features/students/presentation/students_tab.dart';
 import 'package:playhub/shared/widgets/verification_banner.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom-nav scaffold for academy owners (and later, admins).
 /// Each tab keeps its own state via IndexedStack. The Home tab is injected so
@@ -34,11 +35,12 @@ class _OwnerHomeShellState extends State<OwnerHomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final titles = ['PlayHub', 'Students', 'Coaches', 'Batches', 'Settings'];
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(titles[_index]),
+        // Home tab carries the brand wordmark; the rest show the tab name.
+        title: _index == 0
+            ? const BrandWordmark()
+            : Text(_tabs[_index].label),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_outline),

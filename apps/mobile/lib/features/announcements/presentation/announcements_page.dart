@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/announcements/data/announcement_providers.dart';
 import 'package:playhub/features/announcements/presentation/announcement_composer_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Admin sees ALL announcements (history + drafts); other roles see their
 /// targeted feed (with read receipts).
@@ -14,9 +15,13 @@ class AnnouncementsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(currentProfileProvider);
     return profileAsync.when(
-      loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (e, _) => Scaffold(body: Center(child: Text(friendlyError(e)))),
+      loading: () => const Scaffold(body: AppLoading()),
+      error: (e, _) => Scaffold(
+        body: AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(currentProfileProvider),
+        ),
+      ),
       data: (profile) {
         final isAdmin = profile?.role == 'academy_owner' ||
             profile?.role == 'academy_admin';
@@ -26,6 +31,7 @@ class AnnouncementsPage extends ConsumerWidget {
             actions: [
               IconButton(
                 icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
                 onPressed: () {
                   ref
                     ..invalidate(announcementsListProvider)
@@ -40,7 +46,8 @@ class AnnouncementsPage extends ConsumerWidget {
                   label: const Text('New'),
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                        builder: (_) => const AnnouncementComposerPage()),
+                      builder: (_) => const AnnouncementComposerPage(),
+                    ),
                   ),
                 )
               : null,
@@ -58,29 +65,40 @@ class _AdminList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(announcementsListProvider);
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppSkeletonList(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(announcementsListProvider),
+      ),
       data: (list) {
         if (list.isEmpty) {
-          return const Center(child: Text('No announcements yet'));
+          return const AppEmptyState(
+            icon: Icons.campaign_outlined,
+            title: 'No announcements yet',
+            subtitle: 'Tap "New" to broadcast to roles, batches, or centers.',
+          );
         }
-        return ListView.separated(
-          itemCount: list.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) {
-            final a = list[i];
-            return ListTile(
-              title: Text(a.subject),
-              subtitle: Text(
-                a.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: a.isDraft
-                  ? const Chip(label: Text('Draft'))
-                  : Text('${a.sentCount ?? 0} sent'),
-            );
-          },
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(announcementsListProvider),
+          child: ListView.separated(
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final a = list[i];
+              return AppListTile(
+                leading: const Icon(Icons.campaign_outlined),
+                title: Text(a.subject),
+                subtitle: Text(
+                  a.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: a.isDraft
+                    ? const AppBadge(text: 'Draft', tone: AppBadgeTone.warning)
+                    : Text('${a.sentCount ?? 0} sent'),
+              );
+            },
+          ),
         );
       },
     );
@@ -93,60 +111,82 @@ class _Feed extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(announcementFeedProvider);
+    final scheme = Theme.of(context).colorScheme;
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppSkeletonList(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(announcementFeedProvider),
+      ),
       data: (items) {
-        if (items.isEmpty) return const Center(child: Text('No announcements'));
-        return ListView.separated(
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) {
-            final it = items[i];
-            final unread = it.readAt == null;
-            return ListTile(
-              leading: unread
-                  ? const Icon(Icons.fiber_manual_record,
-                      color: Colors.blue, size: 14)
-                  : const Icon(Icons.fiber_manual_record_outlined,
-                      color: Colors.grey, size: 14),
-              title: Text(
-                it.announcement.subject,
-                style: TextStyle(
-                  fontWeight:
-                      unread ? FontWeight.w700 : FontWeight.normal,
+        if (items.isEmpty) {
+          return const AppEmptyState(
+            icon: Icons.campaign_outlined,
+            title: 'No announcements',
+            subtitle: 'Updates from your academy will appear here.',
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(announcementFeedProvider),
+          child: ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, i) {
+              final it = items[i];
+              final unread = it.readAt == null;
+              return AppListTile(
+                wrapLeading: false,
+                leading: Icon(
+                  unread
+                      ? Icons.fiber_manual_record
+                      : Icons.fiber_manual_record_outlined,
+                  size: 14,
+                  color: unread ? scheme.primary : scheme.outline,
                 ),
-              ),
-              subtitle: Text(
-                it.announcement.body,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Text(_dt(it.announcement.createdAt)),
-              onTap: () async {
-                final repo =
-                    await ref.read(announcementsRepoProvider.future);
-                await repo?.markRead(it.announcement.id);
-                ref.invalidate(announcementFeedProvider);
-                if (context.mounted) {
-                  showDialog<void>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: Text(it.announcement.subject),
-                      content: SingleChildScrollView(
-                          child: Text(it.announcement.body)),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Close'),
+                title: Text(
+                  it.announcement.subject,
+                  style: TextStyle(
+                    fontWeight:
+                        unread ? FontWeight.w700 : FontWeight.normal,
+                  ),
+                ),
+                subtitle: Text(
+                  it.announcement.body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  _dt(it.announcement.createdAt),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                onTap: () async {
+                  final repo =
+                      await ref.read(announcementsRepoProvider.future);
+                  await repo?.markRead(it.announcement.id);
+                  ref.invalidate(announcementFeedProvider);
+                  if (context.mounted) {
+                    await showDialog<void>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: Text(it.announcement.subject),
+                        content: SingleChildScrollView(
+                          child: Text(it.announcement.body),
                         ),
-                      ],
-                    ),
-                  );
-                }
-              },
-            );
-          },
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                },
+              );
+            },
+          ),
         );
       },
     );

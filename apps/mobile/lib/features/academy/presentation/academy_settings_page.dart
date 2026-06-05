@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/academy/data/academy.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class AcademySettingsPage extends ConsumerStatefulWidget {
   const AcademySettingsPage({super.key});
@@ -22,8 +24,6 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   final _website = TextEditingController();
   final _prefix = TextEditingController();
   bool _busy = false;
-  String? _message;
-  bool _isError = false;
   Academy? _loaded;
   String? _logo;
   TimeOfDay? _open;
@@ -74,11 +74,7 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   static String _fmtDate(DateTime d) => d.toIso8601String().substring(0, 10);
 
   Future<void> _save() async {
-    setState(() {
-      _busy = true;
-      _message = null;
-      _isError = false;
-    });
+    setState(() => _busy = true);
     try {
       await updateMyAcademy(ref, {
         'name': _name.text.trim(),
@@ -94,12 +90,9 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
         'invoice_prefix':
             _prefix.text.trim().isEmpty ? 'INV' : _prefix.text.trim(),
       });
-      setState(() => _message = 'Saved');
+      if (mounted) AppSnackbar.success(context, 'Saved.');
     } on Object catch (e) {
-      setState(() {
-        _message = e.toString();
-        _isError = true;
-      });
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -142,16 +135,22 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Academy settings')),
       body: academyAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(myAcademyProvider),
+        ),
         data: (academy) {
           if (academy == null) {
-            return const Center(child: Text('No academy found.'));
+            return const AppEmptyState(
+              icon: Icons.business_outlined,
+              title: 'No academy found',
+            );
           }
           _hydrate(academy);
           final initials = _name.text.isNotEmpty ? _name.text[0] : 'A';
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -163,42 +162,39 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                     onUploaded: (url) => setState(() => _logo = url),
                   ),
                 ),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Profile'),
+                const SizedBox(height: AppSpacing.sm),
+                AppFormField(controller: _name, label: 'Name'),
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(
                   controller: _email,
+                  label: 'Email',
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email'),
                 ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(
                   controller: _phone,
+                  label: 'Phone',
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Phone'),
                 ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(
                   controller: _address,
-                  decoration: const InputDecoration(labelText: 'Address'),
+                  label: 'Address',
                   maxLines: 2,
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _city,
-                  decoration: const InputDecoration(labelText: 'City'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(controller: _city, label: 'City'),
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(
                   controller: _website,
+                  label: 'Website',
                   keyboardType: TextInputType.url,
-                  decoration: const InputDecoration(labelText: 'Website'),
                 ),
-                const SizedBox(height: 24),
-                const _SectionLabel(label: 'Operating hours'),
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Operating hours'),
+                const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
                     Expanded(
@@ -212,7 +208,7 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: InkWell(
                         onTap: () => _pickTime(open: false),
@@ -235,17 +231,20 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                const _SectionLabel(label: 'Holidays'),
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Holidays'),
+                const SizedBox(height: AppSpacing.sm),
                 if (_holidays.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text('No holidays scheduled.'),
+                  Text(
+                    'No holidays scheduled.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   )
                 else
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
                     children: [
                       for (final d in _holidays)
                         Chip(
@@ -258,36 +257,28 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                         ),
                     ],
                   ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.add_outlined),
                   label: const Text('Add holiday'),
                   onPressed: _addHoliday,
                 ),
-                const SizedBox(height: 24),
-                const _SectionLabel(label: 'Invoicing'),
-                TextField(
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Invoicing'),
+                const SizedBox(height: AppSpacing.sm),
+                AppFormField(
                   controller: _prefix,
-                  decoration: const InputDecoration(
-                    labelText: 'Invoice prefix',
-                    hintText: 'INV',
-                  ),
+                  label: 'Invoice prefix',
+                  hint: 'INV',
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   'Late-fee policy is set per fee structure, not here.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
-                if (_message != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _message!,
-                    style: TextStyle(
-                      color: _isError ? Colors.red : Colors.green,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 FilledButton(
                   onPressed: _busy ? null : _save,
                   child: _busy
@@ -298,24 +289,12 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
                         )
                       : const Text('Save changes'),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xxl),
               ],
             ),
           );
         },
       ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label});
-  final String label;
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(label, style: Theme.of(context).textTheme.titleMedium),
     );
   }
 }

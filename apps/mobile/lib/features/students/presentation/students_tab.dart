@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
@@ -7,7 +9,6 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
 import 'package:playhub/features/students/presentation/student_form_page.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -43,7 +44,12 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.xs,
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -67,7 +73,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 PopupMenuButton<String?>(
                   tooltip: 'Filter status',
                   icon: const Icon(Icons.filter_list),
@@ -151,7 +157,8 @@ class _StudentTile extends ConsumerWidget {
     final sportLabel = ref.watch(
       sportDisplayProvider((sportId: student.sportId)),
     );
-    return ListTile(
+    return AppListTile(
+      wrapLeading: false,
       leading: AvatarView(url: student.photo, fallbackInitials: initials),
       title: Text(student.fullName),
       subtitle: Text(

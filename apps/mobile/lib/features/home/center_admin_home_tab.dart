@@ -59,7 +59,9 @@ class CenterAdminHomeTab extends ConsumerWidget {
                   centerName == null
                       ? 'Center admin'
                       : 'Center admin · $centerName',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
               ],
             ),
@@ -85,7 +87,8 @@ class CenterAdminHomeTab extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          Card(
+          AppCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: [
                 AppListTile(

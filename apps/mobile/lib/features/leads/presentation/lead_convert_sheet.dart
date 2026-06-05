@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom sheet to convert a lead → student. Optionally enrolls into a
 /// batch and links a parent user. Calls the convert-lead-to-student
@@ -18,7 +21,10 @@ class LeadConvertSheet extends ConsumerStatefulWidget {
 class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
   String? _batchId;
   bool _busy = false;
-  String? _error;
+  // Built once — keeping it out of build() avoids re-querying (and flickering
+  // the dropdown back to a spinner) on every setState.
+  late final Future<List<({String id, String name})>> _batchesFuture =
+      _loadBatches();
 
   Future<List<({String id, String name})>> _loadBatches() async {
     final client = ref.read(supabaseClientProvider);
@@ -35,10 +41,7 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
   }
 
   Future<void> _convert() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       final repo = await ref.read(leadsRepoProvider.future);
       if (repo == null) throw StateError('no academy');
@@ -46,12 +49,15 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
         leadId: widget.lead.id,
         batchId: _batchId,
       );
-      ref.invalidate(leadByIdProvider(widget.lead.id));
-      ref.invalidate(leadActivitiesProvider(widget.lead.id));
-      ref.invalidate(leadsListProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      setState(() => _error = '$e');
+      ref
+        ..invalidate(leadByIdProvider(widget.lead.id))
+        ..invalidate(leadActivitiesProvider(widget.lead.id))
+        ..invalidate(leadsListProvider);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Lead converted to student.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -59,43 +65,43 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Convert ${widget.lead.displayName}',
-              style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          const Text(
+          Text(
+            'Convert ${widget.lead.displayName}',
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
             'Creates a student record from the lead, optionally enrolling '
             'them into a batch.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           FutureBuilder<List<({String id, String name})>>(
-            future: _loadBatches(),
+            future: _batchesFuture,
             builder: (_, snap) {
               if (!snap.hasData) {
-                return const SizedBox(
-                  height: 48,
-                  child: Center(child: CircularProgressIndicator()),
-                );
+                return const SizedBox(height: 48, child: AppLoading());
               }
-              return DropdownButtonFormField<String?>(
-                initialValue: _batchId,
-                decoration: const InputDecoration(
-                  labelText: 'Initial batch (optional)',
-                  border: OutlineInputBorder(),
-                ),
+              return AppDropdownField<String?>(
+                label: 'Initial batch (optional)',
+                value: _batchId,
                 items: [
                   const DropdownMenuItem<String?>(
-                      value: null, child: Text('No initial batch')),
+                      child: Text('No initial batch')),
                   for (final b in snap.data!)
                     DropdownMenuItem<String?>(
                         value: b.id, child: Text(b.name)),
@@ -104,22 +110,15 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
               );
             },
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!,
-                style:
-                    TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed:
-                    _busy ? null : () => Navigator.of(context).pop(),
+                onPressed: _busy ? null : () => Navigator.of(context).pop(),
                 child: const Text('Cancel'),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               FilledButton.icon(
                 icon: const Icon(Icons.check),
                 label: Text(_busy ? 'Converting…' : 'Convert'),

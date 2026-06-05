@@ -56,7 +56,6 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   String _role = 'coach';
   String? _centerId;
   bool _busy = false;
-  String? _error;
 
   static const _normalRoles = [
     ('academy_admin', 'Admin'),
@@ -89,13 +88,10 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     if (widget.preset == null && _role == 'center_admin' && _centerId == null) {
-      setState(() => _error = 'Pick a center for the center admin.');
+      AppSnackbar.error(context, 'Pick a center for the center admin.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       final repo = ref.read(inviteRepoProvider);
       final result = await repo.invite(
@@ -109,19 +105,18 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         linkCoachId: widget.preset?.linkCoachId,
         linkStudentLoginId: widget.preset?.linkStudentLoginId,
       );
-      if (mounted) {
-        final email = _email.text.trim();
-        final msg = result.resent
-            ? (result.hasSignedIn
-                  ? '$email has already signed in once. A fresh invite link '
-                        'was sent — they can use it as a magic-link login.'
-                  : 'Resent invite to $email')
-            : 'Invite sent to $email';
-        AppSnackbar.success(context, msg);
-        Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      setState(() => _error = '$e');
+      if (!mounted) return;
+      final email = _email.text.trim();
+      final msg = result.resent
+          ? (result.hasSignedIn
+                ? '$email has already signed in once. A fresh invite link '
+                      'was sent — they can use it as a magic-link login.'
+                : 'Resent invite to $email')
+          : 'Invite sent to $email';
+      AppSnackbar.success(context, msg);
+      Navigator.of(context).pop(true);
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -130,12 +125,13 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   @override
   Widget build(BuildContext context) {
     final preset = widget.preset;
+    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Form(
         key: _form,
@@ -144,13 +140,15 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
           children: [
             Text(
               preset?.title ?? 'Invite team member',
-              style: Theme.of(context).textTheme.titleLarge,
+              style: theme.textTheme.titleLarge,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'They\'ll get a magic-link email to set their password and '
+              "They'll get a magic-link email to set their password and "
               'sign in.',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
             AppFormField(
@@ -161,23 +159,24 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                   ? 'Valid email required'
                   : null,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: AppFormField(controller: _first, label: 'First name'),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: AppFormField(controller: _last, label: 'Last name'),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             if (preset == null)
-              DropdownButtonFormField<String>(
-                initialValue: _role,
-                decoration: const InputDecoration(labelText: 'Role'),
+              AppDropdownField<String>(
+                label: 'Role',
+                value: _role,
                 items: [
                   for (final r in _normalRoles)
                     DropdownMenuItem(value: r.$1, child: Text(r.$2)),
@@ -189,18 +188,29 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
               )
             else
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Chip(label: Text('Role: ${_roleLabel(_role)}')),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: AppBadge(
+                    text: 'Role: ${_roleLabel(_role)}',
+                    tone: AppBadgeTone.brand,
+                  ),
+                ),
               ),
             // A center admin must be scoped to a center — otherwise the
             // center-narrowed RLS leaves them seeing nothing. Required.
             if (preset == null && _role == 'center_admin') ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               ref
                   .watch(centersProvider)
                   .when(
                     loading: () => const LinearProgressIndicator(minHeight: 2),
-                    error: (e, _) => Text(friendlyError(e)),
+                    error: (e, _) => Text(
+                      friendlyError(e),
+                      style: TextStyle(
+                        color: AppSemanticColors.of(context).danger,
+                      ),
+                    ),
                     data: (centres) {
                       final active = centres.where((c) => c.isActive).toList();
                       if (active.isEmpty) {
@@ -208,15 +218,13 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                           'Create a center first — a center admin must be '
                           'assigned to one.',
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                            color: AppSemanticColors.of(context).danger,
                           ),
                         );
                       }
-                      return DropdownButtonFormField<String>(
-                        initialValue: _centerId,
-                        decoration: const InputDecoration(
-                          labelText: 'Center *',
-                        ),
+                      return AppDropdownField<String>(
+                        label: 'Center *',
+                        value: _centerId,
                         items: [
                           for (final c in active)
                             DropdownMenuItem(value: c.id, child: Text(c.name)),
@@ -226,14 +234,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                     },
                   ),
             ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton.icon(
               icon: const Icon(Icons.send),
               label: Text(_busy ? 'Sending…' : 'Send invite'),

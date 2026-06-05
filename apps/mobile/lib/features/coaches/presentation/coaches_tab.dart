@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_bulk_import_page.dart';
 import 'package:playhub/features/coaches/presentation/coach_form_page.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class CoachesTab extends ConsumerWidget {
   const CoachesTab({super.key});
@@ -17,46 +19,57 @@ class CoachesTab extends ConsumerWidget {
     final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(0),
-        child: SizedBox.shrink(
-          child: Material(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: 'Import CSV',
-                    icon: const Icon(Icons.upload_file_outlined),
-                    onPressed: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => const CoachBulkImportPage(),
-                      ),
+      body: Column(
+        children: [
+          if (caps.manageCoaches)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.sm,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const CoachBulkImportPage(),
                     ),
                   ),
-                ],
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: const Text('Import CSV'),
+                ),
               ),
             ),
-          ),
-        ),
-      ),
-      body: coachesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
-        data: (coaches) {
-          if (coaches.isEmpty) {
-            return const _EmptyState();
-          }
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(coachesProvider),
-            child: ListView.separated(
-              itemCount: coaches.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) => _CoachTile(coach: coaches[i]),
+          Expanded(
+            child: coachesAsync.when(
+              loading: () => const AppSkeletonList(),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(coachesProvider),
+              ),
+              data: (coaches) {
+                if (coaches.isEmpty) {
+                  return const AppEmptyState(
+                    icon: Icons.sports_outlined,
+                    title: 'No coaches yet',
+                    subtitle: 'Tap "New coach" to onboard your first one.',
+                  );
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(coachesProvider),
+                  child: ListView.separated(
+                    itemCount: coaches.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) =>
+                        _CoachTile(coach: coaches[i]),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
       floatingActionButton: caps.manageCoaches
           ? FloatingActionButton.extended(
@@ -77,53 +90,21 @@ class _CoachTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = (coach.firstName.isNotEmpty
-            ? coach.firstName[0]
-            : '?') +
-        (coach.lastName.isNotEmpty ? coach.lastName[0] : '');
+    final initials =
+        (coach.firstName.isNotEmpty ? coach.firstName[0] : '?') +
+            (coach.lastName.isNotEmpty ? coach.lastName[0] : '');
     final subtitle = [
       if (coach.specialization.isNotEmpty) coach.specialization.first,
       if (coach.experienceYears != null) '${coach.experienceYears} yrs',
       if (coach.phone != null) coach.phone,
     ].whereType<String>().join(' • ');
-    return ListTile(
+    return AppListTile(
       leading: AvatarView(url: coach.photo, fallbackInitials: initials),
+      wrapLeading: false,
       title: Text(coach.fullName),
       subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
       onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => CoachFormPage(existing: coach),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.sports_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'No coaches yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap "New coach" to onboard your first one.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+        MaterialPageRoute(builder: (_) => CoachFormPage(existing: coach)),
       ),
     );
   }

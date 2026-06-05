@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
@@ -9,7 +11,7 @@ import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class CoachFormPage extends ConsumerStatefulWidget {
   const CoachFormPage({super.key, this.existing});
@@ -47,7 +49,6 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
-  String? _error;
 
   bool get isEdit => widget.existing != null;
 
@@ -92,10 +93,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
         'first_name': _firstName.text.trim(),
@@ -123,9 +121,14 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
         await repo.setCoachSports(saved.id, _sportIds.toList());
         ref.invalidate(coachSportsProvider(saved.id));
       }
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(
+        context,
+        isEdit ? 'Coach updated.' : 'Coach created.',
+      );
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -138,7 +141,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Form(
           key: _formKey,
           child: Column(
@@ -152,53 +155,55 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   onUploaded: (url) => setState(() => _photo = url),
                 ),
               ),
-              const SizedBox(height: 24),
-              const _SectionLabel('Personal'),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Personal'),
+              const SizedBox(height: AppSpacing.sm),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _firstName,
-                      decoration:
-                          const InputDecoration(labelText: 'First name *'),
+                      label: 'First name *',
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _lastName,
-                      decoration:
-                          const InputDecoration(labelText: 'Last name *'),
+                      label: 'Last name *',
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _email,
+                      label: 'Email',
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: 'Email'),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _phone,
+                      label: 'Phone',
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(labelText: 'Phone'),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              const _SectionLabel('Expertise'),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Expertise'),
+              const SizedBox(height: AppSpacing.sm),
               SportMultiSelect(
                 label: 'Sports coached',
                 selectedIds: _sportIds,
@@ -210,40 +215,41 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   }
                 }),
               ),
-              const SizedBox(height: 12),
-              TextFormField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _specialization,
-                decoration: const InputDecoration(
-                  labelText: 'Sub-specialty / notes',
-                  hintText: 'Batting, Wicket-keeping, …',
-                ),
+                label: 'Sub-specialty / notes',
+                hint: 'Batting, Wicket-keeping, …',
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _experience,
+                      label: 'Experience (yrs)',
                       keyboardType: TextInputType.number,
-                      decoration:
-                          const InputDecoration(labelText: 'Experience (yrs)'),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: centresAsync.when(
                       loading: () =>
                           const LinearProgressIndicator(minHeight: 2),
                       error: (e, _) => Text(friendlyError(e)),
-                      data: (centres) => DropdownButtonFormField<String>(
-                        initialValue: _centerId,
-                        decoration: const InputDecoration(labelText: 'Center'),
+                      data: (centres) => AppDropdownField<String>(
+                        label: 'Center',
+                        value: _centerId,
                         items: [
                           const DropdownMenuItem<String>(
-                              child: Text('— none —')),
+                            child: Text('— none —'),
+                          ),
                           for (final c in centres.where((c) => c.isActive))
                             DropdownMenuItem(
-                                value: c.id, child: Text(c.name)),
+                              value: c.id,
+                              child: Text(c.name),
+                            ),
                         ],
                         onChanged: (v) => setState(() => _centerId = v),
                       ),
@@ -251,49 +257,49 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextFormField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _qualifications,
-                decoration: const InputDecoration(
-                  labelText: 'Qualifications',
-                  hintText: 'BPEd, MPEd (comma-separated)',
-                ),
+                label: 'Qualifications',
+                hint: 'BPEd, MPEd (comma-separated)',
               ),
-              const SizedBox(height: 12),
-              TextFormField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _certifications,
-                decoration: const InputDecoration(
-                  labelText: 'Certifications',
-                  hintText: 'NIS Level 1, ICC Coaching Certificate',
-                ),
+                label: 'Certifications',
+                hint: 'NIS Level 1, ICC Coaching Certificate',
               ),
-              const SizedBox(height: 24),
-              const _SectionLabel('Compensation'),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Compensation'),
+              const SizedBox(height: AppSpacing.sm),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
+                    child: AppFormField(
                       controller: _salary,
+                      label: 'Salary (₹)',
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Salary (₹)',
-                        prefixText: '₹ ',
-                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _paymentType,
-                      decoration:
-                          const InputDecoration(labelText: 'Payment type'),
+                    child: AppDropdownField<String>(
+                      label: 'Payment type',
+                      value: _paymentType,
                       items: const [
                         DropdownMenuItem(
-                            value: 'monthly', child: Text('Monthly')),
+                          value: 'monthly',
+                          child: Text('Monthly'),
+                        ),
                         DropdownMenuItem(
-                            value: 'hourly', child: Text('Hourly')),
+                          value: 'hourly',
+                          child: Text('Hourly'),
+                        ),
                         DropdownMenuItem(
-                            value: 'session', child: Text('Per session')),
+                          value: 'session',
+                          child: Text('Per session'),
+                        ),
                       ],
                       onChanged: (v) => setState(() => _paymentType = v),
                     ),
@@ -301,40 +307,42 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 ],
               ),
               if (isEdit) ...[
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xxl),
                 const Divider(),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 CoachDocumentsSection(coachId: widget.existing!.id),
-                const SizedBox(height: 24),
-                _SectionLabel('Login & access'),
-                Card(
-                  child: ListTile(
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Login & access'),
+                const SizedBox(height: AppSpacing.sm),
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: AppListTile(
                     leading: Icon(
                       widget.existing!.userId == null
                           ? Icons.lock_open_outlined
                           : Icons.verified_user_outlined,
                     ),
-                    title: Text(widget.existing!.userId == null
-                        ? 'Invite this coach to log in'
-                        : 'Coach has a login'),
-                    subtitle: Text(widget.existing!.userId == null
-                        ? 'Sends a magic-link to the email above so they '
-                            'can sign in as a coach.'
-                        : 'They can already sign in.'),
-                    trailing: widget.existing!.userId == null
-                        ? const Icon(Icons.chevron_right)
-                        : null,
+                    title: Text(
+                      widget.existing!.userId == null
+                          ? 'Invite this coach to log in'
+                          : 'Coach has a login',
+                    ),
+                    subtitle: Text(
+                      widget.existing!.userId == null
+                          ? 'Sends a magic-link to the email above so they '
+                              'can sign in as a coach.'
+                          : 'They can already sign in.',
+                    ),
                     onTap: widget.existing!.userId != null
                         ? null
                         : () {
-                            final email = (widget.existing!.email ?? '').trim();
+                            final email =
+                                (widget.existing!.email ?? '').trim();
                             if (email.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Set the coach\'s email above first, '
-                                      'then save before inviting.'),
-                                ),
+                              AppSnackbar.info(
+                                context,
+                                "Set the coach's email above first, then "
+                                'save before inviting.',
                               );
                               return;
                             }
@@ -357,11 +365,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   ),
                 ),
               ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-              ],
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(
                 onPressed: _busy ? null : _save,
                 child: _busy
@@ -375,21 +379,6 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
-  final String text;
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.titleMedium,
       ),
     );
   }

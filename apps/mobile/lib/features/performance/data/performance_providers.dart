@@ -46,6 +46,23 @@ final mediaForAssessmentProvider = FutureProvider.family<
       .toList();
 });
 
+/// All media for one student across every assessment (newest first).
+/// RLS narrows this to the student's own parent/self, so the parent and
+/// student dashboards can render a single media gallery without an N+1
+/// per-assessment fetch.
+final mediaForStudentProvider = FutureProvider.family<
+    List<PerformanceMedia>, String>((ref, studentId) async {
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('performance_media')
+      .select()
+      .eq('student_id', studentId)
+      .order('uploaded_at', ascending: false);
+  return (rows as List)
+      .map((r) => PerformanceMedia.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
 /// Per-student trend row from the materialized view.
 final performanceTrendProvider = FutureProvider.family<
     Map<String, dynamic>?, String>((ref, studentId) async {

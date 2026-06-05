@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
@@ -9,7 +10,6 @@ import 'package:playhub/features/events/presentation/event_register_sheet.dart';
 import 'package:playhub/features/events/presentation/event_results_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class EventDetailPage extends ConsumerWidget {
@@ -36,10 +36,10 @@ class EventDetailPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(eventByIdProvider(eventId));
-              ref.invalidate(eventRegistrationsProvider(eventId));
-            },
+            tooltip: 'Refresh',
+            onPressed: () => ref
+              ..invalidate(eventByIdProvider(eventId))
+              ..invalidate(eventRegistrationsProvider(eventId)),
           ),
         ],
       ),
@@ -47,10 +47,9 @@ class EventDetailPage extends ConsumerWidget {
         loading: () => const AppLoading(),
         error: (e, _) => AppErrorView(
           message: friendlyError(e),
-          onRetry: () {
-            ref.invalidate(eventByIdProvider(eventId));
-            ref.invalidate(eventRegistrationsProvider(eventId));
-          },
+          onRetry: () => ref
+            ..invalidate(eventByIdProvider(eventId))
+            ..invalidate(eventRegistrationsProvider(eventId)),
         ),
         data: (event) {
           if (event == null) {
@@ -113,24 +112,32 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final df = DateFormat('EEE, dd MMM yyyy · h:mma');
+    final metaStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(event.title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 6),
-          Text('${event.kind.label} · ${df.format(event.startsAt)}'),
-          if (event.endsAt != null) Text('Ends: ${df.format(event.endsAt!)}'),
+          Text(event.title, style: theme.textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.xs),
+          Text('${event.kind.label} · ${df.format(event.startsAt)}',
+              style: metaStyle),
+          if (event.endsAt != null)
+            Text('Ends: ${df.format(event.endsAt!)}', style: metaStyle),
           if (event.location != null && event.location!.isNotEmpty)
-            Text('At: ${event.location}'),
-          if (event.feeAmount > 0) Text('Fee: ₹${event.feeAmount}'),
-          if (event.capacity != null) Text('Capacity: ${event.capacity}'),
+            Text('At: ${event.location}', style: metaStyle),
+          if (event.feeAmount > 0)
+            Text('Fee: ₹${event.feeAmount}', style: metaStyle),
+          if (event.capacity != null)
+            Text('Capacity: ${event.capacity}', style: metaStyle),
           if (event.description != null && event.description!.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(event.description!),
+            Text(event.description!, style: theme.textTheme.bodyMedium),
           ],
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.sm),
           Align(
             alignment: Alignment.centerLeft,
             child: AppBadge(
@@ -164,8 +171,9 @@ class _ManageBar extends ConsumerWidget {
                   final repo = await ref.read(eventsRepoProvider.future);
                   if (repo == null) return;
                   await repo.updateStatus(event.id, s);
-                  ref.invalidate(eventByIdProvider(event.id));
-                  ref.invalidate(eventsListProvider);
+                  ref
+                    ..invalidate(eventByIdProvider(event.id))
+                    ..invalidate(eventsListProvider);
                 },
                 child: Text('→ ${s.label}'),
               ),
@@ -242,6 +250,20 @@ class _RegRow extends ConsumerWidget {
   final String eventId;
   final bool canManage;
 
+  AppBadgeTone _regTone(String status) {
+    switch (status) {
+      case 'attended':
+        return AppBadgeTone.success;
+      case 'cancelled':
+        return AppBadgeTone.danger;
+      case 'waitlisted':
+        return AppBadgeTone.warning;
+      case 'registered':
+        return AppBadgeTone.info;
+    }
+    return AppBadgeTone.neutral;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final students =
@@ -250,7 +272,13 @@ class _RegRow extends ConsumerWidget {
     return ListTile(
       leading: CircleAvatar(child: Text(s == null ? '?' : s.firstName[0])),
       title: Text(s?.fullName ?? reg.studentId.substring(0, 8)),
-      subtitle: Text(reg.status),
+      subtitle: Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: AppBadge(text: reg.status, tone: _regTone(reg.status)),
+        ),
+      ),
       trailing: canManage
           ? PopupMenuButton<String>(
               onSelected: (v) async {

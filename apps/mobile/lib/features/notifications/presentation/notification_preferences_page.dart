@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:playhub/features/notifications/data/notification_providers.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/notifications/data/notification_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class NotificationPreferencesPage extends ConsumerWidget {
   const NotificationPreferencesPage({super.key});
@@ -25,8 +27,11 @@ class NotificationPreferencesPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Notification preferences')),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(notificationPreferencesProvider),
+        ),
         data: (prefs) {
           // Build a quick lookup. Default to enabled when no row exists.
           bool isOn(String cat, String ch) {
@@ -37,15 +42,17 @@ class NotificationPreferencesPage extends ConsumerWidget {
           }
 
           return ListView(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
             children: [
               for (final c in _categories) ...[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
-                  child: Text(
-                    c.$2,
-                    style: Theme.of(context).textTheme.titleSmall,
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    0,
                   ),
+                  child: AppSectionHeader(title: c.$2),
                 ),
                 for (final ch in _channels)
                   SwitchListTile(
@@ -53,7 +60,10 @@ class NotificationPreferencesPage extends ConsumerWidget {
                     value: isOn(c.$1, ch),
                     onChanged: (v) async {
                       await repo.setPreference(
-                          category: c.$1, channel: ch, enabled: v);
+                        category: c.$1,
+                        channel: ch,
+                        enabled: v,
+                      );
                       ref.invalidate(notificationPreferencesProvider);
                     },
                   ),

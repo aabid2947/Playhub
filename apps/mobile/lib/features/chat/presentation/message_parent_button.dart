@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/chat/data/chat_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// IconButton that opens (or creates) a 1:1 thread with a linked parent
 /// of the given student. Disabled when no parent_links exist for the
@@ -52,9 +54,12 @@ class MessageParentButton extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('Message which parent?'),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Text(
+                  'Message which parent?',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
               for (final p in parents)
                 ListTile(
@@ -74,11 +79,8 @@ class MessageParentButton extends ConsumerWidget {
       if (repo == null) throw StateError('no academy');
       final threadId = await repo.ensureDirectThread(chosen.parentUserId);
       if (context.mounted) context.push('/threads/$threadId');
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
-      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
   }
 }

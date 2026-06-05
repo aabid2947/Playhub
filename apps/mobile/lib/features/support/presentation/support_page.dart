@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
     show SupportTicketRow, ticketMessagesProvider;
 import 'package:playhub/features/support/data/support_providers.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class SupportPage extends ConsumerWidget {
@@ -108,11 +108,11 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
         priority: _priority,
       );
       ref.invalidate(myAcademyTicketsProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.error(context, '$e');
-      }
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Ticket created.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -133,9 +133,9 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
         children: [
           Text(
             'New support ticket',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           AppFormField(controller: _subject, label: 'Subject'),
           const SizedBox(height: AppSpacing.md),
           AppFormField(
@@ -145,11 +145,12 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: DropdownButtonFormField<String?>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
+                child: AppDropdownField<String?>(
+                  label: 'Category',
+                  value: _category,
                   items: const [
                     DropdownMenuItem<String?>(child: Text('— None —')),
                     DropdownMenuItem(value: 'billing', child: Text('Billing')),
@@ -162,9 +163,9 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _priority,
-                  decoration: const InputDecoration(labelText: 'Priority'),
+                child: AppDropdownField<String>(
+                  label: 'Priority',
+                  value: _priority,
                   items: const [
                     DropdownMenuItem(value: 'low', child: Text('Low')),
                     DropdownMenuItem(value: 'normal', child: Text('Normal')),
@@ -221,10 +222,8 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
       await repo.postReply(ticketId: widget.ticket.id, body: body);
       _reply.clear();
       ref.invalidate(ticketMessagesProvider(widget.ticket.id));
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.error(context, '$e');
-      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -255,9 +254,12 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                       Text(
                         'Status: ${widget.ticket.status} · '
                         'Priority: ${widget.ticket.priority}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.xs),
                       Text(widget.ticket.body),
                     ],
                   ),
@@ -265,7 +267,12 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                 const SizedBox(height: AppSpacing.sm),
                 msgsAsync.when(
                   loading: () => const LinearProgressIndicator(),
-                  error: (e, _) => Text(friendlyError(e)),
+                  error: (e, _) => Text(
+                    friendlyError(e),
+                    style: TextStyle(
+                      color: AppSemanticColors.of(context).danger,
+                    ),
+                  ),
                   data: (msgs) => Column(
                     children: [
                       for (final m in msgs)
@@ -280,7 +287,7 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                                     context,
                                   ).colorScheme.primaryContainer,
                             child: Padding(
-                              padding: const EdgeInsets.all(10),
+                              padding: const EdgeInsets.all(AppSpacing.md),
                               child: Text(m.body),
                             ),
                           ),

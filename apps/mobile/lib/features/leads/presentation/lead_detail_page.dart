@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_convert_sheet.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
+
+final _dateFmt = DateFormat('dd MMM yyyy · HH:mm');
 
 class LeadDetailPage extends ConsumerWidget {
   const LeadDetailPage({required this.leadId, super.key});
@@ -17,33 +22,57 @@ class LeadDetailPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Lead')),
       body: leadAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(leadByIdProvider(leadId)),
+        ),
         data: (lead) {
-          if (lead == null) return const Center(child: Text('Not found'));
+          if (lead == null) {
+            return const AppEmptyState(
+              icon: Icons.person_search_outlined,
+              title: 'Lead not found',
+              subtitle: 'It may have been converted or removed.',
+            );
+          }
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
               _Header(lead: lead),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               _StatusActions(lead: lead),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               _Contact(lead: lead),
-              const Divider(height: 32),
-              Text('Activity',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Activity'),
+              const SizedBox(height: AppSpacing.sm),
               _AddNoteRow(leadId: lead.id),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               actsAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: CircularProgressIndicator()),
+                loading: () => const AppSkeletonList(count: 3),
+                error: (e, _) => Text(
+                  friendlyError(e),
+                  style: TextStyle(color: AppSemanticColors.of(context).danger),
                 ),
-                error: (e, _) => Text(friendlyError(e)),
-                data: (acts) => Column(
-                  children: [for (final a in acts) _ActivityTile(a: a)],
-                ),
+                data: (acts) {
+                  if (acts.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.md,
+                      ),
+                      child: Text(
+                        'No activity yet.',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: [for (final a in acts) _ActivityTile(a: a)],
+                  );
+                },
               ),
             ],
           );
@@ -59,34 +88,35 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(lead.displayName,
-                style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Consumer(builder: (_, ref, __) {
-              final sportLabel = ref.watch(sportDisplayProvider((
-                sportId: lead.sportId,
-              )));
-              return Wrap(
-                spacing: 8,
-                children: [
-                  Chip(label: Text(lead.status.label)),
-                  Chip(label: Text(lead.source.label)),
-                  if (sportLabel != '—') Chip(label: Text(sportLabel)),
-                ],
-              );
-            }),
-            if (lead.notes != null) ...[
-              const SizedBox(height: 8),
-              Text(lead.notes!),
-            ],
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(lead.displayName,
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: AppSpacing.sm),
+          Consumer(builder: (_, ref, __) {
+            final sportLabel = ref.watch(sportDisplayProvider((
+              sportId: lead.sportId,
+            )));
+            return Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.xs,
+              children: [
+                AppBadge(text: lead.status.label, tone: AppBadgeTone.info),
+                AppBadge(text: lead.source.label),
+                if (sportLabel != '—') AppBadge(text: sportLabel),
+              ],
+            );
+          }),
+          if (lead.notes != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              lead.notes!,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -99,16 +129,17 @@ class _StatusActions extends ConsumerWidget {
   Future<void> _setStatus(WidgetRef ref, LeadStatus s) async {
     final repo = await ref.read(leadsRepoProvider.future);
     await repo?.updateStatus(lead.id, s);
-    ref.invalidate(leadByIdProvider(lead.id));
-    ref.invalidate(leadActivitiesProvider(lead.id));
-    ref.invalidate(leadsListProvider);
+    ref
+      ..invalidate(leadByIdProvider(lead.id))
+      ..invalidate(leadActivitiesProvider(lead.id))
+      ..invalidate(leadsListProvider);
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
         for (final s in LeadStatus.kanbanOrder)
           if (s != LeadStatus.converted)
@@ -144,7 +175,7 @@ class _StatusActions extends ConsumerWidget {
               lastDate:
                   DateTime.now().add(const Duration(days: 60)),
             );
-            if (picked == null) return;
+            if (picked == null || !context.mounted) return;
             final time = await showTimePicker(
               context: context,
               initialTime: const TimeOfDay(hour: 17, minute: 0),
@@ -154,9 +185,10 @@ class _StatusActions extends ConsumerWidget {
                 time.hour, time.minute);
             final repo = await ref.read(leadsRepoProvider.future);
             await repo?.scheduleTrial(lead.id, dt);
-            ref.invalidate(leadByIdProvider(lead.id));
-            ref.invalidate(leadActivitiesProvider(lead.id));
-            ref.invalidate(leadsListProvider);
+            ref
+              ..invalidate(leadByIdProvider(lead.id))
+              ..invalidate(leadActivitiesProvider(lead.id))
+              ..invalidate(leadsListProvider);
           },
         ),
       ],
@@ -170,39 +202,38 @@ class _Contact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (lead.phone != null)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.phone),
-                title: Text(lead.phone!),
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (lead.phone != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.phone_outlined),
+              title: Text(lead.phone!),
+            ),
+          if (lead.email != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.email_outlined),
+              title: Text(lead.email!),
+            ),
+          if (lead.parentName != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.family_restroom_outlined),
+              title: Text(lead.parentName!),
+            ),
+          if (lead.trialScheduledAt != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event_available_outlined),
+              title: Text(
+                'Trial scheduled for '
+                '${_dateFmt.format(lead.trialScheduledAt!.toLocal())}',
               ),
-            if (lead.email != null)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.email),
-                title: Text(lead.email!),
-              ),
-            if (lead.parentName != null)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.family_restroom),
-                title: Text(lead.parentName!),
-              ),
-            if (lead.trialScheduledAt != null)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.event_available),
-                title: Text(
-                    'Trial scheduled for ${lead.trialScheduledAt!.toLocal()}'),
-              ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -240,17 +271,17 @@ class _AddNoteRowState extends ConsumerState<_AddNoteRow> {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: TextField(
+          child: AppFormField(
             controller: _ctrl,
-            decoration: const InputDecoration(
-              hintText: 'Add a note',
-              border: OutlineInputBorder(),
-            ),
+            hint: 'Add a note',
+            textInputAction: TextInputAction.send,
+            onFieldSubmitted: (_) => _busy ? null : _add(),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         FilledButton(
           onPressed: _busy ? null : _add,
           child: const Text('Add'),
@@ -277,9 +308,10 @@ class _ActivityTile extends StatelessWidget {
     };
     return ListTile(
       dense: true,
+      contentPadding: EdgeInsets.zero,
       leading: Icon(iconFor[a.kind] ?? Icons.event_note),
       title: Text(a.content ?? a.kind),
-      subtitle: Text('${a.createdAt}'),
+      subtitle: Text(_dateFmt.format(a.createdAt.toLocal())),
     );
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/audit/data/audit_log.dart';
 import 'package:playhub/features/audit/data/audit_log_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class AuditLogPage extends ConsumerWidget {
   const AuditLogPage({super.key});
@@ -17,20 +19,24 @@ class AuditLogPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
             onPressed: () => ref.invalidate(auditLogsProvider),
           ),
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(auditLogsProvider),
+        ),
         data: (logs) {
           if (logs.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('No activity recorded yet.'),
-              ),
+            return const AppEmptyState(
+              icon: Icons.history_outlined,
+              title: 'No activity yet',
+              subtitle: 'Changes to students, payments, and settings '
+                  'show up here.',
             );
           }
           return RefreshIndicator(
@@ -58,12 +64,15 @@ class _LogTile extends StatelessWidget {
         _ => Icons.info_outline,
       };
 
-  Color _color(BuildContext c) => switch (log.action) {
-        'insert' => Colors.green.shade700,
-        'update' => Colors.blue.shade700,
-        'delete' => Colors.red.shade700,
-        _ => Theme.of(c).colorScheme.onSurfaceVariant,
-      };
+  Color _color(BuildContext c) {
+    final s = AppSemanticColors.of(c);
+    return switch (log.action) {
+      'insert' => s.success,
+      'update' => s.info,
+      'delete' => s.danger,
+      _ => Theme.of(c).colorScheme.onSurfaceVariant,
+    };
+  }
 
   String get _humanTime {
     final diff = DateTime.now().difference(log.createdAt);
@@ -76,7 +85,8 @@ class _LogTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final subject = log.entitySubject ?? '(${log.entityId?.substring(0, 8) ?? '–'})';
+    final subject =
+        log.entitySubject ?? '(${log.entityId?.substring(0, 8) ?? '–'})';
     final summary = '${log.userDisplay} ${log.action}d ${log.entityType} '
         '— $subject';
     final changed = log.changedFields;
@@ -92,7 +102,12 @@ class _LogTile extends StatelessWidget {
       ),
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            0,
+            AppSpacing.lg,
+            AppSpacing.lg,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -101,7 +116,7 @@ class _LogTile extends StatelessWidget {
                   'Changes',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 if (changed.isEmpty)
                   const Text('(no field changes detected)')
                 else
@@ -117,7 +132,7 @@ class _LogTile extends StatelessWidget {
                   'Inserted row',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 _Json(log.after!),
               ],
               if (log.action == 'delete' && log.before != null) ...[
@@ -125,7 +140,7 @@ class _LogTile extends StatelessWidget {
                   'Deleted row',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.xs),
                 _Json(log.before!),
               ],
             ],
@@ -148,6 +163,7 @@ class _DiffRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final semantics = AppSemanticColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: RichText(
@@ -156,19 +172,19 @@ class _DiffRow extends StatelessWidget {
           children: [
             TextSpan(
               text: '$field: ',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: const TextStyle(fontWeight: AppType.semibold),
             ),
             TextSpan(
               text: before,
-              style: const TextStyle(
-                color: Colors.red,
+              style: TextStyle(
+                color: semantics.danger,
                 decoration: TextDecoration.lineThrough,
               ),
             ),
             const TextSpan(text: '  →  '),
             TextSpan(
               text: after,
-              style: const TextStyle(color: Colors.green),
+              style: TextStyle(color: semantics.success),
             ),
           ],
         ),

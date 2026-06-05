@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom sheet — staff picks a student from their academy and registers
 /// them for [event]. Parents/students see only their linked students; the
@@ -44,14 +47,14 @@ class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
         studentId: _studentId!,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       );
-      ref.invalidate(eventRegistrationsProvider(widget.event.id));
-      ref.invalidate(myStudentsEventRegsProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      ref
+        ..invalidate(eventRegistrationsProvider(widget.event.id))
+        ..invalidate(myStudentsEventRegsProvider);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Registered.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -64,44 +67,59 @@ class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
         const <Student>[];
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Register for ${widget.event.title}',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _studentId,
-            decoration: const InputDecoration(labelText: 'Student'),
+          Text(
+            'Register for ${widget.event.title}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppDropdownField<String>(
+            label: 'Student',
+            value: _studentId,
             items: [
               for (final s in students)
                 DropdownMenuItem(value: s.id, child: Text(s.fullName)),
             ],
             onChanged: (v) => setState(() => _studentId = v),
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _notes,
-            decoration:
-                const InputDecoration(labelText: 'Notes (category, etc.)'),
-            minLines: 1,
+            label: 'Notes (category, etc.)',
             maxLines: 3,
           ),
-          const SizedBox(height: 16),
-          if (widget.event.feeAmount > 0)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Fee: ₹${widget.event.feeAmount} (collect separately for now)',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+          const SizedBox(height: AppSpacing.lg),
+          if (widget.event.feeAmount > 0) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: AppSemanticColors.of(context).info,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Fee: ₹${widget.event.feeAmount} '
+                    '(collect separately for now)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: AppSpacing.md),
+          ],
           FilledButton(
             onPressed: _saving || _studentId == null ? null : _register,
             child: _saving

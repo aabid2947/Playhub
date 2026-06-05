@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class TeamPage extends ConsumerWidget {
   const TeamPage({super.key});
@@ -21,31 +22,42 @@ class TeamPage extends ConsumerWidget {
             isScrollControlled: true,
             builder: (_) => const InviteUserSheet(),
           );
-          if (invited == true) ref.invalidate(teamMembersProvider);
+          if (invited ?? false) ref.invalidate(teamMembersProvider);
         },
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(teamMembersProvider),
+        ),
         data: (members) {
           if (members.isEmpty) {
-            return const Center(child: Text('No team members yet'));
+            return const AppEmptyState(
+              icon: Icons.groups_outlined,
+              title: 'No team members yet',
+              subtitle: 'Invite admins, coaches, and staff to your academy.',
+            );
           }
-          return ListView.separated(
-            itemCount: members.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final m = members[i];
-              return ListTile(
-                leading: CircleAvatar(
-                    child: Text(_initials(m.displayName))),
-                title: Text(m.displayName),
-                subtitle: Text(m.email + '  •  ' + _roleLabel(m.role)),
-                trailing: m.isActive
-                    ? null
-                    : const Chip(label: Text('Inactive')),
-              );
-            },
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(teamMembersProvider),
+            child: ListView.separated(
+              itemCount: members.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final m = members[i];
+                return AppListTile(
+                  wrapLeading: false,
+                  leading: CircleAvatar(
+                    child: Text(_initials(m.displayName)),
+                  ),
+                  title: Text(m.displayName),
+                  subtitle: Text('${m.email}  •  ${_roleLabel(m.role)}'),
+                  trailing:
+                      m.isActive ? null : const AppBadge(text: 'Inactive'),
+                );
+              },
+            ),
           );
         },
       ),
@@ -69,5 +81,6 @@ class TeamPage extends ConsumerWidget {
         'trainer': 'Trainer',
         'parent': 'Parent',
         'student': 'Student',
-      }[r] ?? r;
+      }[r] ??
+      r;
 }

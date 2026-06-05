@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// System health + global revenue snapshot.
@@ -15,8 +15,9 @@ class GlobalHealthPage extends ConsumerWidget {
     final kpiAsync = ref.watch(globalKpiProvider);
     return RefreshIndicator(
       onRefresh: () async {
-        ref.invalidate(allAcademiesProvider);
-        ref.invalidate(globalKpiProvider);
+        ref
+          ..invalidate(allAcademiesProvider)
+          ..invalidate(globalKpiProvider);
       },
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -32,6 +33,7 @@ class GlobalHealthPage extends ConsumerWidget {
             ),
             data: (k) {
               final f = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
+              final sem = AppSemanticColors.of(context);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -68,13 +70,13 @@ class GlobalHealthPage extends ConsumerWidget {
                         icon: Icons.check_circle_outline,
                         label: 'Active',
                         value: '${k.academiesActive}',
-                        color: AppPalette.success,
+                        color: sem.success,
                       ),
                       AppStatTile(
                         icon: Icons.schedule_outlined,
                         label: 'Trial',
                         value: '${k.academiesTrial}',
-                        color: AppPalette.info,
+                        color: sem.info,
                       ),
                       AppStatTile(
                         icon: Icons.payments_outlined,
@@ -85,23 +87,23 @@ class GlobalHealthPage extends ConsumerWidget {
                         icon: Icons.warning_amber_outlined,
                         label: 'Past due',
                         value: '${k.academiesPastDue}',
-                        color: AppPalette.warning,
+                        color: sem.warning,
                       ),
                       AppStatTile(
                         icon: Icons.block_outlined,
                         label: 'Suspended',
                         value: '${k.academiesSuspended}',
-                        color: AppPalette.danger,
+                        color: sem.danger,
                       ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  AppCard(
+                  const AppCard(
                     padding: EdgeInsets.zero,
                     child: ListTile(
-                      leading: const Icon(Icons.cloud_done_outlined),
-                      title: const Text('System health'),
-                      subtitle: const Text(
+                      leading: Icon(Icons.cloud_done_outlined),
+                      title: Text('System health'),
+                      subtitle: Text(
                         'Edge Functions + cron deployed; full status board '
                         'lands in v1.1',
                       ),

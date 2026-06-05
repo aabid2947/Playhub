@@ -5,6 +5,7 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/chat/data/chat.dart';
 import 'package:playhub/features/chat/data/chat_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class ThreadsPage extends ConsumerWidget {
   const ThreadsPage({super.key});
@@ -19,23 +20,32 @@ class ThreadsPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
             onPressed: () => ref.invalidate(myThreadsProvider),
           ),
         ],
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(myThreadsProvider),
+        ),
         data: (list) {
           if (list.isEmpty) {
-            return const Center(
-                child: Text('No conversations yet'));
+            return const AppEmptyState(
+              icon: Icons.forum_outlined,
+              title: 'No conversations yet',
+              subtitle: 'Messages from coaches and parents appear here.',
+            );
           }
-          return ListView.separated(
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) =>
-                _Tile(t: list[i], me: me ?? ''),
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(myThreadsProvider),
+            child: ListView.separated(
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) => _Tile(t: list[i], me: me ?? ''),
+            ),
           );
         },
       ),
@@ -50,6 +60,7 @@ class _Tile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final title = t.kind == ThreadKind.batch
         ? (t.title ?? 'Batch chat')
         : t.otherUserId(me) == null
@@ -57,17 +68,27 @@ class _Tile extends ConsumerWidget {
             : null;
     final subtitle = t.lastMessagePreview ?? '—';
     final trailing = t.lastMessageAt == null
-        ? const SizedBox.shrink()
-        : Text(_short(t.lastMessageAt!));
+        ? null
+        : Text(
+            _short(t.lastMessageAt!),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
 
-    Widget tileTitle(String resolved) => ListTile(
+    Widget tileTitle(String resolved) => AppListTile(
+          wrapLeading: false,
           leading: CircleAvatar(
-            child: Icon(t.kind == ThreadKind.batch
-                ? Icons.groups
-                : Icons.person),
+            child: Icon(
+              t.kind == ThreadKind.batch ? Icons.groups : Icons.person,
+            ),
           ),
           title: Text(resolved),
-          subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           trailing: trailing,
           onTap: () => context.push('/threads/${t.id}'),
         );

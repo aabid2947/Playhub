@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class DiscountStructureFormPage extends ConsumerStatefulWidget {
   const DiscountStructureFormPage({super.key, this.existing});
@@ -57,13 +59,12 @@ class _DiscountStructureFormPageState
       } else {
         await createDiscountStructure(ref, patch);
       }
-      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      AppSnackbar.success(
+          context, isEdit ? 'Discount updated.' : 'Discount created.');
+      Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -77,50 +78,39 @@ class _DiscountStructureFormPageState
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            TextFormField(
+            const AppSectionHeader(title: 'Discount details'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Name *',
-                hintText: 'Sibling, Scholarship, First-month promo…',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Name *',
+              hint: 'Sibling, Scholarship, First-month promo…',
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _description,
-              decoration: const InputDecoration(
-                labelText: 'Description (optional)',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Description (optional)',
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<DiscountType>(
-              initialValue: _type,
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<DiscountType>(
+              label: 'Type',
+              value: _type,
               items: DiscountType.values
                   .map((t) =>
                       DropdownMenuItem(value: t, child: Text(t.label)))
                   .toList(),
-              onChanged: (v) => setState(
-                  () => _type = v ?? DiscountType.percentage),
-              decoration: const InputDecoration(
-                labelText: 'Type',
-                border: OutlineInputBorder(),
-              ),
+              onChanged: (v) =>
+                  setState(() => _type = v ?? DiscountType.percentage),
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _value,
+              label: isPct ? 'Percentage (%) *' : 'Flat amount (₹) *',
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: isPct ? 'Percentage *' : 'Flat amount *',
-                suffixText: isPct ? '%' : '₹',
-                border: const OutlineInputBorder(),
-              ),
               validator: (v) {
                 final n = double.tryParse(v?.trim() ?? '');
                 if (n == null || n < 0) return 'Required';
@@ -128,23 +118,31 @@ class _DiscountStructureFormPageState
                 return null;
               },
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               isPct
                   ? 'Applied to base_amount of each invoice (excludes tax).'
                   : 'Flat ₹ subtracted from each invoice.',
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
-            const SizedBox(height: 24),
-            SwitchListTile(
-              value: _isActive,
-              onChanged: (v) => setState(() => _isActive = v),
-              title: const Text('Active'),
-              subtitle: const Text(
-                'When off, this discount is no longer applied to new invoices.',
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Status'),
+            const SizedBox(height: AppSpacing.xs),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: SwitchListTile(
+                value: _isActive,
+                onChanged: (v) => setState(() => _isActive = v),
+                title: const Text('Active'),
+                subtitle: const Text(
+                  'When off, this discount is no longer applied to '
+                  'new invoices.',
+                ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _busy ? null : _save,
               child: _busy

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:playhub/features/chat/data/chat_providers.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/chat/data/chat_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Opens (or creates) the batch's group chat thread. The
 /// ensure_batch_thread RPC handles participant sync — every active
@@ -34,11 +35,8 @@ class _BatchChatButtonState extends ConsumerState<BatchChatButton> {
       if (repo == null) throw StateError('no academy');
       final threadId = await repo.ensureBatchThread(widget.batchId);
       if (mounted) context.push('/threads/$threadId');
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(friendlyError(e))));
-      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/super_admin/presentation/academies_page.dart';
 import 'package:playhub/features/super_admin/presentation/global_health_page.dart';
 import 'package:playhub/features/super_admin/presentation/plans_page.dart';
 import 'package:playhub/features/super_admin/presentation/super_tickets_page.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Top-level shell for super_admin role. Lives on its own routes (separate
 /// from per-academy shells per PLAN.md §3.10) — the user can sign out via
@@ -24,10 +26,18 @@ class _SuperAdminHomeShellState extends ConsumerState<SuperAdminHomeShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PlayHub · admin'),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BrandWordmark(),
+            SizedBox(width: AppSpacing.sm),
+            AppBadge(text: 'Admin', tone: AppBadgeTone.brand),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Sign out',
             onPressed: () => ref.read(supabaseClientProvider).auth.signOut(),
           ),
         ],

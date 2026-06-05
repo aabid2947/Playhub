@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom sheet for recording a stock movement (in / out / return / adjustment).
 class MovementSheet extends ConsumerStatefulWidget {
@@ -34,7 +37,10 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
 
   Future<void> _save() async {
     final qty = double.tryParse(_qty.text.trim()) ?? 0;
-    if (qty == 0) return;
+    if (qty == 0) {
+      AppSnackbar.error(context, 'Enter a non-zero quantity.');
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = await ref.read(inventoryRepoProvider.future);
@@ -49,14 +55,14 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
         reference: _ref.text.trim().isEmpty ? null : _ref.text.trim(),
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       );
-      ref.invalidate(itemMovementsProvider(widget.item.id));
-      ref.invalidate(inventoryItemsProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      ref
+        ..invalidate(itemMovementsProvider(widget.item.id))
+        ..invalidate(inventoryItemsProvider);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Movement recorded.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -66,20 +72,23 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
   Widget build(BuildContext context) {
     final students = ref.watch(studentsProvider).valueOrNull ?? const <Student>[];
     final coaches = ref.watch(coachesProvider).valueOrNull ?? const [];
+    final needsRecipient = _kind == 'out' || _kind == 'return';
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Movement · ${widget.item.name}',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          Text(
+            'Movement · ${widget.item.name}',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.lg),
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'in', label: Text('In')),
@@ -90,21 +99,19 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
             selected: {_kind},
             onSelectionChanged: (s) => setState(() => _kind = s.first),
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _qty,
+            label: _kind == 'adjustment'
+                ? 'Qty (signed)'
+                : 'Qty (positive number)',
             keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: _kind == 'adjustment'
-                  ? 'Qty (signed)'
-                  : 'Qty (positive number)',
-            ),
           ),
-          const SizedBox(height: 12),
-          if (_kind == 'out' || _kind == 'return')
-            DropdownButtonFormField<String?>(
-              initialValue: _studentId,
-              decoration: const InputDecoration(labelText: 'Student'),
+          if (needsRecipient) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String?>(
+              label: 'Student',
+              value: _studentId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final s in students)
@@ -115,11 +122,10 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
               ],
               onChanged: (v) => setState(() => _studentId = v),
             ),
-          if (_kind == 'out' || _kind == 'return') const SizedBox(height: 12),
-          if (_kind == 'out' || _kind == 'return')
-            DropdownButtonFormField<String?>(
-              initialValue: _coachId,
-              decoration: const InputDecoration(labelText: 'Coach'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String?>(
+              label: 'Coach',
+              value: _coachId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in coaches)
@@ -130,20 +136,19 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
               ],
               onChanged: (v) => setState(() => _coachId = v),
             ),
-          if (_kind == 'out' || _kind == 'return') const SizedBox(height: 12),
-          TextField(
+          ],
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _ref,
-            decoration:
-                const InputDecoration(labelText: 'Reference (PO #, etc.)'),
+            label: 'Reference (PO #, etc.)',
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _notes,
-            decoration: const InputDecoration(labelText: 'Notes'),
+            label: 'Notes',
             maxLines: 3,
-            minLines: 1,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving

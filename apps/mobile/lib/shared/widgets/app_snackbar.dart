@@ -1,34 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:playhub/core/design_tokens.dart';
 
-/// Static helpers for showing toned SnackBars consistently.
+/// Static helpers for showing toned SnackBars consistently. Tones resolve
+/// through [AppSemanticColors] so they adapt to light/dark.
 class AppSnackbar {
   const AppSnackbar._();
 
   static void success(BuildContext context, String message) {
+    final semantics = AppSemanticColors.of(context);
     _show(
       context,
       message,
       icon: Icons.check_circle_outline,
-      color: AppPalette.success,
+      color: semantics.success,
+      onColor: semantics.onSuccess,
     );
   }
 
   static void error(BuildContext context, String message) {
+    final semantics = AppSemanticColors.of(context);
     _show(
       context,
       message,
       icon: Icons.error_outline,
-      color: AppPalette.danger,
+      color: semantics.danger,
+      onColor: semantics.onDanger,
     );
   }
 
   static void info(BuildContext context, String message) {
+    final semantics = AppSemanticColors.of(context);
     _show(
       context,
       message,
       icon: Icons.info_outline,
-      color: AppPalette.info,
+      color: semantics.info,
+      onColor: semantics.onInfo,
     );
   }
 
@@ -37,6 +44,7 @@ class AppSnackbar {
     String message, {
     required IconData icon,
     required Color color,
+    required Color onColor,
   }) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
@@ -45,19 +53,18 @@ class AppSnackbar {
       ..showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
-          // ignore: deprecated_member_use
-          backgroundColor: color.withOpacity(0.95),
+          backgroundColor: color,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           content: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 20),
+              Icon(icon, color: onColor, size: 20),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: Text(
                   message,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: onColor),
                 ),
               ),
             ],

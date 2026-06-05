@@ -6,6 +6,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/payment.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 final _allPaymentsProvider =
     FutureProvider<List<Payment>>((ref) async {
@@ -35,16 +36,17 @@ class PaymentsListPage extends ConsumerWidget {
     final byId = {for (final s in students) s.id: s};
 
     return paymentsAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppSkeletonList(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(_allPaymentsProvider),
+      ),
       data: (payments) {
         if (payments.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Text('No payments recorded yet.',
-                  textAlign: TextAlign.center),
-            ),
+          return const AppEmptyState(
+            icon: Icons.payments_outlined,
+            title: 'No payments yet',
+            subtitle: 'Recorded and online payments will appear here.',
           );
         }
         return RefreshIndicator(
@@ -54,7 +56,7 @@ class PaymentsListPage extends ConsumerWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, i) {
               final p = payments[i];
-              return ListTile(
+              return AppListTile(
                 leading: const Icon(Icons.payments_outlined),
                 title: Text(
                   byId[p.studentId]?.fullName ?? '(unknown)',

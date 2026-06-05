@@ -3,7 +3,8 @@ import 'package:playhub/core/design_tokens.dart';
 
 enum AppBadgeTone { neutral, success, warning, danger, info, brand }
 
-/// Tinted pill label.
+/// Tinted pill label. Colors resolve through [AppSemanticColors] so the tone
+/// adapts to light/dark automatically.
 class AppBadge extends StatelessWidget {
   const AppBadge({
     required this.text,
@@ -14,42 +15,46 @@ class AppBadge extends StatelessWidget {
   final String text;
   final AppBadgeTone tone;
 
-  Color _baseColor(BuildContext context) {
+  ({Color fg, Color bg}) _colors(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final semantics = AppSemanticColors.of(context);
     switch (tone) {
       case AppBadgeTone.success:
-        return AppPalette.success;
+        return (fg: semantics.success, bg: semantics.successContainer);
       case AppBadgeTone.warning:
-        return AppPalette.warning;
+        return (fg: semantics.warning, bg: semantics.warningContainer);
       case AppBadgeTone.danger:
-        return AppPalette.danger;
+        return (fg: semantics.danger, bg: semantics.dangerContainer);
       case AppBadgeTone.info:
-        return AppPalette.info;
+        return (fg: semantics.info, bg: semantics.infoContainer);
       case AppBadgeTone.brand:
-        return AppPalette.brandPrimary;
+        return (fg: scheme.primary, bg: scheme.primaryContainer);
       case AppBadgeTone.neutral:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+        return (
+          fg: scheme.onSurfaceVariant,
+          bg: scheme.surfaceContainerHighest,
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final base = _baseColor(context);
+    final colors = _colors(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm,
         vertical: 2,
       ),
       decoration: BoxDecoration(
-        // ignore: deprecated_member_use
-        color: base.withOpacity(0.12),
+        color: colors.bg,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
         text,
         style: theme.textTheme.labelSmall?.copyWith(
-          color: base,
-          fontWeight: FontWeight.w600,
+          color: colors.fg,
+          fontWeight: AppType.semibold,
         ),
       ),
     );

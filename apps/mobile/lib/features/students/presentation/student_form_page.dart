@@ -56,7 +56,6 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
-  String? _error;
 
   bool get isEdit => widget.existing != null;
 
@@ -106,10 +105,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
         'first_name': _firstName.text.trim(),
@@ -132,9 +128,14 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
       } else {
         await createStudent(ref, patch);
       }
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(
+        context,
+        isEdit ? 'Student updated.' : 'Student created.',
+      );
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -147,7 +148,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit student' : 'New student')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Form(
           key: _formKey,
           child: Column(
@@ -161,7 +162,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   onUploaded: (url) => setState(() => _photo = url),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Student'),
               const SizedBox(height: AppSpacing.sm),
               Row(
@@ -174,7 +175,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: AppFormField(
                       controller: _lastName,
@@ -185,29 +186,22 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: InkWell(
+                    child: AppDateField(
+                      label: 'Date of birth',
+                      value: _dob,
                       onTap: _pickDob,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Date of birth',
-                        ),
-                        child: Text(
-                          _dob == null
-                              ? 'Tap to pick'
-                              : _dob!.toIso8601String().substring(0, 10),
-                        ),
-                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _gender,
-                      decoration: const InputDecoration(labelText: 'Gender'),
+                    child: AppDropdownField<String>(
+                      label: 'Gender',
+                      value: _gender,
                       items: const [
                         DropdownMenuItem(value: 'male', child: Text('Male')),
                         DropdownMenuItem(
@@ -221,7 +215,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Parent / Guardian'),
               const SizedBox(height: AppSpacing.sm),
               AppFormField(
@@ -230,7 +224,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 validator: (v) =>
                     (v == null || v.trim().isEmpty) ? 'Required' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
                   Expanded(
@@ -240,7 +234,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                       keyboardType: TextInputType.phone,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: AppFormField(
                       controller: _parentEmail,
@@ -250,15 +244,15 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Training'),
               const SizedBox(height: AppSpacing.sm),
               centresAsync.when(
                 loading: () => const LinearProgressIndicator(minHeight: 2),
                 error: (e, _) => Text(friendlyError(e)),
-                data: (centres) => DropdownButtonFormField<String>(
-                  initialValue: _centerId,
-                  decoration: const InputDecoration(labelText: 'Center'),
+                data: (centres) => AppDropdownField<String>(
+                  label: 'Center',
+                  value: _centerId,
                   items: [
                     const DropdownMenuItem<String>(child: Text('— none —')),
                     for (final c in centres.where((c) => c.isActive))
@@ -267,8 +261,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   onChanged: (v) => setState(() => _centerId = v),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: SportPicker(
@@ -277,13 +272,11 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                       centerId: _centerId,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _skillLevel,
-                      decoration: const InputDecoration(
-                        labelText: 'Skill level',
-                      ),
+                    child: AppDropdownField<String>(
+                      label: 'Skill level',
+                      value: _skillLevel,
                       items: const [
                         DropdownMenuItem(
                           value: 'beginner',
@@ -303,10 +296,10 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _status,
-                decoration: const InputDecoration(labelText: 'Status'),
+              const SizedBox(height: AppSpacing.md),
+              AppDropdownField<String>(
+                label: 'Status',
+                value: _status,
                 items: const [
                   DropdownMenuItem(value: 'active', child: Text('Active')),
                   DropdownMenuItem(value: 'paused', child: Text('Paused')),
@@ -318,11 +311,11 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 ],
                 onChanged: (v) => setState(() => _status = v ?? 'active'),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Other'),
               const SizedBox(height: AppSpacing.sm),
               AppFormField(controller: _city, label: 'City'),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               AppFormField(
                 controller: _medical,
                 label: 'Medical notes',
@@ -330,31 +323,24 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 maxLines: 3,
               ),
               if (isEdit) ...[
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpacing.xxl),
                 const Divider(),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 _AttendanceSummaryCard(student: widget.existing!),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 _PerformanceShortcut(student: widget.existing!),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 StudentFeesSection(studentId: widget.existing!.id),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 StudentDiscountsSection(studentId: widget.existing!.id),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 StudentDocumentsSection(studentId: widget.existing!.id),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpacing.xl),
                 const AppSectionHeader(title: 'Logins & access'),
                 const SizedBox(height: AppSpacing.sm),
                 _InviteAccessRow(student: widget.existing!),
               ],
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(
                 onPressed: _busy ? null : _save,
                 child: _busy
@@ -406,7 +392,7 @@ class _AttendanceSummaryCard extends ConsumerWidget {
               '(last 30 days)',
             ),
             trailing: s.attendancePct != null && s.attendancePct! < 60
-                ? const Icon(Icons.warning_amber_outlined, color: Colors.orange)
+                ? const AppBadge(text: 'Low', tone: AppBadgeTone.warning)
                 : null,
           ),
         );

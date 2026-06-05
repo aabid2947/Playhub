@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
 class PerformanceDetailPage extends ConsumerWidget {
@@ -28,36 +30,38 @@ class PerformanceDetailPage extends ConsumerWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          if (assessment.overallScore != null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Text('Overall score',
-                        style: Theme.of(context).textTheme.bodyMedium),
-                    const Spacer(),
-                    Text(
-                      assessment.overallScore!.toStringAsFixed(2),
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ],
-                ),
+          if (assessment.overallScore != null) ...[
+            AppCard(
+              child: Row(
+                children: [
+                  Text('Overall score',
+                      style: Theme.of(context).textTheme.bodyMedium),
+                  const Spacer(),
+                  Text(
+                    assessment.overallScore!.toStringAsFixed(2),
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ],
               ),
             ),
-          const SizedBox(height: 12),
-          Text('Skills', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          const AppSectionHeader(title: 'Skills'),
+          const SizedBox(height: AppSpacing.sm),
           skillsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text(friendlyError(e)),
-            data: (skills) => Card(
+            loading: () => const AppLoading(),
+            error: (e, _) => Text(
+              friendlyError(e),
+              style: TextStyle(color: AppSemanticColors.of(context).danger),
+            ),
+            data: (skills) => AppCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   for (final s in skills)
-                    ListTile(
+                    AppListTile(
                       title: Text(s.skillName),
                       trailing: Text(
                         '${s.score}/10',
@@ -71,36 +75,42 @@ class PerformanceDetailPage extends ConsumerWidget {
           ),
           if (assessment.qualitativeFeedback != null &&
               assessment.qualitativeFeedback!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Feedback', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(assessment.qualitativeFeedback!),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Feedback'),
+            const SizedBox(height: AppSpacing.sm),
+            AppCard(
+              child: Text(
+                assessment.qualitativeFeedback!,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
           ],
-          const SizedBox(height: 12),
-          Text('Evidence', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xl),
+          const AppSectionHeader(title: 'Evidence'),
+          const SizedBox(height: AppSpacing.sm),
           mediaAsync.when(
-            loading: () => const SizedBox.shrink(),
-            error: (e, _) => Text(friendlyError(e)),
+            loading: () => const AppLoading(),
+            error: (e, _) => Text(
+              friendlyError(e),
+              style: TextStyle(color: AppSemanticColors.of(context).danger),
+            ),
             data: (media) {
               if (media.isEmpty) {
-                return const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No photos or videos attached.'),
+                return AppCard(
+                  child: Text(
+                    'No photos or videos attached.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
                 );
               }
-              return Card(
+              return AppCard(
+                padding: EdgeInsets.zero,
                 child: Column(
                   children: [
                     for (final m in media)
-                      ListTile(
+                      AppListTile(
                         leading: Icon(
                           m.mediaType == 'video'
                               ? Icons.videocam_outlined
@@ -137,16 +147,10 @@ class PerformanceDetailPage extends ConsumerWidget {
         mode: launcher.LaunchMode.externalApplication,
       );
       if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open file.')),
-        );
+        AppSnackbar.error(context, 'Could not open file.');
       }
     } on Object catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
   }
 }

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class InventoryItemFormPage extends ConsumerStatefulWidget {
   const InventoryItemFormPage({this.existing, super.key});
@@ -65,12 +68,12 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
         centerId: _centerId,
       );
       ref.invalidate(inventoryItemsProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      if (!mounted) return;
+      AppSnackbar.success(
+          context, widget.existing == null ? 'Item created.' : 'Item updated.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -88,57 +91,61 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            TextFormField(
+            const AppSectionHeader(title: 'Item details'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Name *'),
+              label: 'Name *',
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _sku,
-              decoration: const InputDecoration(labelText: 'SKU (optional)'),
+              label: 'SKU (optional)',
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _desc,
-              decoration: const InputDecoration(labelText: 'Description'),
-              minLines: 2,
-              maxLines: 4,
+              label: 'Description',
+              maxLines: 3,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Stock & cost'),
+            const SizedBox(height: AppSpacing.sm),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _unit,
-                    decoration: const InputDecoration(labelText: 'Unit'),
+                    label: 'Unit',
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
-                  child: TextFormField(
+                  child: AppFormField(
                     controller: _unitCost,
+                    label: 'Unit cost (₹)',
                     keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Unit cost (₹)'),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _reorder,
+              label: 'Low-stock threshold',
               keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Low-stock threshold'),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _categoryId,
-              decoration: const InputDecoration(labelText: 'Category'),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Categorisation'),
+            const SizedBox(height: AppSpacing.sm),
+            AppDropdownField<String?>(
+              label: 'Category',
+              value: _categoryId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in categories)
@@ -146,10 +153,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               ],
               onChanged: (v) => setState(() => _categoryId = v),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _vendorId,
-              decoration: const InputDecoration(labelText: 'Default vendor'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String?>(
+              label: 'Default vendor',
+              value: _vendorId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final v in vendors)
@@ -157,11 +164,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               ],
               onChanged: (v) => setState(() => _vendorId = v),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _centerId,
-              decoration:
-                  const InputDecoration(labelText: 'Held at center (optional)'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String?>(
+              label: 'Held at center (optional)',
+              value: _centerId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in centers)
@@ -169,7 +175,7 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               ],
               onChanged: (v) => setState(() => _centerId = v),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving

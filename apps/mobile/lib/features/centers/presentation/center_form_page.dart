@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart'
     show createCenter, deactivateCenter, reactivateCenter, updateCenter;
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class CenterFormPage extends ConsumerStatefulWidget {
   const CenterFormPage({super.key, this.existing});
@@ -22,7 +25,6 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
   late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
-  String? _error;
 
   bool get isEdit => widget.existing != null;
 
@@ -37,10 +39,7 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
         'name': _name.text.trim(),
@@ -53,9 +52,11 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
       } else {
         await createCenter(ref, patch);
       }
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, isEdit ? 'Center updated.' : 'Center created.');
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -63,74 +64,84 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final danger = AppSemanticColors.of(context).danger;
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit center' : 'New center')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _name,
-                decoration: const InputDecoration(labelText: 'Name *'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _address,
-                decoration: const InputDecoration(labelText: 'Address'),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _city,
-                decoration: const InputDecoration(labelText: 'City'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'Phone'),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
-              ],
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save changes' : 'Create center'),
-              ),
-              if (isEdit && widget.existing!.isActive) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.archive_outlined, color: Colors.red),
-                  label: const Text(
-                    'Deactivate center',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  onPressed: _busy ? null : _confirmDeactivate,
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            const AppSectionHeader(title: 'Center details'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
+              controller: _name,
+              label: 'Name *',
+              hint: 'e.g. North Campus',
+              prefixIcon: const Icon(Icons.location_city_outlined),
+              textInputAction: TextInputAction.next,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _address,
+              label: 'Address',
+              hint: 'Street, area',
+              prefixIcon: const Icon(Icons.home_outlined),
+              maxLines: 2,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _city,
+              label: 'City',
+              prefixIcon: const Icon(Icons.map_outlined),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _phone,
+              label: 'Phone',
+              hint: '+91 …',
+              prefixIcon: const Icon(Icons.call_outlined),
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _busy ? null : _save(),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            FilledButton(
+              onPressed: _busy ? null : _save,
+              child: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(isEdit ? 'Save changes' : 'Create center'),
+            ),
+            if (isEdit && widget.existing!.isActive) ...[
+              const SizedBox(height: AppSpacing.sm),
+              OutlinedButton.icon(
+                icon: Icon(Icons.archive_outlined, color: danger),
+                label: Text(
+                  'Deactivate center',
+                  style: TextStyle(color: danger),
                 ),
-              ],
-              if (isEdit && !widget.existing!.isActive) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.unarchive_outlined),
-                  label: const Text('Reactivate center'),
-                  onPressed: _busy ? null : _reactivate,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: danger.withValues(alpha: 0.5)),
                 ),
-              ],
+                onPressed: _busy ? null : _confirmDeactivate,
+              ),
             ],
-          ),
+            if (isEdit && !widget.existing!.isActive) ...[
+              const SizedBox(height: AppSpacing.sm),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.unarchive_outlined),
+                label: const Text('Reactivate center'),
+                onPressed: _busy ? null : _reactivate,
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -161,9 +172,11 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
     setState(() => _busy = true);
     try {
       await deactivateCenter(ref, widget.existing!.id);
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Center deactivated.');
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -173,9 +186,11 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
     setState(() => _busy = true);
     try {
       await reactivateCenter(ref, widget.existing!.id);
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Center reactivated.');
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

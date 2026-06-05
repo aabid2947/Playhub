@@ -24,6 +24,7 @@ class AppStatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final semantics = AppSemanticColors.of(context);
     final accent = color ?? AppPalette.brandPrimary;
 
     return AppCard(
@@ -37,8 +38,7 @@ class AppStatTile extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  // ignore: deprecated_member_use
-                  color: accent.withOpacity(0.12),
+                  color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 alignment: Alignment.center,
@@ -52,15 +52,14 @@ class AppStatTile extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    // ignore: deprecated_member_use
-                    color: AppPalette.success.withOpacity(0.12),
+                    color: semantics.successContainer,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                   child: Text(
                     trend!,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppPalette.success,
-                      fontWeight: FontWeight.w600,
+                      color: semantics.success,
+                      fontWeight: AppType.semibold,
                     ),
                   ),
                 ),
@@ -78,7 +77,7 @@ class AppStatTile extends StatelessWidget {
           Text(
             value,
             style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: AppType.bold,
             ),
           ),
         ],

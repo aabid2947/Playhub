@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:playhub/core/error_messages.dart';
 
 /// Per-event results entry — staff records placement / score per registered
 /// student and triggers certificate generation.
@@ -25,19 +27,28 @@ class EventResultsPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(eventRegistrationsProvider(eventId));
-              ref.invalidate(eventResultsProvider(eventId));
-            },
+            tooltip: 'Refresh',
+            onPressed: () => ref
+              ..invalidate(eventRegistrationsProvider(eventId))
+              ..invalidate(eventResultsProvider(eventId)),
           ),
         ],
       ),
       body: regsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref
+            ..invalidate(eventRegistrationsProvider(eventId))
+            ..invalidate(eventResultsProvider(eventId)),
+        ),
         data: (regs) {
           if (regs.isEmpty) {
-            return const Center(child: Text('No participants yet'));
+            return const AppEmptyState(
+              icon: Icons.emoji_events_outlined,
+              title: 'No participants yet',
+              subtitle: 'Register students for this event to record results.',
+            );
           }
           final results = resultsAsync.valueOrNull ?? const <EventResult>[];
           final byStudent = <String, EventResult>{
@@ -124,16 +135,9 @@ class _ResultRowState extends ConsumerState<_ResultRow> {
             _category.text.trim().isEmpty ? null : _category.text.trim(),
       );
       ref.invalidate(eventResultsProvider(widget.eventId));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saved')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      if (mounted) AppSnackbar.success(context, 'Result saved.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -141,9 +145,7 @@ class _ResultRowState extends ConsumerState<_ResultRow> {
 
   Future<void> _generateCertificate() async {
     if (widget.existing == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Save the result first')),
-      );
+      AppSnackbar.info(context, 'Save the result first.');
       return;
     }
     setState(() => _busy = true);
@@ -154,11 +156,8 @@ class _ResultRowState extends ConsumerState<_ResultRow> {
       ref.invalidate(eventResultsProvider(widget.eventId));
       if (!mounted) return;
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -167,49 +166,50 @@ class _ResultRowState extends ConsumerState<_ResultRow> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(widget.studentName,
               style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
                 width: 80,
-                child: TextField(
+                child: AppFormField(
                   controller: _placement,
+                  label: 'Place',
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Place'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               SizedBox(
                 width: 100,
-                child: TextField(
+                child: AppFormField(
                   controller: _score,
+                  label: 'Score',
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Score'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
+                  label: 'Category',
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
               FilledButton.tonal(
                 onPressed: _busy ? null : _save,
                 child: const Text('Save'),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               OutlinedButton.icon(
                 onPressed: _busy ? null : _generateCertificate,
                 icon: const Icon(Icons.verified_outlined),

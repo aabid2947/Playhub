@@ -4,6 +4,10 @@ import 'package:playhub/core/design_tokens.dart';
 /// Thin wrapper over [ListTile] with consistent padding, a tinted leading
 /// icon container, and an automatic chevron when [onTap] is provided.
 ///
+/// Set [wrapLeading] to `false` when [leading] is already a self-contained
+/// visual (e.g. an avatar / `CircleAvatar`) that shouldn't sit inside the
+/// tinted icon box.
+///
 /// Renders an actual [ListTile] so `find.byType(ListTile)` still works.
 class AppListTile extends StatelessWidget {
   const AppListTile({
@@ -13,6 +17,7 @@ class AppListTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.isThreeLine = false,
+    this.wrapLeading = true,
     super.key,
   });
 
@@ -22,6 +27,7 @@ class AppListTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool isThreeLine;
+  final bool wrapLeading;
 
   @override
   Widget build(BuildContext context) {
@@ -30,19 +36,22 @@ class AppListTile extends StatelessWidget {
 
     Widget? wrappedLeading;
     if (leading != null) {
-      wrappedLeading = Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: scheme.primaryContainer,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
-        alignment: Alignment.center,
-        child: IconTheme(
-          data: IconThemeData(color: scheme.onPrimaryContainer, size: 20),
-          child: leading!,
-        ),
-      );
+      wrappedLeading = wrapLeading
+          ? Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              alignment: Alignment.center,
+              child: IconTheme(
+                data:
+                    IconThemeData(color: scheme.onPrimaryContainer, size: 20),
+                child: leading!,
+              ),
+            )
+          : leading;
     }
 
     Widget? wrappedTitle;

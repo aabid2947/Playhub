@@ -1,13 +1,15 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Self-service profile editor available to every signed-in user.
 /// Edits name + phone on the `users` row and uploads an avatar into
-/// avatars/<academy_id>/users/<own_id>/. Email is read-only here (changing
+/// `avatars/<academy_id>/users/<own_id>/`. Email is read-only here (changing
 /// it goes through Supabase Auth, not this page).
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
@@ -55,13 +57,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }).eq('id', profile.id);
       ref.invalidate(currentProfileProvider);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      AppSnackbar.success(context, 'Profile updated.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -84,13 +82,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           .update({'profile_photo': path}).eq('id', profile.id);
       ref.invalidate(currentProfileProvider);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile photo updated')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      AppSnackbar.success(context, 'Profile photo updated.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -102,18 +96,25 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(currentProfileProvider),
+        ),
         data: (profile) {
           if (profile == null) {
-            return const Center(child: Text('Not signed in'));
+            return const AppEmptyState(
+              icon: Icons.person_off_outlined,
+              title: 'Not signed in',
+              subtitle: 'Sign in to view and edit your profile.',
+            );
           }
           _seed();
           final photoUrl = ref
               .read(storageServiceProvider)
               .publicAvatarUrl(profile.profilePhoto);
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
               Center(
                 child: Column(
@@ -124,7 +125,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                           ? profile.firstName![0]
                           : '?',
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.sm),
                     TextButton.icon(
                       onPressed: _uploading ? null : _changePhoto,
                       icon: _uploading
@@ -140,48 +141,41 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              TextField(
+              const SizedBox(height: AppSpacing.lg),
+              const AppSectionHeader(title: 'Your details'),
+              const SizedBox(height: AppSpacing.sm),
+              AppFormField(
                 controller: _firstName,
-                decoration: const InputDecoration(
-                  labelText: 'First name',
-                  border: OutlineInputBorder(),
-                ),
+                label: 'First name',
+                textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 12),
-              TextField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _lastName,
-                decoration: const InputDecoration(
-                  labelText: 'Last name',
-                  border: OutlineInputBorder(),
-                ),
+                label: 'Last name',
+                textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 12),
-              TextField(
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
                 controller: _phone,
+                label: 'Phone',
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone',
-                  border: OutlineInputBorder(),
-                ),
               ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(profile.email ?? '—'),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Account'),
+              const SizedBox(height: AppSpacing.sm),
+              AppFormField(
+                label: 'Email',
+                initialValue: profile.email ?? '—',
+                enabled: false,
               ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Role',
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(profile.role),
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                label: 'Role',
+                initialValue: profile.role,
+                enabled: false,
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton.icon(
                 onPressed: _saving ? null : _save,
                 icon: _saving

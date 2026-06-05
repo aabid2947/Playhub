@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class LeadFormPage extends ConsumerStatefulWidget {
   const LeadFormPage({super.key});
@@ -59,12 +62,11 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
         source: _source,
       );
       ref.invalidate(leadsListProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Lead created.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -77,30 +79,35 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            TextFormField(
+            const AppSectionHeader(title: 'Contact'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _first,
-              decoration: const InputDecoration(labelText: 'First name *'),
+              label: 'First name *',
+              textInputAction: TextInputAction.next,
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _last,
-              decoration: const InputDecoration(labelText: 'Last name'),
+              label: 'Last name',
+              textInputAction: TextInputAction.next,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _phone,
+              label: 'Phone',
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Phone'),
+              textInputAction: TextInputAction.next,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _email,
+              label: 'Email',
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
               validator: (_) {
                 if (_phone.text.trim().isEmpty &&
                     _email.text.trim().isEmpty) {
@@ -109,40 +116,42 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
                 return null;
               },
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(title: 'Interest & source'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
               controller: _parentName,
-              decoration: const InputDecoration(labelText: 'Parent name'),
+              label: 'Parent name',
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _age,
+              label: 'Age',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Age'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             SportPicker(
               value: _sportId,
               onChanged: (v) => setState(() => _sportId = v),
               label: 'Sport interest',
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<LeadSource>(
-              initialValue: _source,
-              decoration: const InputDecoration(labelText: 'Source'),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<LeadSource>(
+              label: 'Source',
+              value: _source,
               items: [
                 for (final s in LeadSource.values)
                   DropdownMenuItem(value: s, child: Text(s.label)),
               ],
               onChanged: (v) => setState(() => _source = v ?? _source),
             ),
-            const SizedBox(height: 12),
-            TextFormField(
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
               controller: _notes,
+              label: 'Notes',
               maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Notes'),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.xl),
             FilledButton.icon(
               icon: const Icon(Icons.save),
               label: Text(_saving ? 'Saving…' : 'Save lead'),

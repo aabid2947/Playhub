@@ -108,7 +108,8 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 const SizedBox(height: AppSpacing.md),
                 _OutstandingCard(studentId: selected.id),
                 const SizedBox(height: AppSpacing.md),
-                Card(
+                AppCard(
+                  padding: EdgeInsets.zero,
                   child: AppListTile(
                     leading: const Icon(Icons.emoji_events_outlined),
                     title: const Text('Events'),
@@ -364,17 +365,18 @@ class _AttendanceCard extends ConsumerWidget {
   final String studentId;
 
   Color _color(BuildContext c, String status) {
+    final semantics = AppSemanticColors.of(c);
     switch (status) {
       case 'present':
-        return Colors.green;
+        return semantics.success;
       case 'absent':
-        return Theme.of(c).colorScheme.error;
+        return semantics.danger;
       case 'late':
-        return Colors.orange;
+        return semantics.warning;
       case 'excused':
-        return Colors.blueGrey;
+        return semantics.info;
     }
-    return Colors.grey;
+    return Theme.of(c).colorScheme.onSurfaceVariant;
   }
 
   @override
@@ -415,6 +417,37 @@ class _AttendanceCard extends ConsumerWidget {
                             color: _color(context, d.status),
                             borderRadius: BorderRadius.circular(2),
                           ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      for (final entry in const [
+                        ('present', 'Present'),
+                        ('late', 'Late'),
+                        ('absent', 'Absent'),
+                        ('excused', 'Excused'),
+                      ])
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: _color(context, entry.$1),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Text(
+                              entry.$2,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ),
                     ],
                   ),
@@ -477,7 +510,6 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                   ),
               ],
               gridData: FlGridData(
-                show: true,
                 drawVerticalLine: false,
                 horizontalInterval: 25,
                 getDrawingHorizontalLine: (_) => FlLine(
@@ -487,12 +519,8 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
               ),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
+                topTitles: const AxisTitles(),
+                rightTitles: const AxisTitles(),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
@@ -589,7 +617,6 @@ class _PerformanceCard extends ConsumerWidget {
                         isCurved: true,
                         color: primary,
                         barWidth: 3,
-                        dotData: const FlDotData(show: true),
                         belowBarData: BarAreaData(
                           show: true,
                           color: primary.withValues(alpha: 0.12),
@@ -597,7 +624,6 @@ class _PerformanceCard extends ConsumerWidget {
                       ),
                     ],
                     gridData: FlGridData(
-                      show: true,
                       drawVerticalLine: false,
                       horizontalInterval: 2.5,
                       getDrawingHorizontalLine: (_) => FlLine(
@@ -607,15 +633,9 @@ class _PerformanceCard extends ConsumerWidget {
                     ),
                     borderData: FlBorderData(show: false),
                     titlesData: FlTitlesData(
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      bottomTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
+                      topTitles: const AxisTitles(),
+                      rightTitles: const AxisTitles(),
+                      bottomTitles: const AxisTitles(),
                       leftTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,

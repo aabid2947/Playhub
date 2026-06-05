@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/payment.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class RefundFormPage extends ConsumerStatefulWidget {
   const RefundFormPage({required this.payment, super.key});
@@ -29,15 +31,11 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
   Future<void> _save() async {
     final amount = double.tryParse(_amount.text.trim());
     if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid amount')),
-      );
+      AppSnackbar.error(context, 'Enter a valid amount.');
       return;
     }
     if (amount > widget.payment.amount) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Refund cannot exceed payment')),
-      );
+      AppSnackbar.error(context, 'Refund cannot exceed payment.');
       return;
     }
     setState(() => _busy = true);
@@ -48,18 +46,11 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
         amount: amount,
         reason: _reason.text.trim(),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Refund recorded.')),
-        );
-        Navigator.of(context).pop();
-      }
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Refund recorded.');
+      Navigator.of(context).pop();
     } on Object catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -71,53 +62,60 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Refund payment')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '₹${widget.payment.amount.toStringAsFixed(2)} · ${widget.payment.method.label}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  if (isRazorpay)
-                    const Text(
-                      'A Razorpay refund call will be initiated.',
-                    )
-                  else
-                    const Text(
-                      'Manual refund: marked processed immediately. '
-                      'Hand the cash back / void the cheque physically.',
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Original payment',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
-                ],
-              ),
+                    Text(
+                      '₹${widget.payment.amount.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: AppType.semibold,
+                          ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  widget.payment.method.label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _RefundNote(isRazorpay: isRazorpay),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
+          const SizedBox(height: AppSpacing.xl),
+          const AppSectionHeader(title: 'Refund details'),
+          const SizedBox(height: AppSpacing.sm),
+          AppFormField(
             controller: _amount,
+            label: 'Refund amount (₹)',
             keyboardType:
                 const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Refund amount (₹)',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _reason,
+            label: 'Reason',
+            hint: 'Required for audit trail',
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Reason',
-              hintText: 'Required for audit trail',
-              border: OutlineInputBorder(),
-            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.xl),
           FilledButton(
             onPressed: _busy ? null : _save,
             child: _busy
@@ -129,6 +127,37 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Info-toned note explaining how the refund will be processed.
+class _RefundNote extends StatelessWidget {
+  const _RefundNote({required this.isRazorpay});
+
+  final bool isRazorpay;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = AppSemanticColors.of(context).info;
+    final text = isRazorpay
+        ? 'A Razorpay refund call will be initiated.'
+        : 'Manual refund: marked processed immediately. Hand the cash '
+            'back / void the cheque physically.';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.info_outline, size: 18, color: info),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ),
+      ],
     );
   }
 }

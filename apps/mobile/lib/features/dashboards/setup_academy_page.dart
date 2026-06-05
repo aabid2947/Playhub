@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -38,7 +39,7 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
     try {
       await bootstrapOwnerAcademy(ref, name);
     } on Object catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -72,7 +73,10 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                Text(_error!, style: const TextStyle(color: Colors.red)),
+                Text(
+                  _error!,
+                  style: TextStyle(color: AppSemanticColors.of(context).danger),
+                ),
               ],
               const SizedBox(height: AppSpacing.xl),
               FilledButton(

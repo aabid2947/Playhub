@@ -23,9 +23,9 @@ class AppSectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title.toUpperCase(),
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: AppType.bold,
+                letterSpacing: AppType.trackingWider,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),

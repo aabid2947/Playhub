@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/students/data/student_document.dart';
 import 'package:playhub/features/students/data/student_document_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
-import 'package:playhub/core/error_messages.dart';
 
 /// Embedded section listing a student's documents and offering upload + open
 /// + delete. Caller should only render this once the student row exists in
@@ -20,35 +22,29 @@ class StudentDocumentsSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Text(
-              'Documents',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Spacer(),
-            FilledButton.tonalIcon(
-              icon: const Icon(Icons.upload_file_outlined, size: 18),
-              label: const Text('Upload'),
-              onPressed: () => _pickTypeAndUpload(context, ref),
-            ),
-          ],
+        AppSectionHeader(
+          title: 'Documents',
+          trailing: FilledButton.tonalIcon(
+            icon: const Icon(Icons.upload_file_outlined, size: 18),
+            label: const Text('Upload'),
+            onPressed: () => _pickTypeAndUpload(context, ref),
+          ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         docsAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(AppSpacing.sm),
             child: LinearProgressIndicator(minHeight: 2),
           ),
           error: (e, _) => Text(friendlyError(e)),
           data: (docs) {
             if (docs.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
+              return const AppCard(
                 child: Text('No documents uploaded yet.'),
               );
             }
-            return Card(
+            return AppCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   for (final d in docs)
@@ -78,9 +74,12 @@ class StudentDocumentsSection extends ConsumerWidget {
         child: ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(
-              title: Text('What type of document?'),
-              dense: true,
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Text(
+                'What type of document?',
+                style: Theme.of(ctx).textTheme.titleMedium,
+              ),
             ),
             const Divider(height: 1),
             for (final (k, label) in kStudentDocumentTypes)
@@ -96,26 +95,24 @@ class StudentDocumentsSection extends ConsumerWidget {
     try {
       await uploadStudentDocument(ref, studentId: studentId, type: type);
     } on Object catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
   }
 
   Future<void> _openSigned(
-      BuildContext context, WidgetRef ref, StudentDocument d) async {
+    BuildContext context,
+    WidgetRef ref,
+    StudentDocument d,
+  ) async {
     try {
       final url = await signedUrlFor(ref, d);
       final uri = Uri.parse(url);
-      await launcher.launchUrl(uri, mode: launcher.LaunchMode.externalApplication);
+      await launcher.launchUrl(
+        uri,
+        mode: launcher.LaunchMode.externalApplication,
+      );
     } on Object catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(friendlyError(e))),
-        );
-      }
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
   }
 
@@ -131,6 +128,9 @@ class StudentDocumentsSection extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppSemanticColors.of(ctx).danger,
+            ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Delete'),
           ),
@@ -160,9 +160,14 @@ class _DocumentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return AppListTile(
+      wrapLeading: false,
       leading: Icon(_icon),
-      title: Text(doc.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(
+        doc.displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: Text('${labelForDocType(doc.type)} • ${doc.prettySize}'),
       trailing: PopupMenuButton<String>(
         onSelected: (v) {

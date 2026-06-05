@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class SuperTicketsPage extends ConsumerWidget {
@@ -61,15 +61,17 @@ class SuperTicketsPage extends ConsumerWidget {
   }
 
   Color _priorityColor(BuildContext c, String p) {
+    final sem = AppSemanticColors.of(c);
+    final scheme = Theme.of(c).colorScheme;
     switch (p) {
       case 'urgent':
-        return Theme.of(c).colorScheme.error;
+        return sem.dangerContainer;
       case 'high':
-        return Colors.orange;
+        return sem.warningContainer;
       case 'low':
-        return Colors.blueGrey;
+        return scheme.surfaceContainerHighest;
     }
-    return Theme.of(c).colorScheme.primaryContainer;
+    return scheme.primaryContainer;
   }
 }
 
@@ -105,10 +107,8 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
           );
       _reply.clear();
       ref.invalidate(ticketMessagesProvider(widget.ticket.id));
-    } catch (e) {
-      if (mounted) {
-        AppSnackbar.error(context, '$e');
-      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -162,9 +162,12 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                       Text(
                         'Status: ${widget.ticket.status} · '
                         'Priority: ${widget.ticket.priority}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.xs),
                       Text(widget.ticket.body),
                     ],
                   ),
@@ -172,7 +175,12 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                 const SizedBox(height: AppSpacing.sm),
                 msgsAsync.when(
                   loading: () => const LinearProgressIndicator(),
-                  error: (e, _) => Text(friendlyError(e)),
+                  error: (e, _) => Text(
+                    friendlyError(e),
+                    style: TextStyle(
+                      color: AppSemanticColors.of(context).danger,
+                    ),
+                  ),
                   data: (msgs) => Column(
                     children: [
                       for (final m in msgs)
@@ -181,7 +189,7 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                               ? Alignment.centerRight
                               : Alignment.centerLeft,
                           child: AppCard(
-                            padding: const EdgeInsets.all(AppSpacing.sm + 2),
+                            padding: const EdgeInsets.all(AppSpacing.md),
                             color: m.isStaff
                                 ? Theme.of(context).colorScheme.primaryContainer
                                 : null,

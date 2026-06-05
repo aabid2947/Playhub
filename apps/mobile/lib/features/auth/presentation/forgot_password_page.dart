@@ -2,8 +2,11 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/presentation/auth_scaffold.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class ForgotPasswordPage extends ConsumerStatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -63,50 +66,41 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Reset password')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 8),
-            const Text(
-              'Enter the email tied to your account and we will send a '
-              'password-reset link.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email'),
-            ),
-            if (_message != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _message!,
-                style: TextStyle(color: _isError ? Colors.red : Colors.green),
-              ),
-            ],
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _busy ? null : _send,
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Send reset link'),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => context.go('/login'),
-              child: const Text('Back to sign in'),
-            ),
-          ],
+    return AuthScaffold(
+      title: 'Reset password',
+      subtitle: "Enter your account email and we'll send a secure reset link.",
+      onBack: () => context.go('/login'),
+      children: [
+        AppFormField(
+          controller: _email,
+          label: 'Email',
+          hint: 'you@academy.com',
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.done,
+          prefixIcon: const Icon(Icons.mail_outline),
+          onFieldSubmitted: (_) => _busy ? null : _send(),
         ),
-      ),
+        if (_message != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          AuthMessage(message: _message!, isError: _isError),
+        ],
+        const SizedBox(height: AppSpacing.lg),
+        FilledButton(
+          onPressed: _busy ? null : _send,
+          child: _busy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Send reset link'),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        TextButton(
+          onPressed: () => context.go('/login'),
+          child: const Text('Back to sign in'),
+        ),
+      ],
     );
   }
 }

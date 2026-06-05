@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class VendorsPage extends ConsumerWidget {
   const VendorsPage({super.key});
@@ -16,6 +18,7 @@ class VendorsPage extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
             onPressed: () => ref.invalidate(vendorsProvider),
           ),
         ],
@@ -30,31 +33,43 @@ class VendorsPage extends ConsumerWidget {
         ),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(vendorsProvider),
+        ),
         data: (rows) {
-          if (rows.isEmpty) return const Center(child: Text('No vendors yet'));
-          return ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final v = rows[i];
-              return ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.store_outlined)),
-                title: Text(v.name),
-                subtitle: Text([
-                  if (v.contactName != null && v.contactName!.isNotEmpty)
-                    v.contactName!,
-                  if (v.phone != null && v.phone!.isNotEmpty) v.phone!,
-                  if (v.email != null && v.email!.isNotEmpty) v.email!,
-                ].join(' · ')),
-                onTap: () => showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => _VendorSheet(existing: v),
-                ),
-              );
-            },
+          if (rows.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.storefront_outlined,
+              title: 'No vendors yet',
+              subtitle: 'Add suppliers to track where equipment comes from.',
+            );
+          }
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(vendorsProvider),
+            child: ListView.separated(
+              itemCount: rows.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final v = rows[i];
+                return AppListTile(
+                  leading: const Icon(Icons.store_outlined),
+                  title: Text(v.name),
+                  subtitle: Text([
+                    if (v.contactName != null && v.contactName!.isNotEmpty)
+                      v.contactName!,
+                    if (v.phone != null && v.phone!.isNotEmpty) v.phone!,
+                    if (v.email != null && v.email!.isNotEmpty) v.email!,
+                  ].join(' · ')),
+                  onTap: () => showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (_) => _VendorSheet(existing: v),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
@@ -111,11 +126,8 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
       );
       ref.invalidate(vendorsProvider);
       if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
-      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -125,60 +137,62 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.existing == null ? 'New vendor' : 'Edit vendor',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          TextField(
+          Text(
+            widget.existing == null ? 'New vendor' : 'Edit vendor',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppFormField(
             controller: _name,
-            decoration: const InputDecoration(labelText: 'Name *'),
+            label: 'Name *',
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _contact,
-            decoration: const InputDecoration(labelText: 'Contact name'),
+            label: 'Contact name',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _phone,
+                  label: 'Phone',
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Phone'),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: TextField(
+                child: AppFormField(
                   controller: _email,
+                  label: 'Email',
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _address,
-            decoration: const InputDecoration(labelText: 'Address'),
+            label: 'Address',
           ),
-          const SizedBox(height: 12),
-          TextField(
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
             controller: _notes,
-            decoration: const InputDecoration(labelText: 'Notes'),
+            label: 'Notes',
             maxLines: 3,
-            minLines: 1,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: _saving
