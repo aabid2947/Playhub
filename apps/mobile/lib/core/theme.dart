@@ -140,7 +140,7 @@ class AppTheme {
         foregroundColor: scheme.onSurface,
         titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: AppType.semibold,
-          fontSize: 18,
+          fontSize: 17,
         ),
       ),
 
@@ -309,51 +309,71 @@ class AppTheme {
         ? GoogleFonts.interTextTheme()
         : GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
 
+    // Explicit sizes (logical px) tuned a step down from the Material 3 defaults
+    // — the defaults (titleLarge 22, headline 24-32, body 16) read oversized on a
+    // dense, all-day mobile ops tool. This is the single source of truth for the
+    // type scale: every screen consumes these roles via `textTheme.*`, so changing
+    // a size here cascades app-wide. (Device text-scaling still applies on top.)
     return base.copyWith(
       displayLarge: base.displayLarge?.copyWith(
+        fontSize: 36,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingTight,
       ),
       displayMedium: base.displayMedium?.copyWith(
+        fontSize: 30,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingTight,
       ),
       displaySmall: base.displaySmall?.copyWith(
+        fontSize: 26,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingTight,
       ),
       headlineLarge: base.headlineLarge?.copyWith(
+        fontSize: 24,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingSnug,
       ),
       headlineMedium: base.headlineMedium?.copyWith(
+        fontSize: 22,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingSnug,
       ),
       headlineSmall: base.headlineSmall?.copyWith(
+        fontSize: 20,
         fontWeight: AppType.bold,
         letterSpacing: AppType.trackingSnug,
       ),
+      // App-bar titles, card/sheet headers, primary list text.
       titleLarge: base.titleLarge?.copyWith(
+        fontSize: 18,
         fontWeight: AppType.semibold,
         letterSpacing: AppType.trackingSnug,
       ),
       titleMedium: base.titleMedium?.copyWith(
+        fontSize: 15,
         fontWeight: AppType.semibold,
       ),
       titleSmall: base.titleSmall?.copyWith(
+        fontSize: 13,
         fontWeight: AppType.semibold,
       ),
-      bodyLarge: base.bodyLarge?.copyWith(height: 1.5),
-      bodyMedium: base.bodyMedium?.copyWith(height: 1.5),
+      // Body — list-tile primary text (bodyLarge) and default paragraph.
+      bodyLarge: base.bodyLarge?.copyWith(fontSize: 15, height: 1.5),
+      bodyMedium: base.bodyMedium?.copyWith(fontSize: 13, height: 1.5),
+      bodySmall: base.bodySmall?.copyWith(fontSize: 12, height: 1.4),
       labelLarge: base.labelLarge?.copyWith(
+        fontSize: 14,
         fontWeight: AppType.semibold,
         letterSpacing: AppType.trackingWide,
       ),
       labelMedium: base.labelMedium?.copyWith(
+        fontSize: 12,
         fontWeight: AppType.medium,
       ),
       labelSmall: base.labelSmall?.copyWith(
+        fontSize: 11,
         fontWeight: AppType.medium,
         letterSpacing: AppType.trackingWide,
       ),

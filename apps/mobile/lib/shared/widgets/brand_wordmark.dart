@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:playhub/core/design_tokens.dart';
 
 /// The two-tone "PlayHub" wordmark — `Play` in the on-surface ink, `Hub` in the
-/// brand green. Single source of truth for the wordmark across the auth header
+/// brand violet. Single source of truth for the wordmark across the auth header
 /// and the primary app-bar branding.
 class BrandWordmark extends StatelessWidget {
   const BrandWordmark({this.style, super.key});

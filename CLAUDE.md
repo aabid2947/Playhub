@@ -223,6 +223,14 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-06 — Global type scale tuned down for mobile density
+The Material 3 default sizes read oversized on a dense mobile ops tool, so the type
+scale in [`_textTheme()`](apps/mobile/lib/core/theme.dart) now sets explicit, smaller
+`fontSize`s per role (e.g. titleLarge 22→18, headlineSmall 24→20, bodyLarge 16→15,
+bodyMedium 14→13; app-bar title 17). **This is the single source of truth — screens
+use `textTheme.*` roles, so size changes cascade app-wide.** Don't hard-code
+`fontSize` in a screen to fight the scale; if a role feels wrong, retune it here.
+
 ### 2026-06-06 — Brand recolored green → violet (theme is locked)
 The brand primary changed from green `#22C55E` to **vivid violet `#9933FF`**
 (accent magenta `#E95FE9`, violet→magenta `AppPalette.brandGradient`). The locked
@@ -232,7 +240,10 @@ source of truth is [colors.ts](colors.ts) / [typography.ts](typography.ts) +
 *success*. **Do not restyle colors/typography** — and if you see older prose
 saying "green is the brand," it's the stale wording, not a second opinion.
 
-### 2026-06-06 — Mobile layout revamp is tracked in REVAMP.md
+### 2026-06-06 — Mobile layout revamp is tracked in REVAMP.md (+ progress tracker)
 [REVAMP.md](REVAMP.md) is the screen-by-screen worklist for the `apps/mobile`
-layout/structure overhaul (layout & IA only — colors/type are locked, see above).
-When revamping a mobile screen, follow its per-screen process and shared anatomies.
+layout/structure overhaul (layout & IA only — colors/type are locked, see above);
+[REVAMP_PROGRESS.md](REVAMP_PROGRESS.md) is the companion checklist (every screen +
+effort tier + Pending/Done status + its nested-component map). When you revamp a
+mobile screen, follow REVAMP.md's process **and mark the screen done in
+REVAMP_PROGRESS.md** (flip the checkbox/status + update the Progress counts).
