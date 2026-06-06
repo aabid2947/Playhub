@@ -56,9 +56,8 @@ class PlayHubApp extends ConsumerWidget {
       title: 'PlayHub',
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      // Upwork-style dark-first experience. Switch to ThemeMode.system to
-      // follow the device, or ThemeMode.light to force light.
-      themeMode: ThemeMode.dark,
+      // themeMode defaults to ThemeMode.system — follows the device's
+      // light/dark setting; both are themed vibrant green.
       routerConfig: router,
       scaffoldMessengerKey: AppErrorHandler.rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,

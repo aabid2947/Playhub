@@ -49,7 +49,7 @@ class _CoachHomeShellState extends ConsumerState<CoachHomeShell> {
           const NavigationDestination(
             icon: Icon(Icons.campaign_outlined),
             selectedIcon: Icon(Icons.campaign),
-            label: 'Announcements',
+            label: 'Notices',
           ),
           const NavigationDestination(
             icon: Icon(Icons.chat_outlined),

@@ -8,14 +8,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Threads the calling user can see (admin sees all in academy via RLS;
 /// other roles see threads they participate in).
 final myThreadsProvider = FutureProvider<List<MessageThread>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
   final client = ref.watch(supabaseClientProvider);
-  final user = client.auth.currentUser;
-  if (user == null) return const [];
+  if (userId == null) return const [];
   // Threads I participate in.
   final partRows = await client
       .from('thread_participants')
       .select('thread_id')
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
   final ids = (partRows as List)
       .map((r) => (r as Map)['thread_id'] as String)
       .toList(growable: false);

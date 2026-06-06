@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/auth_recovery.dart';
+import 'package:playhub/core/error_handler.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/announcements/presentation/announcements_page.dart';
 import 'package:playhub/features/auth/presentation/forgot_password_page.dart';
 import 'package:playhub/features/auth/presentation/login_page.dart';
 import 'package:playhub/features/auth/presentation/set_new_password_page.dart';
@@ -15,6 +17,9 @@ import 'package:playhub/features/notifications/presentation/notification_prefere
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    // Root navigator key so the global error handler can resolve the overlay
+    // for top toasts (see AppErrorHandler).
+    navigatorKey: AppErrorHandler.rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: _AuthRefresh(ref),
     redirect: (context, state) {
@@ -67,6 +72,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/threads/:id',
         builder: (_, state) =>
             ThreadDetailPage(threadId: state.pathParameters['id']!),
+      ),
+      // Announcement notifications deep-link to /announcements/:id. There's no
+      // dedicated detail page yet, so land on the announcements feed (the item
+      // appears in the list). Registering this avoids GoRouter's
+      // "no routes for location" exception on tap.
+      GoRoute(
+        path: '/announcements/:id',
+        builder: (_, __) => const AnnouncementsPage(),
       ),
       GoRoute(
         path: '/settings/notifications',

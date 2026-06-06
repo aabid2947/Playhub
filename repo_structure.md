@@ -55,7 +55,7 @@ design system lives in `lib/shared/widgets/`.
 | [core/env.dart](apps/mobile/lib/core/env.dart) | Build-time config via `--dart-define` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). No secrets baked in. |
 | [core/router.dart](apps/mobile/lib/core/router.dart) | `go_router` config with auth-aware + password-recovery redirects. |
 | [core/supabase_providers.dart](apps/mobile/lib/core/supabase_providers.dart) | `supabaseClientProvider`, `authStateProvider`, `sessionProvider`, `storageServiceProvider`. |
-| [core/theme.dart](apps/mobile/lib/core/theme.dart) | `AppTheme.light()` / `dark()` — Material 3, brand seed `#16A34A`, Inter font. |
+| [core/theme.dart](apps/mobile/lib/core/theme.dart) | `AppTheme.light()` / `dark()` — Material 3, brand primary violet `#9933FF` (pinned, not seed-derived), Inter font. |
 | [core/design_tokens.dart](apps/mobile/lib/core/design_tokens.dart) | `AppSpacing`, `AppRadius`, `AppPalette`, `AppDuration`, `AppElevation`, `AppBreakpoints`. |
 | [core/error_handler.dart](apps/mobile/lib/core/error_handler.dart) | Global `AppErrorHandler` — Flutter/zone error hooks + root scaffold-messenger toasts. |
 | [core/error_messages.dart](apps/mobile/lib/core/error_messages.dart) | Maps raw exceptions → friendly user-facing strings. |

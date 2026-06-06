@@ -9,9 +9,14 @@
 
 PlayHub is a multi-tenant sports-academy SaaS (India-first). The look is
 **calm, dense, trustworthy** — an operations tool people use all day, not a
-flashy consumer app. Instagram-style **magenta on near-black**: magenta leads,
-the iconic gradient is reserved for brand moments, neutral surfaces, generous
-rhythm, no gratuitous motion. **Dark is the default theme.**
+flashy consumer app. **Vivid violet** on neutral surfaces: violet leads, a
+violet→magenta gradient is reserved for brand moments, generous rhythm, no
+gratuitous motion. **Both light + dark ship** (the theme follows the device).
+
+> **Color/type are locked.** The brand is violet (`#9933FF`) + magenta accent
+> (`#E95FE9`); green (`#22C55E`) is now only the semantic *success* color. The
+> source of truth is `colors.ts` / `typography.ts` / `design_tokens.dart` /
+> `theme.dart` — don't restyle colors or fonts, only layout/structure.
 
 ---
 
@@ -48,9 +53,9 @@ These are load-bearing. Violating one turns a polish task into a bug.
 
 | Aspect | Decision |
 |---|---|
-| **Primary (Instagram magenta `#C13584`)** | Everything branded: actions, primary buttons, selected/active, nav selection. `colorScheme.primary`. |
-| **Accent (Instagram purple `#833AB4`)** | Sparingly — brand mark / hero gradients, highlights. `AppPalette.brandSecondary` / `brandGradient`. |
-| **Surfaces** | Neutral. Light: white cards on a `gray50` page. **Dark (default): near-black `ink900` cards on an `ink950` page** (Tailwind "zinc"). |
+| **Primary (vivid violet `#9933FF`)** | Everything branded: actions, primary buttons, selected/active, nav selection. `colorScheme.primary`. |
+| **Accent (magenta `#E95FE9`)** | Sparingly — brand mark / hero gradients, highlights. `AppPalette.brandSecondary` / `brandGradient`. |
+| **Surfaces** | Neutral. Light: white cards on a `gray50` page. Dark: near-black `ink900` cards on an `ink950` page (Tailwind "zinc"). Both ship (follows the device). |
 | **Separation** | A hairline `outlineVariant` border — **not** drop shadows. Low-chrome, flat, outlined. |
 | **Status** | `AppSemanticColors.of(context)` → success / warning / danger / info (each adapts to dark). |
 | **Type** | Inter. Display/headlines tighten tracking; labels open up; body at 1.5 line-height. |
@@ -72,7 +77,7 @@ import 'package:playhub/shared/widgets/widgets.dart';
 **Radius** `AppRadius.sm/md/lg/xl/xxl/pill` → `8 12 16 20 28 999`
 **Colors** `colorScheme.*` for brand/surface; `AppSemanticColors.of(context).{success,warning,danger,info}` (+ `*Container`, `on*`) for status.
 **Type** `Theme.of(context).textTheme.*` (see §5). `AppType.*` only for a one-off weight/tracking.
-**Gradients** `AppPalette.brandGradient` (the Instagram sweep) for brand marks / hero headers.
+**Gradients** `AppPalette.brandGradient` (violet→magenta sweep) for brand marks / hero headers.
 
 **Widgets** (barrel: `shared/widgets/widgets.dart`):
 `AppCard` · `AppListTile` · `AppStatTile` · `AppBadge(tone:)` ·
@@ -224,8 +229,8 @@ tweak? `style.copyWith(fontWeight: AppType.semibold)`.
 ## 6. Color usage rules
 
 - **Action / brand / selected / nav-selection** → `colorScheme.primary` (+
-  `onPrimary`, `primaryContainer`). Instagram magenta `#C13584`.
-- **Accent** → `AppPalette.brandSecondary` (purple) + `brandGradient`,
+  `onPrimary`, `primaryContainer`). Vivid violet `#9933FF`.
+- **Accent** → `AppPalette.brandSecondary` (magenta) + `brandGradient`,
   used sparingly for brand marks / hero gradients.
 - **Status** → `AppSemanticColors.of(context)`:
   `.success`/`.danger`/… for fg (icon/text/border), `.<tone>Container` for the

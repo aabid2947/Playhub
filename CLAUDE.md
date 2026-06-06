@@ -87,9 +87,13 @@ Cross-cutting in `lib/core/`; design system in `lib/shared/widgets/`.
   (`AppSpacing`, `AppRadius`, `AppPalette`, …). Don't hard-code spacing/colors or
   re-implement a card/list-tile/empty-state that already exists. Status colors
   go through `AppSemanticColors.of(context)` (dark-aware), not raw `AppPalette`
-  constants. Brand is Instagram-style: **magenta** (`#C13584`) primary + purple
-  accent, with the iconic gradient (`AppPalette.brandGradient`) reserved for
-  brand marks, on neutral surfaces; **dark (near-black) is the default theme**.
+  constants. Brand is **vivid violet** (`AppPalette.brandPrimary` = `#9933FF`)
+  primary + a **magenta accent** (`AppPalette.brandSecondary` = `#E95FE9`), with a
+  violet→magenta gradient (`AppPalette.brandGradient`) for brand marks, on neutral
+  surfaces; **both light + dark ship** (the theme follows the device). (Green
+  `#22C55E` is now only the semantic *success* color, not the brand —
+  [colors.ts](colors.ts) / [design_tokens.dart](apps/mobile/lib/core/design_tokens.dart)
+  are the locked source of truth.)
   **When building or polishing a screen, follow the playbook in
   [apps/mobile/SKILLS.md](apps/mobile/SKILLS.md).**
 
@@ -199,3 +203,36 @@ path-filtered so each app's workflow only fires on its own changes.
 - **Verify before claiming done:** `flutter analyze` + `flutter test` for mobile;
   `typecheck` + `lint` + `test` for web-admin; pgTAP for schema/RLS. Report
   failures with output rather than papering over them.
+
+- **Log decisions future agents must know in the change log below.** When you make
+  a change whose *consequences outlive your session* — a convention shift, a
+  load-bearing decision, a renamed/moved/removed thing, a non-obvious gotcha, a
+  source-of-truth that flipped, or anything that would make a future agent act on
+  stale assumptions — **append a dated entry to the [Change log](#change-log--things-future-agents-must-know)
+  at the bottom of this file** (newest first). Keep each entry to 1–3 lines: what
+  changed, and what an agent must now do differently. This is *not* a commit log —
+  don't record routine edits the code/git already explains; record only what isn't
+  obvious from reading the repo. If your change makes an instruction *elsewhere* in
+  this file or another doc wrong, fix that doc in the same pass (don't just log it).
+
+---
+
+## Change log — things future agents must know
+
+> Newest first. See the logging rule above for what belongs here (durable
+> decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
+> then 1–3 lines.
+
+### 2026-06-06 — Brand recolored green → violet (theme is locked)
+The brand primary changed from green `#22C55E` to **vivid violet `#9933FF`**
+(accent magenta `#E95FE9`, violet→magenta `AppPalette.brandGradient`). The locked
+source of truth is [colors.ts](colors.ts) / [typography.ts](typography.ts) +
+[design_tokens.dart](apps/mobile/lib/core/design_tokens.dart) +
+[theme.dart](apps/mobile/lib/core/theme.dart). Green now means only semantic
+*success*. **Do not restyle colors/typography** — and if you see older prose
+saying "green is the brand," it's the stale wording, not a second opinion.
+
+### 2026-06-06 — Mobile layout revamp is tracked in REVAMP.md
+[REVAMP.md](REVAMP.md) is the screen-by-screen worklist for the `apps/mobile`
+layout/structure overhaul (layout & IA only — colors/type are locked, see above).
+When revamping a mobile screen, follow its per-screen process and shared anatomies.

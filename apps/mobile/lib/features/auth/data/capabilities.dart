@@ -54,6 +54,17 @@ class Capabilities {
       role == 'head_coach' ||
       role == 'coach';
 
+  // Media: trainers + coaches (and center/admin tiers) can attach standalone
+  // photos/videos to a student — no scored assessment. Mirrors the DB helper
+  // can_upload_student_media() (20260606000000_trainer_student_media.sql).
+  // Trainers are included here even though they lack recordPerformance.
+  bool get uploadStudentMedia =>
+      _isAdmin ||
+      role == 'center_admin' ||
+      role == 'head_coach' ||
+      role == 'coach' ||
+      role == 'trainer';
+
   bool get isCenterScoped => role == 'center_admin';
 }
 

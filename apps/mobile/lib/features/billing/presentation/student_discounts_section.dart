@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Write actions gated on `manageFinance` (admin tier); a center_admin who can
+/// view but not write finance sees the list read-only.
 class StudentDiscountsSection extends ConsumerWidget {
   const StudentDiscountsSection({required this.studentId, super.key});
 
@@ -16,21 +19,24 @@ class StudentDiscountsSection extends ConsumerWidget {
     final assignmentsAsync =
         ref.watch(studentDiscountAssignmentsProvider(studentId));
     final structuresAsync = ref.watch(discountStructuresProvider);
+    final canManage = ref.watch(capabilitiesProvider).manageFinance;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppSectionHeader(
           title: 'Discounts',
-          trailing: FilledButton.tonalIcon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Assign discount'),
-            onPressed: () => _showAssignSheet(
-              context,
-              ref,
-              structuresAsync.valueOrNull ?? const [],
-            ),
-          ),
+          trailing: canManage
+              ? FilledButton.tonalIcon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Assign discount'),
+                  onPressed: () => _showAssignSheet(
+                    context,
+                    ref,
+                    structuresAsync.valueOrNull ?? const [],
+                  ),
+                )
+              : null,
         ),
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
@@ -56,13 +62,15 @@ class StudentDiscountsSection extends ConsumerWidget {
                     _Tile(
                       assignment: a,
                       structure: byId[a.discountStructureId],
-                      onDeactivate: () async {
-                        await deactivateStudentDiscount(
-                          ref,
-                          assignmentId: a.id,
-                          studentId: studentId,
-                        );
-                      },
+                      onDeactivate: canManage
+                          ? () async {
+                              await deactivateStudentDiscount(
+                                ref,
+                                assignmentId: a.id,
+                                studentId: studentId,
+                              );
+                            }
+                          : null,
                     ),
                 ],
               ),
@@ -104,12 +112,27 @@ class _Tile extends StatelessWidget {
 
   final StudentDiscountAssignment assignment;
   final DiscountStructure? structure;
-  final Future<void> Function() onDeactivate;
+
+  /// Null in read-only mode — the tile then shows a status badge instead of a
+  /// stop control.
+  final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
     final active = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
+    final Widget trailing;
+    if (!active) {
+      trailing = const AppBadge(text: 'Inactive');
+    } else if (onDeactivate != null) {
+      trailing = IconButton(
+        tooltip: 'Stop discount',
+        icon: const Icon(Icons.stop_circle_outlined),
+        onPressed: onDeactivate,
+      );
+    } else {
+      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
+    }
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
@@ -126,13 +149,7 @@ class _Tile extends StatelessWidget {
             'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
         ].whereType<String>().join(' · '),
       ),
-      trailing: active
-          ? IconButton(
-              tooltip: 'Stop discount',
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: onDeactivate,
-            )
-          : const AppBadge(text: 'Inactive'),
+      trailing: trailing,
     );
   }
 }

@@ -6,6 +6,10 @@ import 'package:playhub/features/students/data/student.dart';
 /// role). Resolves via the my_linked_student_ids() RPC, which returns an
 /// empty array for non-parent/non-student callers.
 final myLinkedStudentIdsProvider = FutureProvider<List<String>>((ref) async {
+  // Depend on the user id so this refetches on account switch instead of
+  // serving the previous login's linked students.
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return const [];
   final client = ref.watch(supabaseClientProvider);
   final raw = await client.rpc('my_linked_student_ids');
   if (raw is List) {

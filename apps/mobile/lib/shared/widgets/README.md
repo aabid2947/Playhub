@@ -17,10 +17,10 @@ Import: `package:playhub/core/design_tokens.dart`
   (`trackingTight -0.5` … `trackingWider 0.8`). The type scale itself lives on
   `Theme.of(context).textTheme`; reach for `AppType` only for a one-off
   weight/tracking tweak.
-- `AppPalette` — `brandPrimary` (Instagram magenta `#C13584`) ·
-  `brandSecondary` (Instagram purple) · `success warning danger info`
-  (+ `*Dark` variants) · `gray50..gray900` (light surfaces) · `ink950..ink100`
-  (dark near-black surfaces) · `brandGradient` (the Instagram sweep)
+- `AppPalette` — `brandPrimary` (vivid violet `#9933FF`) · `brandSecondary`
+  (magenta `#E95FE9`) · `success warning danger info` (+ `*Dark` variants;
+  `success` is green `#22C55E`) · `gray50..gray900` (light surfaces) ·
+  `ink950..ink100` (dark near-black surfaces) · `brandGradient` (violet→magenta sweep)
 - `AppSemanticColors` — **theme-aware** success/warning/danger/info. Read via
   `AppSemanticColors.of(context)`; each tone exposes `<tone>` (fg color),
   `<tone>Container` (bg tint), and `on<Tone>` (text on a filled swatch).
@@ -36,12 +36,12 @@ Import: `package:playhub/core/design_tokens.dart`
 `AppTheme.light()` / `AppTheme.dark()` — wired into `MaterialApp.theme` /
 `darkTheme`. Material 3, Google Inter via `google_fonts`.
 
-- **Color** — Instagram-style. Magenta leads (`colorScheme.primary` — actions,
-  brand, nav selection); the iconic gradient (`AppPalette.brandGradient`) is for
-  brand marks. Surfaces are hand-tuned neutrals: white cards on a `gray50` page
-  (light); near-black `ink900` cards on an `ink950` page (dark, Tailwind "zinc")
-  so the magenta pops. Separation comes from a hairline `outlineVariant` border,
-  not shadows. **Dark is the default** (`themeMode` in `main.dart`).
+- **Color** — vivid violet. Violet leads (`colorScheme.primary` — actions,
+  brand, nav selection); a violet→magenta gradient (`AppPalette.brandGradient`)
+  covers brand marks. Surfaces are hand-tuned neutrals: white cards on a `gray50` page
+  (light); near-black `ink900` cards on an `ink950` page (dark, Tailwind "zinc").
+  Separation comes from a hairline `outlineVariant` border, not shadows.
+  **Both light + dark ship** — `themeMode` follows the device.
 - **Type** — display/headlines tighten their tracking; labels open up; body
   runs at 1.5 line-height.
 - **Status colors** come from the `AppSemanticColors` theme extension,
@@ -178,7 +178,7 @@ AppSnackbar.info(context, 'Heads up.');
 ```
 
 ### `BrandWordmark`
-The two-tone "PlayHub" wordmark — `Play` in ink, `Hub` in brand green. One
+The two-tone "PlayHub" wordmark — `Play` in ink, `Hub` in brand violet. One
 source of truth for the wordmark (auth header + primary app-bar branding). Pass
 `style:` to resize.
 

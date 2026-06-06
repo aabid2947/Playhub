@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Reads from the `batches_with_counts` view so each row carries
 /// `enrolled_count` without an N+1 fetch.
@@ -61,7 +62,19 @@ Future<Batch> updateBatch(
       .update(patch)
       .eq('id', batchId)
       .select()
-      .single();
+      .maybeSingle();
+  // A null row means the UPDATE matched nothing under RLS — i.e. the caller
+  // can't write this batch (a head_coach / center_admin can only edit batches
+  // in their own center; see can_manage_batches()). Surface a clean
+  // permission error instead of the opaque PGRST116 "cannot coerce" that
+  // `.single()` would throw on zero rows.
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Update blocked by row-level security '
+          '(you can only edit batches in your own center).',
+      code: '42501',
+    );
+  }
   ref.invalidate(batchesProvider);
   return Batch.fromMap(row);
 }

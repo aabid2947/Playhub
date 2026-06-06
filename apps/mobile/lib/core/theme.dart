@@ -27,7 +27,7 @@ class AppTheme {
       colorScheme: scheme,
       textTheme: textTheme,
       scaffoldBackgroundColor:
-          isLight ? AppPalette.gray50 : AppPalette.ink950,
+          isLight ? Colors.white : AppPalette.ink950,
       visualDensity: VisualDensity.adaptivePlatformDensity,
       extensions: <ThemeExtension<dynamic>>[semantics],
 
@@ -159,7 +159,7 @@ class AppTheme {
         elevation: AppElevation.low,
       ),
 
-      // M3 NavigationBar: magenta (primary) selection pill — the brand accent.
+      // M3 NavigationBar: violet (primary) selection pill — the brand accent.
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: scheme.surface,
         indicatorColor: scheme.primaryContainer,
@@ -168,6 +168,9 @@ class AppTheme {
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
+            // Slightly smaller than the M3 default (24) so long labels like
+            // "Announcements" don't overflow narrow destinations.
+            size: 22,
             color: selected
                 ? scheme.onPrimaryContainer
                 : scheme.onSurfaceVariant,
@@ -176,6 +179,11 @@ class AppTheme {
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return textTheme.labelSmall?.copyWith(
+            // Compact label: smaller size + tighter tracking so long tab
+            // labels fit on one line without overflowing.
+            fontSize: 10,
+            height: 1.1,
+            letterSpacing: 0,
             fontWeight: selected ? AppType.semibold : AppType.medium,
             color: selected
                 ? scheme.onPrimaryContainer
@@ -236,12 +244,10 @@ class AppTheme {
     );
   }
 
-  /// Instagram-style scheme: a single magenta seed (#C13584), on hand-tuned
-  /// neutral surfaces — slate in light, a premium near-black "zinc" ramp in
-  /// dark so the magenta + gradient accents pop.
-  ///
-  /// Brand hexes are from Instagram's palette; the dark neutral ramp is
-  /// Tailwind "zinc".
+  /// Violet brand scheme (colors.ts): an exact violet primary (#9933FF) on
+  /// hand-tuned neutral surfaces — white/greys in light, a near-black ramp in
+  /// dark — so the brand reads cleanly in both modes. The primary is pinned
+  /// explicitly rather than taken from the seed's tonal palette.
   static ColorScheme _scheme(Brightness brightness) {
     final base = ColorScheme.fromSeed(
       seedColor: AppPalette.brandPrimary,
@@ -250,27 +256,46 @@ class AppTheme {
 
     if (brightness == Brightness.light) {
       return base.copyWith(
-        surface: Colors.white,
+        // Brand — exact violet, not a tonal approximation.
+        primary: AppPalette.brandPrimary,
+        onPrimary: Colors.white,
+        primaryContainer: const Color(0xFFEDE0FF),
+        onPrimaryContainer: const Color(0xFF3A1A66),
+        secondary: const Color(0xFF00BFFF), // colors.ts light secondary
+        error: AppPalette.danger,
+        onError: Colors.white,
+        // Surfaces — colors.ts light: white bg, #F5F5F5 cards, #E5E5E5 raised,
+        // #D1D5DB borders, #111418 text, #4A5568 secondary text.
+        surface: const Color(0xFFF5F5F5),
         surfaceContainerLowest: Colors.white,
-        surfaceContainerLow: AppPalette.gray50,
-        surfaceContainer: AppPalette.gray100,
-        surfaceContainerHigh: AppPalette.gray100,
-        surfaceContainerHighest: AppPalette.gray200,
-        outlineVariant: AppPalette.gray200,
-        outline: AppPalette.gray300,
-        onSurface: AppPalette.gray900,
-        onSurfaceVariant: AppPalette.gray500,
+        surfaceContainerLow: Colors.white,
+        surfaceContainer: const Color(0xFFF5F5F5),
+        surfaceContainerHigh: const Color(0xFFEDEDED),
+        surfaceContainerHighest: const Color(0xFFE5E5E5),
+        outlineVariant: const Color(0xFFD1D5DB),
+        outline: const Color(0xFFD1D5DB),
+        onSurface: const Color(0xFF111418),
+        onSurfaceVariant: const Color(0xFF4A5568),
       );
     }
 
     return base.copyWith(
+      // Brand — exact violet, not a tonal approximation.
+      primary: AppPalette.brandPrimary,
+      onPrimary: Colors.white,
+      primaryContainer: const Color(0xFF2E1A4D), // deep violet pill
+      onPrimaryContainer: const Color(0xFFE9D5FF),
+      secondary: const Color(0xFF373A43), // colors.ts dark secondary
+      error: AppPalette.dangerDark,
+      onError: const Color(0xFF450A0A),
+      // Surfaces — colors.ts dark.
       surface: AppPalette.ink900,
       surfaceContainerLowest: AppPalette.ink950,
       surfaceContainerLow: AppPalette.ink950,
       surfaceContainer: AppPalette.ink900,
       surfaceContainerHigh: AppPalette.ink800,
       surfaceContainerHighest: AppPalette.ink800,
-      outlineVariant: AppPalette.ink800,
+      outlineVariant: AppPalette.ink700,
       outline: AppPalette.ink700,
       onSurface: AppPalette.ink100,
       onSurfaceVariant: AppPalette.ink400,

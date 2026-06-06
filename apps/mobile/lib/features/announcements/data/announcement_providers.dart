@@ -37,13 +37,13 @@ class AnnouncementFeedItem {
 
 final announcementFeedProvider =
     FutureProvider<List<AnnouncementFeedItem>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
   final client = ref.watch(supabaseClientProvider);
-  final user = client.auth.currentUser;
-  if (user == null) return const [];
+  if (userId == null) return const [];
   final rows = await client
       .from('announcement_recipients')
       .select('id, read_at, announcements(*)')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('delivered_at', ascending: false);
   return (rows as List).map((r) {
     final m = r as Map<String, dynamic>;

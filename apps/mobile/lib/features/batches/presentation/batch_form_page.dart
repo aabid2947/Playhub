@@ -87,7 +87,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
       }
       if (mounted) context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

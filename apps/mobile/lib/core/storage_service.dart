@@ -255,6 +255,67 @@ class StorageService {
     );
   }
 
+  // ---------------- Standalone student media ----------------
+  // A trainer/coach attaches a photo/video straight to a student, with no
+  // scored assessment. Stored in the same performance_media bucket under
+  // <academyId>/students/<studentId>/<uuid>.<ext>.
+
+  Future<PickedDocument?> pickAndUploadStudentMediaPhoto({
+    required String academyId,
+    required String studentId,
+  }) async {
+    // image_picker requires `source`; lint flags it as redundant default.
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 80,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/students/$studentId/${const Uuid().v4()}$ext';
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: picked.name,
+      mimeType: _contentTypeOf(ext),
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<PickedDocument?> pickAndUploadStudentMediaVideo({
+    required String academyId,
+    required String studentId,
+  }) async {
+    final picked = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 5),
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final name = picked.name;
+    final ext = _extensionOf(name);
+    final path = '$academyId/students/$studentId/${const Uuid().v4()}$ext';
+    final mime = _videoContentTypeOf(ext);
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: name,
+      mimeType: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
   // ---------------- Chat attachments ----------------
   // Layout: <academyId>/<threadId>/<uuid>.<ext>
   // Bucket is private; reads via signed URL (10-min TTL by default).

@@ -5,6 +5,7 @@ import 'package:playhub/features/attendance/data/attendance.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
 
 /// (batchId, ymd) tuple keyed family. We use a stable string key so Riverpod
 /// can hash-cache the family entry.
@@ -41,12 +42,42 @@ final attendanceForBatchProvider = FutureProvider.family<
       .toList();
 });
 
-/// Today's batches for the current user. A batch is "today's" if today's
-/// 3-letter day-of-week appears in `schedule.days`.
+/// Today's batches the current user can **mark attendance for**. A batch is
+/// "today's" if today's 3-letter day-of-week appears in `schedule.days`.
+///
+/// Scoping mirrors the `can_mark_attendance()` RLS gate so the list never
+/// offers a batch whose save the backend would reject with a permission error
+/// (see `migrations/…_role_capabilities.sql`):
+///   - admin tier (owner/admin)   → every academy batch
+///   - center_admin / head_coach  → batches in their own center
+///   - coach / trainer            → only batches they're assigned to
+///     (`coach_id == own coaches.id`); none if not linked to a coaches row
 final todaysBatchesProvider = FutureProvider<List<Batch>>((ref) async {
   final batches = await ref.watch(batchesProvider.future);
+  final profile = await ref.watch(currentProfileProvider.future);
+  final role = profile?.role;
   final dow = _todayDow();
-  return batches.where((b) {
+
+  List<Batch> scoped;
+  if (role == 'super_admin' ||
+      role == 'academy_owner' ||
+      role == 'academy_admin') {
+    scoped = batches;
+  } else if (role == 'center_admin' || role == 'head_coach') {
+    final centerId = profile?.centerId;
+    scoped = batches
+        .where((b) => b.centerId == null || b.centerId == centerId)
+        .toList();
+  } else if (role == 'coach' || role == 'trainer') {
+    final coach = await ref.watch(myCoachRecordProvider.future);
+    scoped = coach == null
+        ? const <Batch>[]
+        : batches.where((b) => b.coachId == coach.id).toList();
+  } else {
+    scoped = const <Batch>[];
+  }
+
+  return scoped.where((b) {
     if (!b.isActive) return false;
     return b.schedule.days.any((d) => d.toLowerCase() == dow);
   }).toList()

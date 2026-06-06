@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
@@ -31,36 +33,55 @@ class BatchDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final enrollmentsAsync = ref.watch(batchEnrollmentsProvider(batch.id));
     final studentsAsync = ref.watch(studentsProvider);
+    final caps = ref.watch(capabilitiesProvider);
+    final profile = ref.watch(currentProfileProvider).valueOrNull;
+    final role = profile?.role;
+    // center_admin & head_coach are center-scoped writers (can_manage_batches /
+    // can_mark_attendance gate on batch_in_my_center) but can *see* the whole
+    // academy. Hide write controls for a batch outside their center rather than
+    // letting the action fail under RLS. Admins are academy-wide; coach/trainer
+    // only ever reach their own batches, so they're unaffected.
+    final isCenterScoped = role == 'center_admin' || role == 'head_coach';
+    final inMyCenter =
+        batch.centerId == null || batch.centerId == profile?.centerId;
+    final scopeOk = !isCenterScoped || inMyCenter;
+    final canManageEnroll = caps.manageBatches && scopeOk;
+    final canMarkAttendance = caps.markAttendance && scopeOk;
+    // Fees/discounts are finance: admin-only write, center_admin view-only.
+    final canManageFinance = caps.manageFinance;
+    final canViewFinance = caps.viewRevenue;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(batch.name),
         actions: [
           BatchChatButton(batchId: batch.id, compact: true),
-          IconButton(
-            icon: const Icon(Icons.fact_check_outlined),
-            tooltip: 'Mark attendance',
-            onPressed: () {
-              final today = DateTime.now();
-              Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => AttendanceMarkingPage(
-                    batch: batch,
-                    date: DateTime(today.year, today.month, today.day),
+          if (canMarkAttendance)
+            IconButton(
+              icon: const Icon(Icons.fact_check_outlined),
+              tooltip: 'Mark attendance',
+              onPressed: () {
+                final today = DateTime.now();
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => AttendanceMarkingPage(
+                      batch: batch,
+                      date: DateTime(today.year, today.month, today.day),
+                    ),
                   ),
+                );
+              },
+            ),
+          if (canManageEnroll)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit batch',
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => BatchFormPage(existing: batch),
                 ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Edit batch',
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => BatchFormPage(existing: batch),
               ),
             ),
-          ),
         ],
       ),
       body: ListView(
@@ -103,40 +124,46 @@ class BatchDetailPage extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const Spacer(),
-              FilledButton.tonalIcon(
-                icon: Icon(
-                  _atCapacity()
-                      ? Icons.queue_outlined
-                      : Icons.person_add_outlined,
-                  size: 18,
+              if (canManageEnroll)
+                FilledButton.tonalIcon(
+                  icon: Icon(
+                    _atCapacity()
+                        ? Icons.queue_outlined
+                        : Icons.person_add_outlined,
+                    size: 18,
+                  ),
+                  label: Text(_atCapacity() ? 'Add to waitlist' : 'Enroll'),
+                  onPressed: () async {
+                    final students = studentsAsync.valueOrNull ?? const [];
+                    final enrolled =
+                        enrollmentsAsync.valueOrNull ?? const [];
+                    final activeIds = enrolled
+                        .where((e) => e.status != 'withdrawn')
+                        .map((e) => e.studentId)
+                        .toSet();
+                    final candidates = students
+                        .where((s) => !activeIds.contains(s.id))
+                        .toList();
+                    await _showEnrollSheet(
+                      context,
+                      ref,
+                      candidates,
+                      waitlist: _atCapacity(),
+                    );
+                  },
                 ),
-                label: Text(_atCapacity() ? 'Add to waitlist' : 'Enroll'),
-                onPressed: () async {
-                  final students = studentsAsync.valueOrNull ?? const [];
-                  final enrolled =
-                      enrollmentsAsync.valueOrNull ?? const [];
-                  final activeIds = enrolled
-                      .where((e) => e.status != 'withdrawn')
-                      .map((e) => e.studentId)
-                      .toSet();
-                  final candidates = students
-                      .where((s) => !activeIds.contains(s.id))
-                      .toList();
-                  await _showEnrollSheet(
-                    context,
-                    ref,
-                    candidates,
-                    waitlist: _atCapacity(),
-                  );
-                },
-              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          BatchFeesSection(batchId: batch.id),
-          const SizedBox(height: AppSpacing.lg),
-          BatchDiscountsSection(batchId: batch.id),
-          const SizedBox(height: AppSpacing.lg),
+          if (canViewFinance) ...[
+            BatchFeesSection(batchId: batch.id, canManage: canManageFinance),
+            const SizedBox(height: AppSpacing.lg),
+            BatchDiscountsSection(
+              batchId: batch.id,
+              canManage: canManageFinance,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
           enrollmentsAsync.when(
             loading: () => const AppLoading(),
             error: (e, _) => Text(friendlyError(e)),
@@ -167,15 +194,18 @@ class BatchDetailPage extends ConsumerWidget {
                       title: 'Active',
                       enrollments: active,
                       byStudent: byId,
-                      onWithdraw: (e) async {
-                        await withdrawEnrollment(
-                          ref,
-                          enrollmentId: e.id,
-                          batchId: batch.id,
-                        );
-                      },
-                      onTransfer: (e) =>
-                          _showTransferSheet(context, ref, e),
+                      onWithdraw: canManageEnroll
+                          ? (e) async {
+                              await withdrawEnrollment(
+                                ref,
+                                enrollmentId: e.id,
+                                batchId: batch.id,
+                              );
+                            }
+                          : null,
+                      onTransfer: canManageEnroll
+                          ? (e) => _showTransferSheet(context, ref, e)
+                          : null,
                     ),
                   if (waitlisted.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.lg),
@@ -183,14 +213,16 @@ class BatchDetailPage extends ConsumerWidget {
                       title: 'Waitlist (${waitlisted.length})',
                       enrollments: waitlisted,
                       byStudent: byId,
-                      onWithdraw: (e) async {
-                        await withdrawEnrollment(
-                          ref,
-                          enrollmentId: e.id,
-                          batchId: batch.id,
-                        );
-                      },
-                      onPromote: _atCapacity()
+                      onWithdraw: canManageEnroll
+                          ? (e) async {
+                              await withdrawEnrollment(
+                                ref,
+                                enrollmentId: e.id,
+                                batchId: batch.id,
+                              );
+                            }
+                          : null,
+                      onPromote: (!canManageEnroll || _atCapacity())
                           ? null
                           : (e) async {
                               await promoteEnrollment(

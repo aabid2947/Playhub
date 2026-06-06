@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -9,6 +10,9 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// Embedded section listing a student's fee assignments and offering
 /// "Assign fee" + "Deactivate" actions. Caller renders this from the
 /// student edit form (existing student only).
+///
+/// Write actions are gated on `manageFinance` (admin tier) — a center_admin
+/// who can view but not write finance sees the list read-only.
 class StudentFeesSection extends ConsumerWidget {
   const StudentFeesSection({required this.studentId, super.key});
 
@@ -19,21 +23,24 @@ class StudentFeesSection extends ConsumerWidget {
     final assignmentsAsync =
         ref.watch(assignmentsForStudentProvider(studentId));
     final feesAsync = ref.watch(feeStructuresProvider);
+    final canManage = ref.watch(capabilitiesProvider).manageFinance;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppSectionHeader(
           title: 'Assigned fees',
-          trailing: FilledButton.tonalIcon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Assign fee'),
-            onPressed: () => _showAssignSheet(
-              context,
-              ref,
-              feesAsync.valueOrNull ?? const [],
-            ),
-          ),
+          trailing: canManage
+              ? FilledButton.tonalIcon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Assign fee'),
+                  onPressed: () => _showAssignSheet(
+                    context,
+                    ref,
+                    feesAsync.valueOrNull ?? const [],
+                  ),
+                )
+              : null,
         ),
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
@@ -61,13 +68,15 @@ class StudentFeesSection extends ConsumerWidget {
                     _AssignmentTile(
                       assignment: a,
                       fee: byId[a.feeStructureId],
-                      onDeactivate: () async {
-                        await deactivateAssignment(
-                          ref,
-                          assignmentId: a.id,
-                          studentId: studentId,
-                        );
-                      },
+                      onDeactivate: canManage
+                          ? () async {
+                              await deactivateAssignment(
+                                ref,
+                                assignmentId: a.id,
+                                studentId: studentId,
+                              );
+                            }
+                          : null,
                     ),
                 ],
               ),
@@ -109,12 +118,27 @@ class _AssignmentTile extends StatelessWidget {
 
   final StudentFeeAssignment assignment;
   final FeeStructure? fee;
-  final Future<void> Function() onDeactivate;
+
+  /// Null in read-only mode — the tile then shows a status badge instead of a
+  /// stop-billing control.
+  final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
     final isActive = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
+    final Widget trailing;
+    if (!isActive) {
+      trailing = const AppBadge(text: 'Inactive');
+    } else if (onDeactivate != null) {
+      trailing = IconButton(
+        tooltip: 'Stop billing',
+        icon: const Icon(Icons.stop_circle_outlined),
+        onPressed: onDeactivate,
+      );
+    } else {
+      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
+    }
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
@@ -132,13 +156,7 @@ class _AssignmentTile extends StatelessWidget {
             'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
         ].whereType<String>().join(' · '),
       ),
-      trailing: isActive
-          ? IconButton(
-              tooltip: 'Stop billing',
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: onDeactivate,
-            )
-          : const AppBadge(text: 'Inactive'),
+      trailing: trailing,
     );
   }
 }

@@ -28,9 +28,9 @@ class PerformanceSkill {
 class PerformanceMedia {
   const PerformanceMedia({
     required this.id,
-    required this.assessmentId,
     required this.mediaType,
     required this.filePath,
+    this.assessmentId,
     this.originalFilename,
     this.mimeType,
     this.sizeBytes,
@@ -38,7 +38,9 @@ class PerformanceMedia {
 
   factory PerformanceMedia.fromMap(Map<String, dynamic> m) => PerformanceMedia(
         id: m['id'] as String,
-        assessmentId: m['assessment_id'] as String,
+        // Null for "standalone" media a trainer/coach attached straight to a
+        // student (no scored assessment).
+        assessmentId: m['assessment_id'] as String?,
         mediaType: m['media_type'] as String,
         filePath: m['file_path'] as String,
         originalFilename: m['original_filename'] as String?,
@@ -47,7 +49,7 @@ class PerformanceMedia {
       );
 
   final String id;
-  final String assessmentId;
+  final String? assessmentId;
   final String mediaType; // 'photo' | 'video'
   final String filePath;
   final String? originalFilename;

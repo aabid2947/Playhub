@@ -10,9 +10,18 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// StudentFeesSection but at the batch level — every active enrollment
 /// in the batch gets billed automatically by recur-invoice-generation.
 class BatchFeesSection extends ConsumerWidget {
-  const BatchFeesSection({required this.batchId, super.key});
+  const BatchFeesSection({
+    required this.batchId,
+    this.canManage = true,
+    super.key,
+  });
 
   final String batchId;
+
+  /// When false the section is read-only: the assignment list shows but the
+  /// "Assign fee" / stop-billing controls are hidden (e.g. a center_admin who
+  /// can view revenue but not write finance).
+  final bool canManage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -24,15 +33,17 @@ class BatchFeesSection extends ConsumerWidget {
       children: [
         AppSectionHeader(
           title: 'Batch fees',
-          trailing: FilledButton.tonalIcon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Assign fee'),
-            onPressed: () => _showAssignSheet(
-              context,
-              ref,
-              feesAsync.valueOrNull ?? const [],
-            ),
-          ),
+          trailing: canManage
+              ? FilledButton.tonalIcon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Assign fee'),
+                  onPressed: () => _showAssignSheet(
+                    context,
+                    ref,
+                    feesAsync.valueOrNull ?? const [],
+                  ),
+                )
+              : null,
         ),
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
@@ -61,13 +72,15 @@ class BatchFeesSection extends ConsumerWidget {
                     _AssignmentTile(
                       assignment: a,
                       fee: byId[a.feeStructureId],
-                      onDeactivate: () async {
-                        await deactivateBatchAssignment(
-                          ref,
-                          assignmentId: a.id,
-                          batchId: batchId,
-                        );
-                      },
+                      onDeactivate: canManage
+                          ? () async {
+                              await deactivateBatchAssignment(
+                                ref,
+                                assignmentId: a.id,
+                                batchId: batchId,
+                              );
+                            }
+                          : null,
                     ),
                 ],
               ),
@@ -109,12 +122,27 @@ class _AssignmentTile extends StatelessWidget {
 
   final BatchFeeAssignment assignment;
   final FeeStructure? fee;
-  final Future<void> Function() onDeactivate;
+
+  /// Null in read-only mode — the tile then shows a status badge instead of a
+  /// stop-billing control.
+  final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
     final isActive = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
+    final Widget trailing;
+    if (!isActive) {
+      trailing = const AppBadge(text: 'Inactive');
+    } else if (onDeactivate != null) {
+      trailing = IconButton(
+        tooltip: 'Stop billing for this batch',
+        icon: const Icon(Icons.stop_circle_outlined),
+        onPressed: onDeactivate,
+      );
+    } else {
+      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
+    }
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
@@ -132,13 +160,7 @@ class _AssignmentTile extends StatelessWidget {
             'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
         ].whereType<String>().join(' · '),
       ),
-      trailing: isActive
-          ? IconButton(
-              tooltip: 'Stop billing for this batch',
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: onDeactivate,
-            )
-          : const AppBadge(text: 'Inactive'),
+      trailing: trailing,
     );
   }
 }

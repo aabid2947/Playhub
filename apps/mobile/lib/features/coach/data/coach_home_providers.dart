@@ -7,9 +7,9 @@ import 'package:playhub/features/coaches/data/coach.dart';
 /// The coaches row owned by the signed-in user (via coaches.user_id =
 /// auth.uid()). Returns null for non-coach roles or pre-link state.
 final myCoachRecordProvider = FutureProvider<Coach?>((ref) async {
-  final client = ref.watch(supabaseClientProvider);
-  final me = client.auth.currentUser?.id;
+  final me = ref.watch(currentUserIdProvider);
   if (me == null) return null;
+  final client = ref.watch(supabaseClientProvider);
   final r = await client
       .from('coaches')
       .select()

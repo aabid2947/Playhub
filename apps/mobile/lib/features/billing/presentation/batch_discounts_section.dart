@@ -7,9 +7,17 @@ import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchDiscountsSection extends ConsumerWidget {
-  const BatchDiscountsSection({required this.batchId, super.key});
+  const BatchDiscountsSection({
+    required this.batchId,
+    this.canManage = true,
+    super.key,
+  });
 
   final String batchId;
+
+  /// When false the section is read-only: the assignment list shows but the
+  /// "Assign discount" / stop controls are hidden.
+  final bool canManage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -22,15 +30,17 @@ class BatchDiscountsSection extends ConsumerWidget {
       children: [
         AppSectionHeader(
           title: 'Batch discounts',
-          trailing: FilledButton.tonalIcon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Assign discount'),
-            onPressed: () => _showAssignSheet(
-              context,
-              ref,
-              structuresAsync.valueOrNull ?? const [],
-            ),
-          ),
+          trailing: canManage
+              ? FilledButton.tonalIcon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Assign discount'),
+                  onPressed: () => _showAssignSheet(
+                    context,
+                    ref,
+                    structuresAsync.valueOrNull ?? const [],
+                  ),
+                )
+              : null,
         ),
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
@@ -59,13 +69,15 @@ class BatchDiscountsSection extends ConsumerWidget {
                     _Tile(
                       assignment: a,
                       structure: byId[a.discountStructureId],
-                      onDeactivate: () async {
-                        await deactivateBatchDiscount(
-                          ref,
-                          assignmentId: a.id,
-                          batchId: batchId,
-                        );
-                      },
+                      onDeactivate: canManage
+                          ? () async {
+                              await deactivateBatchDiscount(
+                                ref,
+                                assignmentId: a.id,
+                                batchId: batchId,
+                              );
+                            }
+                          : null,
                     ),
                 ],
               ),
@@ -107,12 +119,27 @@ class _Tile extends StatelessWidget {
 
   final BatchDiscountAssignment assignment;
   final DiscountStructure? structure;
-  final Future<void> Function() onDeactivate;
+
+  /// Null in read-only mode — the tile then shows a status badge instead of a
+  /// stop control.
+  final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
     final active = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
+    final Widget trailing;
+    if (!active) {
+      trailing = const AppBadge(text: 'Inactive');
+    } else if (onDeactivate != null) {
+      trailing = IconButton(
+        tooltip: 'Stop discount',
+        icon: const Icon(Icons.stop_circle_outlined),
+        onPressed: onDeactivate,
+      );
+    } else {
+      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
+    }
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
@@ -128,13 +155,7 @@ class _Tile extends StatelessWidget {
             'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
         ].whereType<String>().join(' · '),
       ),
-      trailing: active
-          ? IconButton(
-              tooltip: 'Stop discount',
-              icon: const Icon(Icons.stop_circle_outlined),
-              onPressed: onDeactivate,
-            )
-          : const AppBadge(text: 'Inactive'),
+      trailing: trailing,
     );
   }
 }

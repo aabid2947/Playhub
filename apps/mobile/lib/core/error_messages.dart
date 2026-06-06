@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Maps raw exceptions into short, user-facing strings.
@@ -7,6 +8,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// snackbars after a try/catch, and wherever an error string would
 /// otherwise hit the UI.
 String friendlyError(Object error) {
+  // Diagnostics: in debug builds log every error this maps, so the real cause
+  // is always in the console even when the UI shows a friendly string. No-op
+  // in release.
+  if (kDebugMode) {
+    debugPrint('[friendlyError] ${error.runtimeType}: $error');
+  }
+
   if (error is AuthException) {
     final m = error.message.toLowerCase();
     if (m.contains('invalid login credentials') ||
@@ -44,6 +52,11 @@ String friendlyError(Object error) {
     }
     if (code == 'PGRST116') {
       return 'No matching record found.';
+    }
+    if (kDebugMode) {
+      return 'DEBUG Postgrest[$code]: ${error.message}'
+          '${error.details != null ? ' · ${error.details}' : ''}'
+          '${error.hint != null ? ' · hint: ${error.hint}' : ''}';
     }
     return 'Database error. Please try again.';
   }
@@ -84,5 +97,10 @@ String friendlyError(Object error) {
     return 'The request timed out. Please try again.';
   }
 
+  // Unmapped error type — in debug surface the real thing so it's diagnosable;
+  // release keeps the friendly generic.
+  if (kDebugMode) {
+    return 'DEBUG ${error.runtimeType}: $error';
+  }
   return 'Something went wrong. Please try again.';
 }

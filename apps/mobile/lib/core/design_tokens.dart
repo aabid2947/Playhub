@@ -58,19 +58,40 @@ class AppType {
 
   static const String fontFamily = 'Inter';
 
-  // Weights.
+  // Weights (matches typography.ts fontWeight).
   static const FontWeight regular = FontWeight.w400;
   static const FontWeight medium = FontWeight.w500;
   static const FontWeight semibold = FontWeight.w600;
   static const FontWeight bold = FontWeight.w700;
+  static const FontWeight heavy = FontWeight.w800;
 
-  // Letter-spacing (tracking). Large display type tightens for a crafted feel;
-  // small labels open up for legibility.
-  static const double trackingTight = -0.5; // display
-  static const double trackingSnug = -0.2; // headlines / titles
+  // Letter-spacing (tracking) — matches typography.ts letterSpacing. Large
+  // display type tightens for a crafted feel; small labels open up.
+  static const double trackingTight = -0.5; // tighter (display)
+  static const double trackingSnug = -0.3; // tight (headlines / titles)
   static const double trackingNormal = 0; // body
-  static const double trackingWide = 0.4; // labels, buttons
-  static const double trackingWider = 0.8; // overlines / section headers
+  static const double trackingWide = 0.3; // labels, buttons
+  static const double trackingWider = 0.5; // section headers
+  static const double trackingWidest = 1; // all-caps meta labels
+}
+
+/// Font-size scale (logical px) mirroring typography.ts `fontSize`. Flutter
+/// applies device text-scaling automatically via `MediaQuery.textScaler`, so
+/// these are the base design sizes. The global [TextTheme] in `core/theme.dart`
+/// is the primary surface for text; reach for these only for a bespoke style.
+class AppFontSize {
+  const AppFontSize._();
+
+  static const double xs = 11; // timestamps, meta labels
+  static const double sm = 12; // captions, secondary text
+  static const double md = 13; // comments, sub-body
+  static const double base = 14; // default body
+  static const double lg = 15; // primary text
+  static const double xl = 17; // section headers
+  static const double xxl = 20; // screen titles
+  static const double h2 = 24; // large headings
+  static const double h1 = 30; // hero headings
+  static const double display = 36; // splash / marketing
 }
 
 /// Brand + semantic palette. These are the solid anchor colors, usable inline
@@ -79,23 +100,23 @@ class AppType {
 class AppPalette {
   const AppPalette._();
 
-  // Brand — Instagram-style. Magenta leads, purple accents, with the iconic
-  // blue → purple → magenta → pink → gold gradient for brand moments. Hexes
-  // are from Instagram's brand palette (sources cited in core/theme.dart).
-  static const Color brandPrimary = Color(0xFFC13584); // Instagram magenta
-  static const Color brandSecondary = Color(0xFF833AB4); // Instagram purple
+  // Brand — violet (colors.ts `primary`). A vivid violet leads, a magenta
+  // accents, and a violet → magenta gradient covers brand moments. Reads
+  // cleanly on both light and dark surfaces.
+  static const Color brandPrimary = Color(0xFF9933FF); // vivid violet
+  static const Color brandSecondary = Color(0xFFE95FE9); // magenta accent
 
-  // Semantic — standard status colors, independent of the brand.
-  static const Color success = Color(0xFF14A800);
+  // Semantic — standard status colors, independent of the brand (colors.ts).
+  static const Color success = Color(0xFF22C55E);
   static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFDC2626);
-  static const Color info = Color(0xFF0EA5E9);
+  static const Color danger = Color(0xFFEF4444);
+  static const Color info = Color(0xFF1D9BF0); // verified / info blue
 
   // Semantic — lifted for legibility on dark surfaces.
   static const Color successDark = Color(0xFF4ADE80);
   static const Color warningDark = Color(0xFFFBBF24);
   static const Color dangerDark = Color(0xFFF87171);
-  static const Color infoDark = Color(0xFF38BDF8);
+  static const Color infoDark = Color(0xFF4DB3F5);
 
   // Neutral grays (slate-tinted) — light-theme surfaces + text.
   static const Color gray50 = Color(0xFFF8FAFC);
@@ -109,28 +130,26 @@ class AppPalette {
   static const Color gray800 = Color(0xFF1E293B);
   static const Color gray900 = Color(0xFF0F172A);
 
-  // Dark-theme neutrals — a premium near-black ramp (Tailwind "zinc"). Pairs
-  // with the green accents for the Upwork-style "green + black" dark theme.
-  static const Color ink950 = Color(0xFF09090B); // page background
-  static const Color ink900 = Color(0xFF18181B); // cards
-  static const Color ink800 = Color(0xFF27272A); // inputs / elevated
-  static const Color ink700 = Color(0xFF3F3F46); // borders
-  static const Color ink600 = Color(0xFF52525B);
-  static const Color ink400 = Color(0xFFA1A1AA); // secondary text
-  static const Color ink100 = Color(0xFFF4F4F5); // primary text on dark
+  // Dark-theme neutrals — matches colors.ts: near-black background, gently
+  // lifted surfaces, a low-contrast border, and soft near-white text.
+  static const Color ink950 = Color(0xFF141318); // page background
+  static const Color ink900 = Color(0xFF1C1D22); // surface
+  static const Color ink800 = Color(0xFF212129); // cards / inputs / elevated
+  static const Color ink700 = Color(0xFF2A2D34); // borders
+  static const Color ink600 = Color(0xFF3A3D45);
+  static const Color ink400 = Color(0xFF9CA3AF); // secondary text
+  static const Color ink100 = Color(0xFFFAFAFA); // primary text on dark
 
   // Surface tints.
-  static const Color surfaceTintLight = Color(0xFFF1F5F9);
-  static const Color surfaceTintDark = Color(0xFF18181B);
+  static const Color surfaceTintLight = Color(0xFFF5F5F5);
+  static const Color surfaceTintDark = Color(0xFF1C1D22);
 
-  // Brand gradient — the iconic Instagram sweep (blue → purple → magenta →
-  // pink → gold), for brand marks, hero headers, and splash.
+  // Brand gradient — a violet → magenta sweep, for brand marks, hero headers,
+  // and splash.
   static const List<Color> brandGradient = [
-    Color(0xFF405DE6), // blue
-    Color(0xFF833AB4), // purple
-    Color(0xFFC13584), // magenta
-    Color(0xFFE1306C), // pink
-    Color(0xFFFCAF45), // gold
+    Color(0xFF9933FF), // violet
+    Color(0xFFB84DFF), // bright violet
+    Color(0xFFE95FE9), // magenta
   ];
 }
 
@@ -180,16 +199,16 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   /// Light-theme tones. Containers are the base color at ~13% alpha.
   static const AppSemanticColors light = AppSemanticColors(
     success: AppPalette.success,
-    successContainer: Color(0x2114A800),
+    successContainer: Color(0x2122C55E),
     onSuccess: Colors.white,
     warning: AppPalette.warning,
     warningContainer: Color(0x21F59E0B),
     onWarning: Color(0xFF422006),
     danger: AppPalette.danger,
-    dangerContainer: Color(0x21DC2626),
+    dangerContainer: Color(0x21EF4444),
     onDanger: Colors.white,
     info: AppPalette.info,
-    infoContainer: Color(0x210EA5E9),
+    infoContainer: Color(0x211D9BF0),
     onInfo: Colors.white,
   );
 
@@ -205,7 +224,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     dangerContainer: Color(0x38F87171),
     onDanger: Color(0xFF450A0A),
     info: AppPalette.infoDark,
-    infoContainer: Color(0x3838BDF8),
+    infoContainer: Color(0x384DB3F5),
     onInfo: Color(0xFF082F49),
   );
 

@@ -25,3 +25,12 @@ final sessionProvider = Provider<Session?>((ref) {
     orElse: () => Supabase.instance.client.auth.currentSession,
   );
 });
+
+/// The signed-in user's id, or null. Recomputes on login / logout / account
+/// switch. User-scoped providers that read the identity imperatively (rather
+/// than deriving it from [currentProfileProvider]) should `ref.watch` this so
+/// their cache resets when the account changes — otherwise they keep serving
+/// the previous user's data until the app restarts.
+final currentUserIdProvider = Provider<String?>((ref) {
+  return ref.watch(sessionProvider)?.user.id;
+});

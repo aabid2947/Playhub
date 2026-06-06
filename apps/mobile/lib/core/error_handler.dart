@@ -3,6 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/shared/widgets/app_snackbar.dart';
 
 /// Global keys + handlers for non-breaking error reporting.
 ///
@@ -44,7 +46,7 @@ class AppErrorHandler {
     //    quiet placeholder so a single broken widget never takes over the UI.
     final defaultErrorBuilder = ErrorWidget.builder;
     ErrorWidget.builder = (details) {
-      _scheduleToast('Something went wrong.');
+      _scheduleToast(_toastFor('UI build error', details.exception));
       if (kDebugMode) {
         return defaultErrorBuilder(details);
       }
@@ -55,15 +57,24 @@ class AppErrorHandler {
     final defaultOnError = FlutterError.onError;
     FlutterError.onError = (details) {
       defaultOnError?.call(details);
-      _scheduleToast('Something went wrong.');
+      _scheduleToast(_toastFor('Framework error', details.exception));
     };
 
     // 3) Async errors that escape the framework (futures, streams, etc.).
     PlatformDispatcher.instance.onError = (error, stack) {
       debugPrint('Uncaught async error: $error\n$stack');
-      _scheduleToast('Something went wrong.');
+      _scheduleToast(_toastFor('Async error', error));
       return true;
     };
+  }
+
+  /// Toast text for a swallowed error. In debug, surface the real exception so
+  /// the cause is visible on-device while diagnosing; release shows the quiet
+  /// generic so users never see internals.
+  static String _toastFor(String label, Object error) {
+    if (!kDebugMode) return 'Something went wrong.';
+    final s = error.toString();
+    return '$label: ${s.length > 400 ? '${s.substring(0, 400)}…' : s}';
   }
 
   /// True when running under `flutter test` (unit or integration).
@@ -112,6 +123,21 @@ class AppErrorHandler {
     // Defer to the next frame — toast may be invoked during build, layout,
     // or before the first frame is painted.
     SchedulerBinding.instance.addPostFrameCallback((_) {
+      // Prefer the top overlay toast (sits above bottom sheets / dialogs).
+      // Fall back to a bottom SnackBar only if the navigator isn't mounted yet.
+      final overlay = rootNavigatorKey.currentState?.overlay;
+      final ctx = rootNavigatorKey.currentContext;
+      if (overlay != null && ctx != null) {
+        final semantics = AppSemanticColors.of(ctx);
+        TopToast.show(
+          overlay,
+          message: message,
+          icon: Icons.error_outline,
+          color: semantics.danger,
+          onColor: semantics.onDanger,
+        );
+        return;
+      }
       final messenger = rootScaffoldMessengerKey.currentState;
       if (messenger == null) return;
       messenger

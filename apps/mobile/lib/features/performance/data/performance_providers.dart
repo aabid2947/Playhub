@@ -181,3 +181,33 @@ Future<void> attachMedia(
   });
   ref.invalidate(mediaForAssessmentProvider(assessmentId));
 }
+
+/// Attach standalone media (no scored assessment) straight to a student — the
+/// trainer/coach "Add photo/video" action on the student page. Inserts a
+/// performance_media row with a null assessment_id; RLS gates this through
+/// can_upload_student_media(student_id).
+Future<void> addStudentMedia(
+  WidgetRef ref, {
+  required String studentId,
+  required String mediaType, // 'photo' | 'video'
+  required String filePath,
+  String? originalFilename,
+  String? mimeType,
+  int? sizeBytes,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final profile = await ref.read(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return;
+  await client.from('performance_media').insert({
+    'academy_id': academyId,
+    'student_id': studentId,
+    'media_type': mediaType,
+    'file_path': filePath,
+    if (originalFilename != null) 'original_filename': originalFilename,
+    if (mimeType != null) 'mime_type': mimeType,
+    if (sizeBytes != null) 'size_bytes': sizeBytes,
+    'uploaded_by': profile?.id,
+  });
+  ref.invalidate(mediaForStudentProvider(studentId));
+}
