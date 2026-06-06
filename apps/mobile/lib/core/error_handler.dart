@@ -41,13 +41,19 @@ class AppErrorHandler {
     if (_runningUnderTest) return;
     _installed = true;
 
-    // 1) Replace the red error widget on build-time errors. In debug we keep
-    //    Flutter's default so devs see the stack; in release we render a
-    //    quiet placeholder so a single broken widget never takes over the UI.
+    // Framework/build/async errors are surfaced ONLY in debug — a labeled
+    // toast with the real exception so the cause is visible while developing.
+    // In RELEASE these are fully silent: a quiet placeholder for build errors
+    // and no toast at all (not even "Something went wrong"). The default
+    // handlers still run, so crashes are written to the system log / any
+    // crash-reporter — we only suppress the on-screen surface.
+
+    // 1) Build-time errors. Debug: Flutter's red box + a toast. Release: a
+    //    quiet placeholder, no toast.
     final defaultErrorBuilder = ErrorWidget.builder;
     ErrorWidget.builder = (details) {
-      _scheduleToast(_toastFor('UI build error', details.exception));
       if (kDebugMode) {
+        _scheduleToast(_toastFor('UI build error', details.exception));
         return defaultErrorBuilder(details);
       }
       return const _QuietErrorPlaceholder();
@@ -56,23 +62,27 @@ class AppErrorHandler {
     // 2) Framework errors (synchronous widget/render failures).
     final defaultOnError = FlutterError.onError;
     FlutterError.onError = (details) {
-      defaultOnError?.call(details);
-      _scheduleToast(_toastFor('Framework error', details.exception));
+      defaultOnError?.call(details); // logs to console/crash-reporter
+      if (kDebugMode) {
+        _scheduleToast(_toastFor('Framework error', details.exception));
+      }
     };
 
     // 3) Async errors that escape the framework (futures, streams, etc.).
     PlatformDispatcher.instance.onError = (error, stack) {
-      debugPrint('Uncaught async error: $error\n$stack');
-      _scheduleToast(_toastFor('Async error', error));
+      if (kDebugMode) {
+        debugPrint('Uncaught async error: $error\n$stack');
+        _scheduleToast(_toastFor('Async error', error));
+      }
+      // Returning true marks it handled — in release it's swallowed silently
+      // (no crash, no toast).
       return true;
     };
   }
 
-  /// Toast text for a swallowed error. In debug, surface the real exception so
-  /// the cause is visible on-device while diagnosing; release shows the quiet
-  /// generic so users never see internals.
+  /// Debug-only toast text — only ever called from `kDebugMode` paths, so it
+  /// always surfaces the real exception (truncated) for on-device diagnosis.
   static String _toastFor(String label, Object error) {
-    if (!kDebugMode) return 'Something went wrong.';
     final s = error.toString();
     return '$label: ${s.length > 400 ? '${s.substring(0, 400)}…' : s}';
   }

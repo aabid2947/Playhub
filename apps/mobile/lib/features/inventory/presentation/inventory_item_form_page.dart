@@ -84,111 +84,164 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
     final categories = ref.watch(inventoryCategoriesProvider).valueOrNull ?? [];
     final vendors = ref.watch(vendorsProvider).valueOrNull ?? [];
     final centers = ref.watch(centersProvider).valueOrNull ?? [];
+    final isEditing = widget.existing != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'New item' : 'Edit item'),
+        title: Text(isEditing ? 'Edit item' : 'New item'),
       ),
       body: Form(
         key: _form,
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            const AppSectionHeader(title: 'Item details'),
-            const SizedBox(height: AppSpacing.sm),
-            AppFormField(
-              controller: _name,
-              label: 'Name *',
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppFormField(
-              controller: _sku,
-              label: 'SKU (optional)',
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppFormField(
-              controller: _desc,
-              label: 'Description',
-              maxLines: 3,
+            const AppSectionHeader(title: 'Details'),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppFormField(
+                    controller: _name,
+                    label: 'Name *',
+                    enabled: !_saving,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _sku,
+                    label: 'SKU (optional)',
+                    enabled: !_saving,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _desc,
+                    label: 'Description (optional)',
+                    enabled: !_saving,
+                    maxLines: 3,
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
             const AppSectionHeader(title: 'Stock & cost'),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: AppFormField(
-                    controller: _unit,
-                    label: 'Unit',
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final unitField = AppFormField(
+                        controller: _unit,
+                        label: 'Unit',
+                        enabled: !_saving,
+                      );
+                      final costField = AppFormField(
+                        controller: _unitCost,
+                        label: 'Unit cost (₹)',
+                        enabled: !_saving,
+                        keyboardType: TextInputType.number,
+                      );
+                      // Stack the paired fields on narrow screens so the
+                      // inputs never crush to unusable widths.
+                      if (constraints.maxWidth < _kStackBelowWidth) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            unitField,
+                            const SizedBox(height: AppSpacing.md),
+                            costField,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: unitField),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(child: costField),
+                        ],
+                      );
+                    },
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppFormField(
-                    controller: _unitCost,
-                    label: 'Unit cost (₹)',
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _reorder,
+                    label: 'Low-stock threshold',
+                    enabled: !_saving,
                     keyboardType: TextInputType.number,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppFormField(
-              controller: _reorder,
-              label: 'Low-stock threshold',
-              keyboardType: TextInputType.number,
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
             const AppSectionHeader(title: 'Categorisation'),
-            const SizedBox(height: AppSpacing.sm),
-            AppDropdownField<String?>(
-              label: 'Category',
-              value: _categoryId,
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final c in categories)
-                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setState(() => _categoryId = v),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppDropdownField<String?>(
-              label: 'Default vendor',
-              value: _vendorId,
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final v in vendors)
-                  DropdownMenuItem<String?>(value: v.id, child: Text(v.name)),
-              ],
-              onChanged: (v) => setState(() => _vendorId = v),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppDropdownField<String?>(
-              label: 'Held at center (optional)',
-              value: _centerId,
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final c in centers)
-                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setState(() => _centerId = v),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save'),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppDropdownField<String?>(
+                    label: 'Category',
+                    value: _categoryId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final c in categories)
+                        DropdownMenuItem<String?>(
+                            value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _categoryId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppDropdownField<String?>(
+                    label: 'Default vendor',
+                    value: _vendorId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final v in vendors)
+                        DropdownMenuItem<String?>(
+                            value: v.id, child: Text(v.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _vendorId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppDropdownField<String?>(
+                    label: 'Held at center (optional)',
+                    value: _centerId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final c in centers)
+                        DropdownMenuItem<String?>(
+                            value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _centerId = v),
+                  ),
+                ],
+              ),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(AppSpacing.lg),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(isEditing ? 'Save changes' : 'Create item'),
+          ),
         ),
       ),
     );
   }
 }
+
+/// Below this width the paired Unit / Unit cost row stacks vertically.
+const double _kStackBelowWidth = 360;

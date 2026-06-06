@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Settings → Sports. Pick a center, manage which sports it offers.
-/// Defaults to the user's center_id when set; falls back to the first
-/// center in the academy.
+/// Settings → Sports. The center selector is the scope control: pick a center,
+/// manage which sports it offers. Defaults to the user's center_id when set;
+/// falls back to the first center in the academy.
 class SportsSettingsPage extends ConsumerStatefulWidget {
   const SportsSettingsPage({super.key});
 
@@ -22,11 +26,16 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final centersAsync = ref.watch(centersProvider);
+    // Enabling/renaming/removing sports writes center_sports, which RLS gates
+    // to the admin tier (has_admin_or_higher) — center_admin is read-only here.
+    // This only hides the controls; RLS is the real gate.
+    final canManage = ref.watch(capabilitiesProvider).manageTeam;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sports'),
         actions: [
           IconButton(
+            tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
             onPressed: () {
               if (_centerId != null) {
@@ -38,35 +47,37 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
         ],
       ),
       body: centersAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(centersProvider),
+        ),
         data: (centers) {
           if (centers.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No centers yet — add a center in Settings → Centers '
-                  'first, then come back here to enable its sports.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
+            return const AppEmptyState(
+              icon: Icons.location_city_outlined,
+              title: 'No centers yet',
+              subtitle:
+                  'Add a center in Settings → Centers first, then come back '
+                  'here to enable its sports.',
             );
           }
           _centerId ??= centers.first.id;
+          final activeCenters =
+              centers.where((c) => c.isActive).toList(growable: false);
+          final scopeName = centers
+              .firstWhere(
+                (c) => c.id == _centerId,
+                orElse: () => centers.first,
+              )
+              .name;
           return Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: DropdownButtonFormField<String>(
-                  initialValue: _centerId,
-                  decoration: const InputDecoration(labelText: 'Center'),
-                  items: [
-                    for (final c in centers.where((c) => c.isActive))
-                      DropdownMenuItem(value: c.id, child: Text(c.name)),
-                  ],
-                  onChanged: (v) => setState(() => _centerId = v),
-                ),
+              _ScopeHeader(
+                centers: activeCenters,
+                centerId: _centerId,
+                scopeName: scopeName,
+                onChanged: (v) => setState(() => _centerId = v),
               ),
               Expanded(
                 child: _centerId == null
@@ -77,7 +88,7 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
           );
         },
       ),
-      floatingActionButton: _centerId == null
+      floatingActionButton: (_centerId == null || !canManage)
           ? null
           : FloatingActionButton.extended(
               icon: const Icon(Icons.add),
@@ -92,6 +103,80 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
   }
 }
 
+/// Sticky scope strip — frames the list below as "Sports at <center>" and
+/// exposes the center picker as the control that drives that scope.
+class _ScopeHeader extends StatelessWidget {
+  const _ScopeHeader({
+    required this.centers,
+    required this.centerId,
+    required this.scopeName,
+    required this.onChanged,
+  });
+
+  final List<Centre> centers;
+  final String? centerId;
+  final String scopeName;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      color: scheme.surface,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.place_outlined,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Expanded(
+                      child: Text(
+                        'Sports at $scopeName',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: AppType.semibold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppDropdownField<String>(
+                  label: 'Center scope',
+                  value: centerId,
+                  items: [
+                    for (final c in centers)
+                      DropdownMenuItem(
+                        value: c.id,
+                        child: Text(c.name),
+                      ),
+                  ],
+                  onChanged: onChanged,
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: scheme.outlineVariant),
+        ],
+      ),
+    );
+  }
+}
+
 class _CenterSportsList extends ConsumerWidget {
   const _CenterSportsList({required this.centerId});
   final String centerId;
@@ -100,24 +185,39 @@ class _CenterSportsList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(centerSportsProvider(centerId));
     return async.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text(friendlyError(e))),
+      loading: () => const AppSkeletonList(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(centerSportsProvider(centerId)),
+      ),
       data: (rows) {
         if (rows.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                'No sports for this center. Tap "Add sport" to enable one.',
-                textAlign: TextAlign.center,
-              ),
-            ),
+          return const AppEmptyState(
+            icon: Icons.sports_outlined,
+            title: 'No sports here yet',
+            subtitle:
+                'Tap "Add sport" to enable one for this center.',
           );
         }
-        return ListView.separated(
-          itemCount: rows.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) => _SportRow(row: rows[i]),
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(centerSportsProvider(centerId)),
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xxxl),
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: AppSectionHeader(
+                  title: '${rows.length} '
+                      'sport${rows.length == 1 ? '' : 's'}',
+                ),
+              ),
+              for (var i = 0; i < rows.length; i++) ...[
+                _SportRow(row: rows[i]),
+                if (i < rows.length - 1)
+                  const Divider(height: 1, indent: AppSpacing.lg),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -130,51 +230,73 @@ class _SportRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
+    final isRenamed =
+        row.customName != null && row.customName!.trim().isNotEmpty;
+    // Rename/remove write center_sports (admin-tier RLS). Read-only roles
+    // (e.g. center_admin) see the sport without management actions.
+    final canManage = ref.watch(capabilitiesProvider).manageTeam;
+    return AppListTile(
+      wrapLeading: false,
       leading: const CircleAvatar(child: Icon(Icons.sports_outlined)),
       title: Text(row.displayName),
-      subtitle: Text(row.customName != null && row.customName!.isNotEmpty
-          ? 'Renamed from ${row.sport.name}'
-          : row.sport.category ?? ''),
-      trailing: PopupMenuButton<String>(
-        onSelected: (v) async {
-          final repo = await ref.read(sportsRepoProvider.future);
-          if (repo == null) return;
-          if (v == 'rename') {
-            if (!context.mounted) return;
-            await _renameDialog(context, ref, row);
-          } else if (v == 'remove') {
-            if (!context.mounted) return;
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: Text('Remove ${row.displayName}?'),
-                content: const Text(
-                  'Existing students / batches keep their sport assignment '
-                  'until you change them. You can re-add this sport later.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Cancel'),
+      subtitle: isRenamed
+          ? Text('Renamed from ${row.sport.name}')
+          : (row.sport.category != null && row.sport.category!.isNotEmpty
+              ? Text(row.sport.category!)
+              : null),
+      trailing: !canManage
+          ? null
+          : Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Rename',
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => _renameDialog(context, ref, row),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            onSelected: (v) async {
+              final repo = await ref.read(sportsRepoProvider.future);
+              if (repo == null) return;
+              if (v == 'rename') {
+                if (!context.mounted) return;
+                await _renameDialog(context, ref, row);
+              } else if (v == 'remove') {
+                if (!context.mounted) return;
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text('Remove ${row.displayName}?'),
+                    content: const Text(
+                      'Existing students / batches keep their sport '
+                      'assignment until you change them. You can re-add '
+                      'this sport later.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Remove'),
+                      ),
+                    ],
                   ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Remove'),
-                  ),
-                ],
-              ),
-            );
-            if (confirm ?? false) {
-              await repo.disableCenterSport(row.id);
-              ref.invalidate(centerSportsProvider(row.centerId));
-              ref.invalidate(academyCenterSportsProvider);
-            }
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'rename', child: Text('Rename')),
-          PopupMenuItem(value: 'remove', child: Text('Remove')),
+                );
+                if (confirm ?? false) {
+                  await repo.disableCenterSport(row.id);
+                  ref.invalidate(centerSportsProvider(row.centerId));
+                  ref.invalidate(academyCenterSportsProvider);
+                }
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'remove', child: Text('Remove')),
+            ],
+          ),
         ],
       ),
     );
@@ -190,13 +312,24 @@ class _SportRow extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Rename ${row.sport.name}'),
-        content: TextField(
-          controller: ctrl,
-          decoration: InputDecoration(
-            hintText: row.sport.name,
-            helperText: 'Leave blank to revert to the catalog name',
-          ),
-          autofocus: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppFormField(
+              controller: ctrl,
+              label: 'Display name',
+              hint: row.sport.name,
+              autofocus: true,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Leave blank to revert to the catalog name.',
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -222,21 +355,29 @@ class _SportRow extends ConsumerWidget {
   }
 }
 
-class _AddSportSheet extends ConsumerWidget {
+class _AddSportSheet extends ConsumerStatefulWidget {
   const _AddSportSheet({required this.centerId});
   final String centerId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AddSportSheet> createState() => _AddSportSheetState();
+}
+
+class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final allAsync = ref.watch(allSportsProvider);
-    final enabledAsync = ref.watch(centerSportsProvider(centerId));
+    final enabledAsync = ref.watch(centerSportsProvider(widget.centerId));
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SizedBox(
         width: double.infinity,
@@ -244,23 +385,54 @@ class _AddSportSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Add a sport',
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
+            Text(
+              'Add a sport',
+              style: theme.textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            AppFormField(
+              label: 'Search catalog',
+              hint: 'Search sports',
+              prefixIcon: const Icon(Icons.search),
+              autofocus: true,
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: AppSpacing.md),
             allAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text(friendlyError(e)),
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                child: AppLoading(),
+              ),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(allSportsProvider),
+              ),
               data: (all) {
                 final enabledIds = (enabledAsync.valueOrNull ?? const [])
                     .map((s) => s.sport.id)
                     .toSet();
-                final candidates =
-                    all.where((s) => !enabledIds.contains(s.id)).toList();
+                final q = _query.trim().toLowerCase();
+                final candidates = all.where((s) {
+                  if (enabledIds.contains(s.id)) return false;
+                  if (q.isEmpty) return true;
+                  final inName = s.name.toLowerCase().contains(q);
+                  final inCategory =
+                      s.category?.toLowerCase().contains(q) ?? false;
+                  return inName || inCategory;
+                }).toList(growable: false);
                 if (candidates.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
+                  return Padding(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: AppSpacing.xl),
                     child: Text(
-                      'Every catalog sport is already enabled at this center.',
+                      q.isEmpty
+                          ? 'Every catalog sport is already enabled at this '
+                              'center.'
+                          : 'No sports match "$_query".',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   );
                 }
@@ -274,7 +446,8 @@ class _AddSportSheet extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) {
                       final s = candidates[i];
-                      return ListTile(
+                      return AppListTile(
+                        leading: const Icon(Icons.sports_outlined),
                         title: Text(s.name),
                         subtitle:
                             s.category != null ? Text(s.category!) : null,
@@ -284,10 +457,12 @@ class _AddSportSheet extends ConsumerWidget {
                                 await ref.read(sportsRepoProvider.future);
                             if (repo == null) return;
                             await repo.enableSportAtCenter(
-                              centerId: centerId,
+                              centerId: widget.centerId,
                               sportId: s.id,
                             );
-                            ref.invalidate(centerSportsProvider(centerId));
+                            ref.invalidate(
+                              centerSportsProvider(widget.centerId),
+                            );
                             ref.invalidate(academyCenterSportsProvider);
                             if (context.mounted) Navigator.pop(context);
                           },

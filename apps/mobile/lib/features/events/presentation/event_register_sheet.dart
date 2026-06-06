@@ -28,11 +28,14 @@ class EventRegisterSheet extends ConsumerStatefulWidget {
 class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
   String? _studentId;
   final _notes = TextEditingController();
+  final _search = TextEditingController();
+  String _query = '';
   bool _saving = false;
 
   @override
   void dispose() {
     _notes.dispose();
+    _search.dispose();
     super.dispose();
   }
 
@@ -60,75 +63,356 @@ class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
     }
   }
 
+  List<Student> _filtered(List<Student> students) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return students;
+    return students
+        .where((s) => s.fullName.toLowerCase().contains(q))
+        .toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final students = widget.studentsOverride ??
         ref.watch(studentsProvider).valueOrNull ??
         const <Student>[];
+    final filtered = _filtered(students);
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHandle(),
+            _Header(event: widget.event),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                ),
+                shrinkWrap: true,
+                children: [
+                  const AppSectionHeader(title: 'Choose a student'),
+                  AppFormField(
+                    controller: _search,
+                    hint: 'Search students by name',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close),
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              _search.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    onChanged: (v) => setState(() => _query = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _StudentPicker(
+                    students: filtered,
+                    hasAny: students.isNotEmpty,
+                    selectedId: _studentId,
+                    onSelected: (id) => setState(() => _studentId = id),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(title: 'Notes'),
+                  AppFormField(
+                    controller: _notes,
+                    label: 'Category, weight class, etc. (optional)',
+                    maxLines: 3,
+                  ),
+                  if (widget.event.feeAmount > 0) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    _FeeNote(feeAmount: widget.event.feeAmount),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_studentId == null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Text(
+                        'Select a student to continue.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  FilledButton(
+                    onPressed:
+                        _saving || _studentId == null ? null : _register,
+                    child: _saving
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Register'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The rounded drag affordance at the top of the sheet.
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 36,
+        height: 4,
+        margin: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.outlineVariant,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+      ),
+    );
+  }
+}
+
+/// Title row: event title + a short context line (kind · date) and a close
+/// button so the sheet reads as a deliberate task, not a bare form.
+class _Header extends StatelessWidget {
+  const _Header({required this.event});
+  final EventEntry event;
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${months[d.month - 1]} ${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Register for ${widget.event.title}',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          AppDropdownField<String>(
-            label: 'Student',
-            value: _studentId,
-            items: [
-              for (final s in students)
-                DropdownMenuItem(value: s.id, child: Text(s.fullName)),
-            ],
-            onChanged: (v) => setState(() => _studentId = v),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _notes,
-            label: 'Notes (category, etc.)',
-            maxLines: 3,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (widget.event.feeAmount > 0) ...[
-            Row(
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 18,
-                  color: AppSemanticColors.of(context).info,
+                Text(
+                  'Register for ${event.title}',
+                  style: theme.textTheme.titleLarge,
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Fee: ₹${widget.event.feeAmount} '
-                    '(collect separately for now)',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '${event.kind.label} · ${_formatDate(event.startsAt)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Searchable, single-select student list. Renders selectable [AppListTile]s
+/// with a leading initial avatar and a trailing check for the chosen student;
+/// shows an [AppEmptyState] when there are no students or no search matches.
+class _StudentPicker extends StatelessWidget {
+  const _StudentPicker({
+    required this.students,
+    required this.hasAny,
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  final List<Student> students;
+  final bool hasAny;
+  final String? selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (students.isEmpty) {
+      return AppCard(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+          child: AppEmptyState(
+            icon: hasAny ? Icons.search_off : Icons.person_outline,
+            title: hasAny ? 'No matches' : 'No students yet',
+            subtitle: hasAny
+                ? 'No students match your search.'
+                : 'Add a student before registering for this event.',
+          ),
+        ),
+      );
+    }
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < students.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            _StudentTile(
+              student: students[i],
+              selected: students[i].id == selectedId,
+              onTap: () => onSelected(students[i].id),
+              scheme: scheme,
+            ),
           ],
-          FilledButton(
-            onPressed: _saving || _studentId == null ? null : _register,
-            child: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Register'),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentTile extends StatelessWidget {
+  const _StudentTile({
+    required this.student,
+    required this.selected,
+    required this.onTap,
+    required this.scheme,
+  });
+
+  final Student student;
+  final bool selected;
+  final VoidCallback onTap;
+  final ColorScheme scheme;
+
+  String get _initials {
+    final f = student.firstName.isNotEmpty ? student.firstName[0] : '';
+    final l = student.lastName.isNotEmpty ? student.lastName[0] : '';
+    final s = '$f$l'.trim();
+    return s.isEmpty ? '?' : s.toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppListTile(
+      onTap: onTap,
+      wrapLeading: false,
+      leading: CircleAvatar(
+        backgroundColor:
+            selected ? scheme.primary : scheme.primaryContainer,
+        foregroundColor:
+            selected ? scheme.onPrimary : scheme.onPrimaryContainer,
+        child: Text(
+          _initials,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected
+                    ? scheme.onPrimary
+                    : scheme.onPrimaryContainer,
+              ),
+        ),
+      ),
+      title: Text(student.fullName),
+      subtitle: student.parentName.trim().isEmpty
+          ? null
+          : Text('Parent: ${student.parentName}'),
+      trailing: selected
+          ? Icon(Icons.check_circle, color: scheme.primary)
+          : Icon(Icons.circle_outlined, color: scheme.outlineVariant),
+    );
+  }
+}
+
+/// Explains the fee handling: registration does not record a payment, so the
+/// fee must be collected separately. A toned info callout, not a buried line.
+class _FeeNote extends StatelessWidget {
+  const _FeeNote({required this.feeAmount});
+  final double feeAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final info = AppSemanticColors.of(context).info;
+    final fee = feeAmount == feeAmount.roundToDouble()
+        ? feeAmount.toStringAsFixed(0)
+        : feeAmount.toStringAsFixed(2);
+
+    return AppCard(
+      color: AppSemanticColors.of(context).infoContainer,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 20, color: info),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Entry fee: ₹$fee',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: AppType.semibold,
+                    color: scheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Registering here does not record a payment — '
+                  'collect the fee separately for now.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

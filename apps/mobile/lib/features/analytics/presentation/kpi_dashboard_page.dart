@@ -15,6 +15,16 @@ import 'package:playhub/shared/widgets/widgets.dart';
 class KpiDashboardPage extends ConsumerWidget {
   const KpiDashboardPage({super.key});
 
+  void _refreshAll(WidgetRef ref) {
+    ref
+      ..invalidate(revenueByMonthProvider)
+      ..invalidate(enrollmentByMonthProvider)
+      ..invalidate(leadFunnelProvider)
+      ..invalidate(batchUtilizationProvider)
+      ..invalidate(collectionSummaryProvider)
+      ..invalidate(sportBreakdownProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(currentProfileProvider).valueOrNull;
@@ -30,106 +40,187 @@ class KpiDashboardPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: () {
-              ref
-                ..invalidate(revenueByMonthProvider)
-                ..invalidate(enrollmentByMonthProvider)
-                ..invalidate(leadFunnelProvider)
-                ..invalidate(batchUtilizationProvider)
-                ..invalidate(collectionSummaryProvider)
-                ..invalidate(sportBreakdownProvider);
-            },
+            onPressed: () => _refreshAll(ref),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.md),
+      body: RefreshIndicator(
+        onRefresh: () async => _refreshAll(ref),
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            const _FreshnessHeader(),
+            const SizedBox(height: AppSpacing.lg),
+            if (isOwner || isAdmin) ...const [
+              _CollectionSummarySection(),
+              SizedBox(height: AppSpacing.xl),
+              _RevenueTrendCard(),
+              SizedBox(height: AppSpacing.md),
+            ],
+            if (isOwner || isAdmin || isHeadCoach) ...const [
+              _EnrollmentTrendCard(),
+              SizedBox(height: AppSpacing.md),
+              _SportBreakdownCard(),
+              SizedBox(height: AppSpacing.md),
+              _BatchUtilizationCard(),
+              SizedBox(height: AppSpacing.md),
+            ],
+            if (isOwner || isAdmin) const _LeadFunnelCard(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Page-level data-freshness cue. The analytics_* views are refreshed hourly
+/// by the analytics-aggregations Edge Function; none of the providers return a
+/// per-view `refreshed_at`, so we surface the cadence rather than inventing a
+/// timestamp. (Flag: a true "updated at HH:MM" needs a new query/column.)
+class _FreshnessHeader extends StatelessWidget {
+  const _FreshnessHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      children: [
+        Icon(
+          Icons.schedule_outlined,
+          size: 16,
+          color: scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            'Figures refresh hourly. Pull down to reload.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Thin wrapper that gives every chart/breakdown section the same anatomy:
+/// a labeled [AppSectionHeader] inside an [AppCard], with consistent async
+/// states (loading / error+retry / empty handled by the caller's [child]).
+class _ChartSection extends StatelessWidget {
+  const _ChartSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isOwner || isAdmin) ...const [
-            _CollectionSummaryCard(),
-            SizedBox(height: AppSpacing.md),
-            _RevenueTrendCard(),
-            SizedBox(height: AppSpacing.md),
-          ],
-          if (isOwner || isAdmin || isHeadCoach) ...const [
-            _EnrollmentTrendCard(),
-            SizedBox(height: AppSpacing.md),
-            _SportBreakdownCard(),
-            SizedBox(height: AppSpacing.md),
-            _BatchUtilizationCard(),
-            SizedBox(height: AppSpacing.md),
-          ],
-          if (isOwner || isAdmin) const _LeadFunnelCard(),
+          AppSectionHeader(title: title),
+          const SizedBox(height: AppSpacing.sm),
+          child,
         ],
       ),
     );
   }
 }
 
-class _CollectionSummaryCard extends ConsumerWidget {
-  const _CollectionSummaryCard();
+class _CollectionSummarySection extends ConsumerWidget {
+  const _CollectionSummarySection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(collectionSummaryProvider);
-    return async.when(
-      loading: () => const AppCard(child: LinearProgressIndicator()),
-      error: (e, _) => AppCard(child: Text(friendlyError(e))),
-      data: (s) {
-        if (s == null) {
-          return const AppCard(child: Text('No invoice data yet'));
-        }
-        final semantics = AppSemanticColors.of(context);
-        final money =
-            NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const AppSectionHeader(title: 'Collection summary'),
+        const SizedBox(height: AppSpacing.sm),
+        async.when(
+          loading: () => const AppCard(child: AppLoading()),
+          error: (e, _) => AppCard(
+            child: AppErrorView(
+              message: friendlyError(e),
+              onRetry: () => ref.invalidate(collectionSummaryProvider),
+            ),
+          ),
+          data: (s) {
+            if (s == null) {
+              return const AppCard(
+                child: AppEmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: 'No invoice data yet',
+                  subtitle: 'Collection figures appear once invoices exist.',
+                ),
+              );
+            }
+            final semantics = AppSemanticColors.of(context);
+            final money =
+                NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
+            // Two-up responsive grid: tiles wrap to full width if the row
+            // can't fit two side by side at a large text scale.
+            return _StatGrid(
+              tiles: [
+                AppStatTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  label: 'Collected',
+                  value: money.format(s.collectedTotal),
+                  color: semantics.success,
+                ),
+                AppStatTile(
+                  icon: Icons.hourglass_bottom_outlined,
+                  label: 'Outstanding (${s.outstandingCount})',
+                  value: money.format(s.outstandingAmount),
+                  color: semantics.warning,
+                ),
+                AppStatTile(
+                  icon: Icons.warning_amber_outlined,
+                  label: 'Overdue invoices',
+                  value: '${s.overdueCount}',
+                  color: semantics.danger,
+                ),
+                AppStatTile(
+                  icon: Icons.check_circle_outline,
+                  label: 'Paid invoices',
+                  value: '${s.paidCount}',
+                  color: semantics.success,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Lays out KPI tiles two-per-row, falling back to a single column on very
+/// narrow widths so a long currency value never overflows the tile.
+class _StatGrid extends StatelessWidget {
+  const _StatGrid({required this.tiles});
+
+  final List<Widget> tiles;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoUp = constraints.maxWidth >= 320;
+        final columns = twoUp ? 2 : 1;
+        const spacing = AppSpacing.md;
+        final tileWidth = twoUp
+            ? (constraints.maxWidth - spacing * (columns - 1)) / columns
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
           children: [
-            const AppSectionHeader(title: 'Collection summary'),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Expanded(
-                  child: AppStatTile(
-                    icon: Icons.account_balance_wallet_outlined,
-                    label: 'Collected',
-                    value: money.format(s.collectedTotal),
-                    color: semantics.success,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppStatTile(
-                    icon: Icons.hourglass_bottom_outlined,
-                    label: 'Outstanding (${s.outstandingCount})',
-                    value: money.format(s.outstandingAmount),
-                    color: semantics.warning,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: AppStatTile(
-                    icon: Icons.warning_amber_outlined,
-                    label: 'Overdue invoices',
-                    value: '${s.overdueCount}',
-                    color: semantics.danger,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppStatTile(
-                    icon: Icons.check_circle_outline,
-                    label: 'Paid invoices',
-                    value: '${s.paidCount}',
-                    color: semantics.success,
-                  ),
-                ),
-              ],
-            ),
+            for (final tile in tiles)
+              SizedBox(width: tileWidth, child: tile),
           ],
         );
       },
@@ -143,22 +234,21 @@ class _RevenueTrendCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(revenueByMonthProvider);
-    return AppCard(
+    final theme = Theme.of(context);
+    return _ChartSection(
+      title: 'Revenue trend',
       child: async.when(
-        loading: () => const LinearProgressIndicator(),
-        error: (e, _) => Text(friendlyError(e)),
+        loading: () => const SizedBox(height: 180, child: AppLoading()),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(revenueByMonthProvider),
+        ),
         data: (rows) {
           if (rows.isEmpty) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Revenue (last 12 months)',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const Text('No revenue yet'),
-              ],
+            return const AppEmptyState(
+              icon: Icons.bar_chart_outlined,
+              title: 'No revenue yet',
+              subtitle: 'Collected payments will chart here by month.',
             );
           }
           final maxV = rows
@@ -166,13 +256,15 @@ class _RevenueTrendCard extends ConsumerWidget {
               .fold<double>(0, (a, b) => a > b ? a : b);
           final f =
               NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
-          final primary = Theme.of(context).colorScheme.primary;
+          final primary = theme.colorScheme.primary;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Revenue trend',
-                style: Theme.of(context).textTheme.titleMedium,
+                'Collected over the last ${rows.length} months',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               SizedBox(
@@ -191,7 +283,7 @@ class _RevenueTrendCard extends ConsumerWidget {
                               color: primary,
                               width: 12,
                               borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(4),
+                                top: Radius.circular(AppRadius.sm),
                               ),
                             ),
                           ],
@@ -201,7 +293,7 @@ class _RevenueTrendCard extends ConsumerWidget {
                       drawVerticalLine: false,
                       horizontalInterval: maxV == 0 ? 1 : maxV / 4,
                       getDrawingHorizontalLine: (_) => FlLine(
-                        color: Theme.of(context).dividerColor,
+                        color: theme.dividerColor,
                         strokeWidth: 0.5,
                       ),
                     ),
@@ -215,7 +307,7 @@ class _RevenueTrendCard extends ConsumerWidget {
                           reservedSize: 44,
                           getTitlesWidget: (v, _) => Text(
                             f.format(v),
-                            style: Theme.of(context).textTheme.labelSmall,
+                            style: theme.textTheme.labelSmall,
                           ),
                         ),
                       ),
@@ -229,10 +321,10 @@ class _RevenueTrendCard extends ConsumerWidget {
                               return const SizedBox.shrink();
                             }
                             return Padding(
-                              padding: const EdgeInsets.only(top: 4),
+                              padding: const EdgeInsets.only(top: AppSpacing.xs),
                               child: Text(
                                 DateFormat.MMM().format(rows[i].monthStart),
-                                style: Theme.of(context).textTheme.labelSmall,
+                                style: theme.textTheme.labelSmall,
                               ),
                             );
                           },
@@ -257,7 +349,7 @@ class _RevenueTrendCard extends ConsumerWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 'Last month: ${f.format(rows.last.collected)}',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: theme.textTheme.bodySmall,
               ),
             ],
           );
@@ -273,107 +365,105 @@ class _EnrollmentTrendCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(enrollmentByMonthProvider);
-    return AppCard(
+    final theme = Theme.of(context);
+    return _ChartSection(
+      title: 'New enrollments / month',
       child: async.when(
-        loading: () => const LinearProgressIndicator(),
-        error: (e, _) => Text(friendlyError(e)),
+        loading: () => const SizedBox(height: 160, child: AppLoading()),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(enrollmentByMonthProvider),
+        ),
         data: (rows) {
+          if (rows.isEmpty) {
+            return const AppEmptyState(
+              icon: Icons.show_chart_outlined,
+              title: 'No enrollments yet',
+              subtitle: 'New joiners will trend here once students enroll.',
+            );
+          }
           final maxV = rows
               .map((r) => r.count.toDouble())
               .fold<double>(0, (a, b) => a > b ? a : b);
-          final primary = Theme.of(context).colorScheme.primary;
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'New enrollments / month',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (rows.isEmpty)
-                const Text('No enrollments yet')
-              else
-                SizedBox(
-                  height: 160,
-                  child: LineChart(
-                    LineChartData(
-                      minY: 0,
-                      maxY: maxV == 0 ? 1 : maxV * 1.2,
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: [
-                            for (var i = 0; i < rows.length; i++)
-                              FlSpot(i.toDouble(), rows[i].count.toDouble()),
-                          ],
-                          isCurved: true,
-                          color: primary,
-                          barWidth: 3,
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: primary.withValues(alpha: 0.12),
-                          ),
-                        ),
-                      ],
-                      gridData: FlGridData(
-                        drawVerticalLine: false,
-                        horizontalInterval: maxV == 0 ? 1 : maxV / 4,
-                        getDrawingHorizontalLine: (_) => FlLine(
-                          color: Theme.of(context).dividerColor,
-                          strokeWidth: 0.5,
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      titlesData: FlTitlesData(
-                        topTitles: const AxisTitles(),
-                        rightTitles: const AxisTitles(),
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 28,
-                            getTitlesWidget: (v, _) => Text(
-                              v.toInt().toString(),
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                          ),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 24,
-                            interval: 1,
-                            getTitlesWidget: (v, _) {
-                              final i = v.toInt();
-                              if (i < 0 || i >= rows.length) {
-                                return const SizedBox.shrink();
-                              }
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  DateFormat.MMM().format(rows[i].monthStart),
-                                  style:
-                                      Theme.of(context).textTheme.labelSmall,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                      lineTouchData: LineTouchData(
-                        touchTooltipData: LineTouchTooltipData(
-                          getTooltipItems: (spots) => spots.map((s) {
-                            final r = rows[s.x.toInt()];
-                            return LineTooltipItem(
-                              '${DateFormat.yMMM().format(r.monthStart)}\n'
-                              '${r.count} new',
-                              const TextStyle(color: Colors.white),
-                            );
-                          }).toList(),
-                        ),
+          final primary = theme.colorScheme.primary;
+          return SizedBox(
+            height: 160,
+            child: LineChart(
+              LineChartData(
+                minY: 0,
+                maxY: maxV == 0 ? 1 : maxV * 1.2,
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: [
+                      for (var i = 0; i < rows.length; i++)
+                        FlSpot(i.toDouble(), rows[i].count.toDouble()),
+                    ],
+                    isCurved: true,
+                    color: primary,
+                    barWidth: 3,
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: primary.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ],
+                gridData: FlGridData(
+                  drawVerticalLine: false,
+                  horizontalInterval: maxV == 0 ? 1 : maxV / 4,
+                  getDrawingHorizontalLine: (_) => FlLine(
+                    color: theme.dividerColor,
+                    strokeWidth: 0.5,
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(),
+                  rightTitles: const AxisTitles(),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      getTitlesWidget: (v, _) => Text(
+                        v.toInt().toString(),
+                        style: theme.textTheme.labelSmall,
                       ),
                     ),
                   ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      interval: 1,
+                      getTitlesWidget: (v, _) {
+                        final i = v.toInt();
+                        if (i < 0 || i >= rows.length) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.xs),
+                          child: Text(
+                            DateFormat.MMM().format(rows[i].monthStart),
+                            style: theme.textTheme.labelSmall,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
-            ],
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (spots) => spots.map((s) {
+                      final r = rows[s.x.toInt()];
+                      return LineTooltipItem(
+                        '${DateFormat.yMMM().format(r.monthStart)}\n'
+                        '${r.count} new',
+                        const TextStyle(color: Colors.white),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
           );
         },
       ),
@@ -387,28 +477,45 @@ class _BatchUtilizationCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(batchUtilizationProvider);
-    return AppCard(
-      child: async.when(
-        loading: () => const LinearProgressIndicator(),
-        error: (e, _) => Text(friendlyError(e)),
-        data: (rows) {
-          if (rows.isEmpty) return const Text('No active batches');
-          final scheme = Theme.of(context).colorScheme;
-          final semantics = AppSemanticColors.of(context);
-          final sorted = [...rows]..sort((a, b) {
-              final ua = a.utilization ?? 0;
-              final ub = b.utilization ?? 0;
-              return ub.compareTo(ua);
-            });
-          return Column(
+    final theme = Theme.of(context);
+    return async.when(
+      loading: () => const _ChartSection(
+        title: 'Batch utilization',
+        child: AppLoading(),
+      ),
+      error: (e, _) => _ChartSection(
+        title: 'Batch utilization',
+        child: AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(batchUtilizationProvider),
+        ),
+      ),
+      data: (rows) {
+        if (rows.isEmpty) {
+          return const _ChartSection(
+            title: 'Batch utilization',
+            child: AppEmptyState(
+              icon: Icons.groups_outlined,
+              title: 'No active batches',
+              subtitle: 'Fill rates appear once batches have capacity.',
+            ),
+          );
+        }
+        final scheme = theme.colorScheme;
+        final semantics = AppSemanticColors.of(context);
+        final sorted = [...rows]..sort((a, b) {
+            final ua = a.utilization ?? 0;
+            final ub = b.utilization ?? 0;
+            return ub.compareTo(ua);
+          });
+        final shown = sorted.take(10).toList(growable: false);
+        final hiddenCount = sorted.length - shown.length;
+        return _ChartSection(
+          title: 'Batch utilization',
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Batch utilization',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              for (final r in sorted.take(10))
+              for (final r in shown)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: Column(
@@ -429,9 +536,7 @@ class _BatchUtilizationCard extends ConsumerWidget {
                                 ? '${r.enrolled}'
                                 : '${r.enrolled}/${r.capacity}'
                                     '  ${((r.utilization ?? 0) * 100).toStringAsFixed(0)}%',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: theme.textTheme.bodySmall
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                         ],
@@ -451,10 +556,17 @@ class _BatchUtilizationCard extends ConsumerWidget {
                     ],
                   ),
                 ),
+              if (hiddenCount > 0)
+                Text(
+                  'Showing top 10 of ${sorted.length} batches by fill rate.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -465,92 +577,114 @@ class _SportBreakdownCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(sportBreakdownProvider);
-    return AppCard(
-      child: async.when(
-        loading: () => const LinearProgressIndicator(),
-        error: (e, _) => Text(friendlyError(e)),
-        data: (rows) {
-          return Column(
+    final theme = Theme.of(context);
+    return async.when(
+      loading: () => const _ChartSection(
+        title: 'By sport',
+        child: AppLoading(),
+      ),
+      error: (e, _) => _ChartSection(
+        title: 'By sport',
+        child: AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(sportBreakdownProvider),
+        ),
+      ),
+      data: (rows) {
+        if (rows.isEmpty) {
+          return const _ChartSection(
+            title: 'By sport',
+            child: AppEmptyState(
+              icon: Icons.sports_outlined,
+              title: 'No sports configured',
+              subtitle: 'Add sports under Settings → Sports to see this '
+                  'breakdown.',
+            ),
+          );
+        }
+        final scheme = theme.colorScheme;
+        return _ChartSection(
+          title: 'By sport',
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('By sport', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: AppSpacing.sm),
-              if (rows.isEmpty)
-                const Text(
-                  'Add sports under Settings → Sports to see this breakdown.',
-                )
-              else ...[
-                Row(
+              // Header row: the sport name flexes, the three metric columns
+              // are fixed-width so a long name can never squeeze them.
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Row(
                   children: [
-                    const Expanded(flex: 4, child: Text('')),
-                    Expanded(
-                      child: Text(
-                        'Students',
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.bodySmall,
+                    const Expanded(child: SizedBox.shrink()),
+                    _SportMetricCell(
+                      label: 'Students',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                    Expanded(
-                      child: Text(
-                        'Batches',
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.bodySmall,
+                    _SportMetricCell(
+                      label: 'Batches',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
-                    Expanded(
-                      child: Text(
-                        'Coaches',
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.bodySmall,
+                    _SportMetricCell(
+                      label: 'Coaches',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
-                const Divider(height: AppSpacing.md),
-                for (final r in rows)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: AppSpacing.xs,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 4,
-                          child: Text(
-                            r.sportName,
-                            style: r.sportId == null
-                                ? Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(fontStyle: FontStyle.italic)
-                                : null,
-                          ),
+              ),
+              const Divider(height: AppSpacing.md),
+              for (final r in rows)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          r.sportName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: r.sportId == null
+                              ? theme.textTheme.bodyMedium
+                                  ?.copyWith(fontStyle: FontStyle.italic)
+                              : null,
                         ),
-                        Expanded(
-                          child: Text(
-                            '${r.studentCount}',
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            '${r.batchCount}',
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            '${r.coachCount}',
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      _SportMetricCell(label: '${r.studentCount}'),
+                      _SportMetricCell(label: '${r.batchCount}'),
+                      _SportMetricCell(label: '${r.coachCount}'),
+                    ],
                   ),
-              ],
+                ),
             ],
-          );
-        },
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Fixed-width, right-aligned numeric column for the sport breakdown table so
+/// long sport names flex into the [Expanded] name column instead of pushing
+/// the metric columns off-screen.
+class _SportMetricCell extends StatelessWidget {
+  const _SportMetricCell({required this.label, this.style});
+
+  final String label;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 56,
+      child: Text(
+        label,
+        textAlign: TextAlign.right,
+        style: style,
       ),
     );
   }
@@ -562,39 +696,161 @@ class _LeadFunnelCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(leadFunnelProvider);
-    return AppCard(
-      child: async.when(
-        loading: () => const LinearProgressIndicator(),
-        error: (e, _) => Text(friendlyError(e)),
-        data: (rows) {
-          final byStatus = <String, int>{};
-          for (final r in rows) {
-            byStatus[r.status] = (byStatus[r.status] ?? 0) + r.count;
-          }
-          return Column(
+    return async.when(
+      loading: () => const _ChartSection(
+        title: 'Lead funnel',
+        child: AppLoading(),
+      ),
+      error: (e, _) => _ChartSection(
+        title: 'Lead funnel',
+        child: AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(leadFunnelProvider),
+        ),
+      ),
+      data: (rows) {
+        final byStatus = <String, int>{};
+        for (final r in rows) {
+          byStatus[r.status] = (byStatus[r.status] ?? 0) + r.count;
+        }
+        if (byStatus.isEmpty) {
+          return const _ChartSection(
+            title: 'Lead funnel',
+            child: AppEmptyState(
+              icon: Icons.filter_alt_outlined,
+              title: 'No leads yet',
+              subtitle: 'Captured leads progress through stages here.',
+            ),
+          );
+        }
+        // Render the canonical pipeline order as a funnel (widest = busiest
+        // stage). Any status not in the canonical order is appended after.
+        final ordered = <String>[
+          for (final s in _funnelOrder)
+            if (byStatus.containsKey(s)) s,
+          for (final s in byStatus.keys)
+            if (!_funnelOrder.contains(s)) s,
+        ];
+        final maxCount = byStatus.values
+            .fold<int>(0, (a, b) => a > b ? a : b)
+            .clamp(1, 1 << 30);
+        return _ChartSection(
+          title: 'Lead funnel',
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Lead funnel', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: AppSpacing.sm),
-              if (byStatus.isEmpty)
-                const Text('No leads yet')
-              else
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    for (final e in byStatus.entries)
-                      AppBadge(
-                        text: '${e.key}: ${e.value}',
-                        tone: _funnelTone(e.key),
-                      ),
-                  ],
+              for (final status in ordered)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _FunnelStage(
+                    status: status,
+                    count: byStatus[status] ?? 0,
+                    fraction: (byStatus[status] ?? 0) / maxCount,
+                  ),
                 ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
+  }
+}
+
+/// One horizontal funnel bar: a label, a tone-tinted bar whose width scales to
+/// the busiest stage, and the count. Reads as a funnel rather than a badge wrap.
+class _FunnelStage extends StatelessWidget {
+  const _FunnelStage({
+    required this.status,
+    required this.count,
+    required this.fraction,
+  });
+
+  final String status;
+  final int count;
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tone = _funnelTone(status);
+    final colors = _toneColors(context, tone);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _funnelLabel(status),
+                style: theme.textTheme.bodySmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(
+              '$count',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: AppType.semibold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Stack(
+            children: [
+              Container(
+                height: 10,
+                color: scheme.surfaceContainerHighest,
+              ),
+              FractionallySizedBox(
+                widthFactor: fraction.clamp(0.04, 1.0),
+                child: Container(height: 10, color: colors.fg),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Canonical lead pipeline order, widest (top) to narrowest, with the lost
+/// bucket parked at the bottom.
+const _funnelOrder = <String>[
+  'new',
+  'contacted',
+  'interested',
+  'trial',
+  'converted',
+  'lost',
+];
+
+String _funnelLabel(String status) =>
+    status.isEmpty ? status : status[0].toUpperCase() + status.substring(1);
+
+({Color fg, Color bg}) _toneColors(BuildContext context, AppBadgeTone tone) {
+  final scheme = Theme.of(context).colorScheme;
+  final semantics = AppSemanticColors.of(context);
+  switch (tone) {
+    case AppBadgeTone.success:
+      return (fg: semantics.success, bg: semantics.successContainer);
+    case AppBadgeTone.warning:
+      return (fg: semantics.warning, bg: semantics.warningContainer);
+    case AppBadgeTone.danger:
+      return (fg: semantics.danger, bg: semantics.dangerContainer);
+    case AppBadgeTone.info:
+      return (fg: semantics.info, bg: semantics.infoContainer);
+    case AppBadgeTone.brand:
+      return (fg: scheme.primary, bg: scheme.primaryContainer);
+    case AppBadgeTone.neutral:
+      return (
+        fg: scheme.onSurfaceVariant,
+        bg: scheme.surfaceContainerHighest,
+      );
   }
 }
 

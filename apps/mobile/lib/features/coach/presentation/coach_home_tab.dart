@@ -3,15 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
-import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
-import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Home tab for the coach / head_coach / trainer shell.
+///
+/// Follows the §3.4 dashboard anatomy: a brand-gradient greeting hero, an
+/// always-present KPI stat row (My batches / Students / Today) that survives the
+/// not-yet-linked state without collapsing, a labeled attendance-trend section,
+/// and an explicit empty state for "no sessions today".
+///
+/// The AppBar + account entry point live in the coach home shell; this tab
+/// renders only the scrollable body.
 class CoachHomeTab extends ConsumerWidget {
   const CoachHomeTab({super.key});
 
@@ -23,116 +30,222 @@ class CoachHomeTab extends ConsumerWidget {
     final todays = ref.watch(myTodaysBatchesProvider);
     final isHeadCoach = profile?.role == 'head_coach';
 
+    // Head coaches get academy-wide oversight via myBatchesProvider and don't
+    // need a coaches.user_id link, so they never see the not-linked notice.
+    final notLinked = !isHeadCoach && myCoach.valueOrNull == null;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'Profile',
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
+      body: RefreshIndicator(
+        onRefresh: () async {
+        ref
+          ..invalidate(myCoachRecordProvider)
+          ..invalidate(myBatchesProvider)
+          ..invalidate(myTodaysBatchesProvider)
+          ..invalidate(myCoachStatsProvider)
+          ..invalidate(coachAttendanceTrendProvider);
+      },
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+          _GreetingHero(
+            name: profile?.displayName ?? '...',
+            role: profile?.role ?? '',
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // KPI row is always present — even before a coach record is linked —
+          // so the layout never collapses.
+          _StatsRow(stats: stats),
+          if (notLinked) ...[
+            const SizedBox(height: AppSpacing.md),
+            const _NotLinkedNotice(),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          const AppSectionHeader(title: 'Daily ops'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: AppListTile(
+              leading: const Icon(Icons.event_available_outlined),
+              title: const Text("Today's sessions"),
+              subtitle: todays.when(
+                loading: () => const Text('Loading…'),
+                error: (e, _) => Text(friendlyError(e)),
+                data: (list) => Text(
+                  list.isEmpty
+                      ? 'No batches scheduled for you today'
+                      : '${list.length} ${list.length == 1 ? 'batch' : 'batches'} to mark',
+                ),
+              ),
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const TodaysSessionsPage()),
+              ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(supabaseClientProvider).auth.signOut(),
+          const SizedBox(height: AppSpacing.lg),
+          const AppSectionHeader(title: 'Attendance trend'),
+          const _AttendanceTrendCard(),
+          const SizedBox(height: AppSpacing.lg),
+          const AppSectionHeader(title: 'Today'),
+          todays.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+              child: AppLoading(),
+            ),
+            error: (e, _) => AppErrorView(
+              message: friendlyError(e),
+              onRetry: () => ref.invalidate(myTodaysBatchesProvider),
+            ),
+            data: (list) {
+              if (list.isEmpty) {
+                return const AppEmptyState(
+                  icon: Icons.event_busy_outlined,
+                  title: 'No sessions today',
+                  subtitle:
+                      'You have no batches scheduled for today. Enjoy the '
+                      'break or check tomorrow.',
+                );
+              }
+              return Column(
+                children: [
+                  for (final b in list) ...[
+                    _BatchRow(batch: b),
+                    if (b != list.last)
+                      const SizedBox(height: AppSpacing.md),
+                  ],
+                ],
+              );
+            },
           ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          ref
-            ..invalidate(myCoachRecordProvider)
-            ..invalidate(myBatchesProvider)
-            ..invalidate(myTodaysBatchesProvider)
-            ..invalidate(myCoachStatsProvider)
-            ..invalidate(coachAttendanceTrendProvider);
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          children: [
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hello, ${profile?.displayName ?? '...'}',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    profile?.role ?? '',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+      ),
+    );
+  }
+}
+
+/// Violet→magenta gradient greeting card. White-on-gradient text per §3.4.
+class _GreetingHero extends StatelessWidget {
+  const _GreetingHero({required this.name, required this.role});
+
+  final String name;
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        gradient: const LinearGradient(
+          colors: AppPalette.brandGradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hello, $name',
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: theme.colorScheme.onPrimary,
             ),
-            const SizedBox(height: AppSpacing.md),
-            // Head coaches don't need a coaches.user_id link — they get
-            // academy-wide oversight via myBatchesProvider.
-            if (isHeadCoach)
-              _StatsRow(stats: stats)
-            else
-              myCoach.when(
-                loading: () =>
-                    const Card(child: ListTile(title: Text('Loading…'))),
-                error: (e, _) =>
-                    Card(child: ListTile(title: Text(friendlyError(e)))),
-                data: (coach) {
-                  if (coach == null) {
-                    return const AppCard(
-                      child: Text(
-                        'No coach record is linked to your account yet. '
-                        'Ask the academy admin to link you to a coach '
-                        'profile so you can see your batches.',
-                      ),
-                    );
-                  }
-                  return _StatsRow(stats: stats);
-                },
+          ),
+          if (role.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              role.replaceAll('_', ' '),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onPrimary.withValues(alpha: 0.85),
               ),
-            const SizedBox(height: AppSpacing.md),
-            Card(
-              child: AppListTile(
-                leading: const Icon(Icons.event_available_outlined),
-                title: const Text("Today's sessions"),
-                subtitle: todays.when(
-                  loading: () => const Text('Loading…'),
-                  error: (e, _) => Text(friendlyError(e)),
-                  data: (list) => Text(
-                    list.isEmpty
-                        ? 'No batches scheduled for you today'
-                        : '${list.length} ${list.length == 1 ? 'batch' : 'batches'} to mark',
-                  ),
-                ),
-                onTap: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute(builder: (_) => const TodaysSessionsPage()),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            const _AttendanceTrendCard(),
-            const SizedBox(height: AppSpacing.md),
-            todays.when(
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (list) {
-                if (list.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: AppSpacing.xs),
-                      child: AppSectionHeader(title: 'Today'),
-                    ),
-                    for (final b in list) _BatchRow(batch: b),
-                  ],
-                );
-              },
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Always-present KPI row: My batches / Students / Today. Loading and error
+/// states render the same three tiles with placeholder values so the row keeps
+/// its footprint and the dashboard below never jumps.
+class _StatsRow extends StatelessWidget {
+  const _StatsRow({required this.stats});
+  final AsyncValue<CoachStats> stats;
+
+  @override
+  Widget build(BuildContext context) {
+    // On loading/error, show a dash so the tiles never collapse the layout.
+    final s = stats.valueOrNull;
+    final batches = s == null ? '—' : '${s.batchCount}';
+    final students = s == null ? '—' : '${s.studentCount}';
+    final today = s == null ? '—' : '${s.todaysCount}';
+
+    return Row(
+      children: [
+        Expanded(
+          child: AppStatTile(
+            icon: Icons.schedule,
+            label: 'My batches',
+            value: batches,
+          ),
         ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: AppStatTile(
+            icon: Icons.group,
+            label: 'Students',
+            value: students,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: AppStatTile(
+            icon: Icons.today,
+            label: 'Today',
+            value: today,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shown to coach/trainer roles with no linked `coaches.user_id` record yet.
+/// Sits below the KPI row so the stat tiles stay visible (just zeroed).
+class _NotLinkedNotice extends StatelessWidget {
+  const _NotLinkedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantics = AppSemanticColors.of(context);
+    return AppCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.link_off_outlined, color: semantics.info),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Not linked to a coach profile yet',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Ask your academy admin to link your account to a coach '
+                  'profile so your batches and students show up here.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -143,177 +256,151 @@ class _AttendanceTrendCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(coachAttendanceTrendProvider);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: async.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
-          ),
-          error: (e, _) => Text(friendlyError(e)),
-          data: (weeks) {
-            if (weeks.isEmpty || weeks.every((w) => w.total == 0)) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Attendance trend',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Not enough data yet'),
-                ],
-              );
-            }
-            final primary = Theme.of(context).colorScheme.primary;
+    return AppCard(
+      child: async.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: LinearProgressIndicator(),
+        ),
+        error: (e, _) => Text(friendlyError(e)),
+        data: (weeks) {
+          if (weeks.isEmpty || weeks.every((w) => w.total == 0)) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Attendance % (last 4 weeks)',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  'Attendance % · last 4 weeks',
+                  style: theme.textTheme.titleMedium,
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 160,
-                  child: BarChart(
-                    BarChartData(
-                      maxY: 100,
-                      minY: 0,
-                      alignment: BarChartAlignment.spaceAround,
-                      barGroups: [
-                        for (var i = 0; i < weeks.length; i++)
-                          BarChartGroupData(
-                            x: i,
-                            barRods: [
-                              BarChartRodData(
-                                toY: weeks[i].pct,
-                                color: primary,
-                                width: 18,
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4),
-                                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Not enough data yet. Once you start marking attendance, '
+                  'weekly trends appear here.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            );
+          }
+          final primary = theme.colorScheme.primary;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Attendance % · last 4 weeks',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Share of present/late marks, by week.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                height: 160,
+                child: BarChart(
+                  BarChartData(
+                    maxY: 100,
+                    minY: 0,
+                    alignment: BarChartAlignment.spaceAround,
+                    barGroups: [
+                      for (var i = 0; i < weeks.length; i++)
+                        BarChartGroupData(
+                          x: i,
+                          barRods: [
+                            BarChartRodData(
+                              toY: weeks[i].pct,
+                              color: primary,
+                              width: 18,
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(AppRadius.sm),
                               ),
-                            ],
-                          ),
-                      ],
-                      gridData: FlGridData(
-                        show: true,
-                        drawVerticalLine: false,
-                        horizontalInterval: 25,
-                        getDrawingHorizontalLine: (_) => FlLine(
-                          color: Theme.of(context).dividerColor,
-                          strokeWidth: 0.5,
+                            ),
+                          ],
                         ),
+                    ],
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: 25,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: theme.colorScheme.outlineVariant,
+                        strokeWidth: 0.5,
                       ),
-                      borderData: FlBorderData(show: false),
-                      titlesData: FlTitlesData(
-                        topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false),
-                        ),
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 32,
-                            interval: 25,
-                            getTitlesWidget: (v, _) => Text(
-                              '${v.toInt()}%',
-                              style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    borderData: FlBorderData(show: false),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 32,
+                          interval: 25,
+                          getTitlesWidget: (v, _) => Text(
+                            '${v.toInt()}%',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 18,
-                            getTitlesWidget: (v, _) {
-                              final i = v.toInt();
-                              if (i < 0 || i >= weeks.length) {
-                                return const SizedBox.shrink();
-                              }
-                              final ws = weeks[i].weekStart;
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  '${ws.day}/${ws.month}',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
                       ),
-                      barTouchData: BarTouchData(
-                        enabled: true,
-                        touchTooltipData: BarTouchTooltipData(
-                          getTooltipItem: (group, _, __, ___) {
-                            final w = weeks[group.x];
-                            return BarTooltipItem(
-                              'Week of ${w.weekStart.day}/${w.weekStart.month}\n'
-                              '${w.present}/${w.total}'
-                              ' (${w.pct.toStringAsFixed(0)}%)',
-                              const TextStyle(color: Colors.white),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 18,
+                          getTitlesWidget: (v, _) {
+                            final i = v.toInt();
+                            if (i < 0 || i >= weeks.length) {
+                              return const SizedBox.shrink();
+                            }
+                            final ws = weeks[i].weekStart;
+                            return Padding(
+                              padding: const EdgeInsets.only(top: AppSpacing.xs),
+                              child: Text(
+                                '${ws.day}/${ws.month}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
                             );
                           },
                         ),
                       ),
                     ),
+                    barTouchData: BarTouchData(
+                      touchTooltipData: BarTouchTooltipData(
+                        getTooltipItem: (group, _, __, ___) {
+                          final w = weeks[group.x];
+                          return BarTooltipItem(
+                            'Week of ${w.weekStart.day}/${w.weekStart.month}\n'
+                            '${w.present}/${w.total}'
+                            ' (${w.pct.toStringAsFixed(0)}%)',
+                            theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onInverseSurface,
+                                ) ??
+                                TextStyle(
+                                  color: theme.colorScheme.onInverseSurface,
+                                ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
                 ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({required this.stats});
-  final AsyncValue<CoachStats> stats;
-
-  @override
-  Widget build(BuildContext context) {
-    return stats.when(
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.lg),
-          child: LinearProgressIndicator(),
-        ),
-      ),
-      error: (e, _) => Card(child: ListTile(title: Text(friendlyError(e)))),
-      data: (s) => Row(
-        children: [
-          Expanded(
-            child: AppStatTile(
-              icon: Icons.schedule,
-              label: 'My batches',
-              value: '${s.batchCount}',
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: AppStatTile(
-              icon: Icons.group,
-              label: 'Students',
-              value: '${s.studentCount}',
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: AppStatTile(
-              icon: Icons.today,
-              label: 'Today',
-              value: '${s.todaysCount}',
-            ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -327,12 +414,13 @@ class _BatchRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final today = DateTime.now();
     final today0 = DateTime(today.year, today.month, today.day);
-    return Card(
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: AppListTile(
         leading: const Icon(Icons.group_work_outlined),
         title: Text(batch.name),
         subtitle: Text(batch.schedule.summary),
-        trailing: const Icon(Icons.check_circle_outline),
+        trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.of(context).push<void>(
           MaterialPageRoute(
             builder: (_) => AttendanceMarkingPage(batch: batch, date: today0),

@@ -34,20 +34,13 @@ class PerformanceHistoryPage extends ConsumerWidget {
         ),
         data: (list) {
           if (list.isEmpty) {
-            return AppEmptyState(
+            // Single create path lives in the FAB; the empty state only
+            // explains, it does not offer a duplicate CTA.
+            return const AppEmptyState(
               icon: Icons.insights_outlined,
               title: 'No assessments yet',
               subtitle:
                   "Record this student's first assessment to start tracking.",
-              actionLabel: canRecord ? 'New assessment' : null,
-              onAction: canRecord
-                  ? () => Navigator.of(context).push<void>(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              PerformanceFormPage(student: student),
-                        ),
-                      )
-                  : null,
             );
           }
           return RefreshIndicator(
@@ -58,13 +51,27 @@ class PerformanceHistoryPage extends ConsumerWidget {
               children: [
                 if (trend != null) ...[
                   _TrendCard(trend: trend),
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.xl),
                 ],
+                AppSectionHeader(
+                  title: 'Assessments',
+                  trailing: Text(
+                    '${list.length}',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
                 AppCard(
                   padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      for (final a in list) _AssessmentTile(assessment: a),
+                      for (var i = 0; i < list.length; i++) ...[
+                        if (i > 0) const Divider(height: 1),
+                        _AssessmentTile(assessment: list[i]),
+                      ],
                     ],
                   ),
                 ),
@@ -88,6 +95,9 @@ class PerformanceHistoryPage extends ConsumerWidget {
   }
 }
 
+/// Header callout: the recent average is the prominent headline metric, with
+/// the supporting facts (window size, latest sport, last assessed) laid out
+/// as labeled rows beside it.
 class _TrendCard extends StatelessWidget {
   const _TrendCard({required this.trend});
   final Map<String, dynamic> trend;
@@ -99,29 +109,49 @@ class _TrendCard extends StatelessWidget {
     final lastDate = trend['last_assessed_date'] as String?;
     final sport = trend['latest_sport'] as String?;
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final mutedSmall = theme.textTheme.bodySmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant,
+      color: scheme.onSurfaceVariant,
     );
+
     return AppCard(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Last $n assessments', style: mutedSmall),
-              Text(
-                avg == null ? '—' : avg.toStringAsFixed(2),
-                style: theme.textTheme.headlineMedium,
-              ),
-            ],
+          // Prominent recent-average metric.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Recent average',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  avg == null ? 'No score' : avg.toStringAsFixed(2),
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    color: avg == null ? scheme.onSurfaceVariant : null,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text('Across last $n assessments', style: mutedSmall),
+              ],
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: AppSpacing.lg),
+          // Supporting context: latest sport + last assessed date.
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (sport != null)
-                Text(sport, style: theme.textTheme.bodyMedium),
-              if (lastDate != null) Text(lastDate, style: mutedSmall),
+              if (sport != null && sport.isNotEmpty)
+                AppBadge(text: sport, tone: AppBadgeTone.brand),
+              if (lastDate != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text('Last $lastDate', style: mutedSmall),
+              ],
             ],
           ),
         ],
@@ -136,37 +166,72 @@ class _AssessmentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dateStr = assessment.assessmentDate.toIso8601String().substring(0, 10);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dateStr =
+        assessment.assessmentDate.toIso8601String().substring(0, 10);
     final sportLabel = ref.watch(sportDisplayProvider((
       sportId: assessment.sportId,
     )));
+    final feedback = assessment.qualitativeFeedback;
+    final hasFeedback = feedback != null && feedback.isNotEmpty;
+
     return AppListTile(
       wrapLeading: false,
-      leading: CircleAvatar(
-        child: Text(
-          assessment.overallScore == null
-              ? '—'
-              : assessment.overallScore!.toStringAsFixed(1),
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-      ),
-      title: Text(sportLabel == '—' ? 'general' : sportLabel),
-      subtitle: Text(
-        [
-          dateStr,
-          if (assessment.qualitativeFeedback != null &&
-              assessment.qualitativeFeedback!.isNotEmpty)
-            assessment.qualitativeFeedback!,
-        ].join(' · '),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+      isThreeLine: hasFeedback,
+      leading: _ScoreChip(score: assessment.overallScore),
+      title: Text(sportLabel == '—' ? 'General' : sportLabel),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(dateStr, style: theme.textTheme.bodySmall),
+          if (hasFeedback)
+            Text(
+              feedback,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+        ],
       ),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => PerformanceDetailPage(assessment: assessment),
+        ),
+      ),
+    );
+  }
+}
+
+/// Prominent per-row score chip. Reads as a filled brand pill so the overall
+/// score is the first thing the eye lands on; an unscored row shows a clear
+/// "n/a" rather than an ambiguous dash.
+class _ScoreChip extends StatelessWidget {
+  const _ScoreChip({required this.score});
+  final double? score;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final scored = score != null;
+    return Container(
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scored
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Text(
+        scored ? score!.toStringAsFixed(1) : 'n/a',
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: AppType.bold,
+          color: scored ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
         ),
       ),
     );

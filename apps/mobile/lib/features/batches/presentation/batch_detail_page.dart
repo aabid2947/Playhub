@@ -87,74 +87,8 @@ class BatchDetailPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  batch.schedule.summary,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Consumer(builder: (_, ref, __) {
-                  final sportLabel = ref.watch(sportDisplayProvider((
-                    sportId: batch.sportId,
-                  )));
-                  return Text(
-                    [
-                      if (sportLabel != '—') sportLabel,
-                      if (batch.ageGroup != null) batch.ageGroup!,
-                      if (batch.skillLevel != null) batch.skillLevel!,
-                      if (batch.capacity != null)
-                        '${batch.enrolledCount}/${batch.capacity} enrolled'
-                      else
-                        '${batch.enrolledCount} enrolled',
-                    ].join(' • '),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  );
-                }),
-              ],
-            ),
-          ),
+          _HeaderCard(batch: batch, atCapacity: _atCapacity()),
           const SizedBox(height: AppSpacing.lg),
-          Row(
-            children: [
-              Text(
-                _atCapacity() ? 'At capacity' : 'Enrolled students',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const Spacer(),
-              if (canManageEnroll)
-                FilledButton.tonalIcon(
-                  icon: Icon(
-                    _atCapacity()
-                        ? Icons.queue_outlined
-                        : Icons.person_add_outlined,
-                    size: 18,
-                  ),
-                  label: Text(_atCapacity() ? 'Add to waitlist' : 'Enroll'),
-                  onPressed: () async {
-                    final students = studentsAsync.valueOrNull ?? const [];
-                    final enrolled =
-                        enrollmentsAsync.valueOrNull ?? const [];
-                    final activeIds = enrolled
-                        .where((e) => e.status != 'withdrawn')
-                        .map((e) => e.studentId)
-                        .toSet();
-                    final candidates = students
-                        .where((s) => !activeIds.contains(s.id))
-                        .toList();
-                    await _showEnrollSheet(
-                      context,
-                      ref,
-                      candidates,
-                      waitlist: _atCapacity(),
-                    );
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
           if (canViewFinance) ...[
             BatchFeesSection(batchId: batch.id, canManage: canManageFinance),
             const SizedBox(height: AppSpacing.lg),
@@ -164,13 +98,49 @@ class BatchDetailPage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.lg),
           ],
+          AppSectionHeader(
+            title: 'Enrolment',
+            trailing: canManageEnroll
+                ? _EnrollAction(
+                    atCapacity: _atCapacity(),
+                    onPressed: () async {
+                      final students = studentsAsync.valueOrNull ?? const [];
+                      final enrolled = enrollmentsAsync.valueOrNull ?? const [];
+                      final activeIds = enrolled
+                          .where((e) => e.status != 'withdrawn')
+                          .map((e) => e.studentId)
+                          .toSet();
+                      final candidates = students
+                          .where((s) => !activeIds.contains(s.id))
+                          .toList();
+                      await _showEnrollSheet(
+                        context,
+                        ref,
+                        candidates,
+                        waitlist: _atCapacity(),
+                      );
+                    },
+                  )
+                : null,
+          ),
           enrollmentsAsync.when(
-            loading: () => const AppLoading(),
-            error: (e, _) => Text(friendlyError(e)),
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+              child: AppLoading(),
+            ),
+            error: (e, _) => AppErrorView(
+              message: friendlyError(e),
+              onRetry: () =>
+                  ref.invalidate(batchEnrollmentsProvider(batch.id)),
+            ),
             data: (enrollments) {
               if (enrollments.isEmpty) {
-                return const AppCard(
-                  child: Center(child: Text('No students enrolled yet.')),
+                return AppEmptyState(
+                  icon: Icons.group_outlined,
+                  title: 'No students enrolled yet',
+                  subtitle: canManageEnroll
+                      ? 'Use Enrol to add the first student to this batch.'
+                      : 'Students enrolled in this batch will appear here.',
                 );
               }
               final byId = {
@@ -188,10 +158,12 @@ class BatchDetailPage extends ConsumerWidget {
                   .toList();
 
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (active.isNotEmpty)
                     _EnrollmentSection(
                       title: 'Active',
+                      tone: AppBadgeTone.success,
                       enrollments: active,
                       byStudent: byId,
                       onWithdraw: canManageEnroll
@@ -210,7 +182,8 @@ class BatchDetailPage extends ConsumerWidget {
                   if (waitlisted.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.lg),
                     _EnrollmentSection(
-                      title: 'Waitlist (${waitlisted.length})',
+                      title: 'Waitlist',
+                      tone: AppBadgeTone.warning,
                       enrollments: waitlisted,
                       byStudent: byId,
                       onWithdraw: canManageEnroll
@@ -236,7 +209,8 @@ class BatchDetailPage extends ConsumerWidget {
                   if (withdrawn.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.lg),
                     _EnrollmentSection(
-                      title: 'Withdrawn (${withdrawn.length})',
+                      title: 'Withdrawn',
+                      tone: AppBadgeTone.neutral,
                       enrollments: withdrawn,
                       byStudent: byId,
                     ),
@@ -264,26 +238,24 @@ class BatchDetailPage extends ConsumerWidget {
     final picked = await showModalBottomSheet<Batch>(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => _SheetScaffold(
+        title: 'Transfer to which batch?',
         child: ListView.separated(
           shrinkWrap: true,
-          itemCount: targets.length + 1,
+          padding: EdgeInsets.zero,
+          itemCount: targets.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (_, i) {
-            if (i == 0) {
-              return const ListTile(
-                dense: true,
-                title: Text('Transfer to which batch?'),
-              );
-            }
-            final b = targets[i - 1];
+            final b = targets[i];
             final cap = b.capacity;
             final atCap = cap != null && b.enrolledCount >= cap;
-            return ListTile(
+            return AppListTile(
+              leading: const Icon(Icons.groups_outlined),
               title: Text(b.name),
               subtitle: Text(
-                '${b.schedule.summary}'
-                '${atCap ? '  •  at capacity (will go on waitlist)' : ''}',
+                atCap
+                    ? '${b.schedule.summary} • at capacity (will go on waitlist)'
+                    : b.schedule.summary,
               ),
               trailing: const Icon(Icons.arrow_forward),
               onTap: () => Navigator.of(ctx).pop(b),
@@ -318,25 +290,20 @@ class BatchDetailPage extends ConsumerWidget {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => _SheetScaffold(
+        title: waitlist ? 'Add to waitlist' : 'Enrol a student',
+        subtitle: waitlist
+            ? 'This batch is at capacity — picked students join the waitlist.'
+            : 'Pick a student to enrol in this batch.',
         child: ListView.separated(
           shrinkWrap: true,
-          itemCount: candidates.length + 1,
+          padding: EdgeInsets.zero,
+          itemCount: candidates.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (_, i) {
-            if (i == 0) {
-              return ListTile(
-                dense: true,
-                title: Text(
-                  waitlist
-                      ? 'Batch is at capacity — students will be added to the waitlist.'
-                      : 'Pick a student to enroll',
-                  style: const TextStyle(fontStyle: FontStyle.italic),
-                ),
-              );
-            }
-            final s = candidates[i - 1];
-            return ListTile(
+            final s = candidates[i];
+            return AppListTile(
+              leading: const Icon(Icons.person_outline),
               title: Text(s.fullName),
               subtitle: Text(s.parentName),
               trailing: Icon(waitlist ? Icons.queue_outlined : Icons.add),
@@ -357,9 +324,165 @@ class BatchDetailPage extends ConsumerWidget {
   }
 }
 
+/// Identity + scannable facts header for the batch (§3.2).
+class _HeaderCard extends StatelessWidget {
+  const _HeaderCard({required this.batch, required this.atCapacity});
+
+  final Batch batch;
+  final bool atCapacity;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cap = batch.capacity;
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              AppBadge(
+                text: batch.isActive ? 'Active' : 'Archived',
+                tone: batch.isActive
+                    ? AppBadgeTone.success
+                    : AppBadgeTone.neutral,
+              ),
+              if (cap != null)
+                AppBadge(
+                  text: atCapacity ? 'At capacity' : 'Spots open',
+                  tone: atCapacity
+                      ? AppBadgeTone.warning
+                      : AppBadgeTone.brand,
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _FactRow(
+            icon: Icons.schedule_outlined,
+            label: 'Schedule',
+            value: batch.schedule.summary,
+          ),
+          Consumer(
+            builder: (_, ref, __) {
+              final sportLabel = ref.watch(sportDisplayProvider((
+                sportId: batch.sportId,
+              )));
+              if (sportLabel == '—') return const SizedBox.shrink();
+              return _FactRow(
+                icon: Icons.sports_outlined,
+                label: 'Sport',
+                value: sportLabel,
+              );
+            },
+          ),
+          if (batch.ageGroup != null)
+            _FactRow(
+              icon: Icons.cake_outlined,
+              label: 'Age group',
+              value: batch.ageGroup!,
+            ),
+          if (batch.skillLevel != null)
+            _FactRow(
+              icon: Icons.bar_chart_outlined,
+              label: 'Skill level',
+              value: batch.skillLevel!,
+            ),
+          _FactRow(
+            icon: Icons.groups_outlined,
+            label: 'Enrolled',
+            value: cap != null
+                ? '${batch.enrolledCount} of $cap'
+                : '${batch.enrolledCount}',
+          ),
+          if (batch.description != null &&
+              batch.description!.trim().isNotEmpty) ...[
+            const Divider(height: AppSpacing.xl),
+            Text(
+              batch.description!,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One labeled icon + value fact line for the header card.
+class _FactRow extends StatelessWidget {
+  const _FactRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.sm),
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The single enrol/waitlist action surfaced in the enrolment section header.
+class _EnrollAction extends StatelessWidget {
+  const _EnrollAction({required this.atCapacity, required this.onPressed});
+
+  final bool atCapacity;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      icon: Icon(
+        atCapacity ? Icons.queue_outlined : Icons.person_add_outlined,
+        size: 18,
+      ),
+      label: Text(atCapacity ? 'Waitlist' : 'Enrol'),
+      onPressed: onPressed,
+    );
+  }
+}
+
+/// One reusable enrolment group: a count sub-header + a card of student rows
+/// with a status badge and a stable per-row action set. Rendered once per
+/// status group (Active / Waitlist / Withdrawn) — never copy-pasted.
 class _EnrollmentSection extends StatelessWidget {
   const _EnrollmentSection({
     required this.title,
+    required this.tone,
     required this.enrollments,
     required this.byStudent,
     this.onWithdraw,
@@ -368,6 +491,7 @@ class _EnrollmentSection extends StatelessWidget {
   });
 
   final String title;
+  final AppBadgeTone tone;
   final List<Enrollment> enrollments;
   final Map<String, Student> byStudent;
   final Future<void> Function(Enrollment)? onWithdraw;
@@ -379,7 +503,9 @@ class _EnrollmentSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AppSectionHeader(title: title),
+        AppSectionHeader(
+          title: '$title (${enrollments.length})',
+        ),
         AppCard(
           padding: EdgeInsets.zero,
           child: Column(
@@ -390,7 +516,10 @@ class _EnrollmentSection extends StatelessWidget {
                   title: Text(
                     byStudent[e.studentId]?.fullName ?? '(unknown student)',
                   ),
-                  subtitle: Text(e.status),
+                  subtitle: Align(
+                    alignment: Alignment.centerLeft,
+                    child: AppBadge(text: title, tone: tone),
+                  ),
                   onTap: () {
                     final s = byStudent[e.studentId];
                     if (s == null) return;
@@ -429,6 +558,80 @@ class _EnrollmentSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A titled, scrollable bottom-sheet frame (§3.5): drag handle, title row,
+/// optional subtitle, and a bounded scrollable body that respects the
+/// keyboard inset.
+class _SheetScaffold extends StatelessWidget {
+  const _SheetScaffold({
+    required this.title,
+    required this.child,
+    this.subtitle,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final media = MediaQuery.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: media.size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: AppSpacing.sm),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleMedium),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(child: child),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

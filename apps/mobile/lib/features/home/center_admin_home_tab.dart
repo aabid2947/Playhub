@@ -46,25 +46,9 @@ class CenterAdminHomeTab extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Hello, ${profile?.displayName ?? '...'}',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  centerName == null
-                      ? 'Center admin'
-                      : 'Center admin · $centerName',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
+          _GreetingCard(
+            name: profile?.displayName ?? '...',
+            centerName: centerName,
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
@@ -87,6 +71,7 @@ class CenterAdminHomeTab extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
+          const AppSectionHeader(title: 'Daily ops'),
           AppCard(
             padding: EdgeInsets.zero,
             child: Column(
@@ -116,7 +101,15 @@ class CenterAdminHomeTab extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const Divider(height: 1),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const AppSectionHeader(title: 'Growth'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
                 AppListTile(
                   leading: const Icon(Icons.person_search_outlined),
                   title: const Text('Leads'),
@@ -134,17 +127,76 @@ class CenterAdminHomeTab extends ConsumerWidget {
                     MaterialPageRoute(builder: (_) => const EventsPage()),
                   ),
                 ),
-                const Divider(height: 1),
-                AppListTile(
-                  leading: const Icon(Icons.inventory_2_outlined),
-                  title: const Text('Inventory'),
-                  subtitle: const Text('Equipment for your center'),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(builder: (_) => const InventoryPage()),
-                  ),
-                ),
               ],
             ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          const AppSectionHeader(title: 'Operations'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: AppListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: const Text('Inventory'),
+              subtitle: const Text('Equipment for your center'),
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(builder: (_) => const InventoryPage()),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Greeting hero for the center admin: who they are, plus a prominent
+/// identity row surfacing **which center** they run (or a clear fallback when
+/// no center is linked yet) instead of burying it in the role text.
+class _GreetingCard extends StatelessWidget {
+  const _GreetingCard({required this.name, required this.centerName});
+
+  final String name;
+  final String? centerName;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final hasCenter = centerName != null;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Hello, $name',
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Center admin',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Icon(
+                Icons.location_on_outlined,
+                size: 20,
+                color: hasCenter ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  hasCenter ? centerName! : 'No center assigned',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: hasCenter ? null : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

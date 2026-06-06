@@ -141,218 +141,234 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     }
   }
 
+  String? _required(String? v) =>
+      (v == null || v.trim().isEmpty) ? 'Required' : null;
+
   @override
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit student' : 'New student')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: AvatarPicker(
-                  entity: 'students',
-                  url: _photo,
-                  fallbackInitials: _initials(),
-                  onUploaded: (url) => setState(() => _photo = url),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            Center(
+              child: AvatarPicker(
+                entity: 'students',
+                url: _photo,
+                fallbackInitials: _initials(),
+                onUploaded: (url) => setState(() => _photo = url),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            // One consistent required-marker legend for the whole form.
+            Text(
+              'Fields marked * are required.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ----- Student identity --------------------------------------
+            const AppSectionHeader(title: 'Student'),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _firstName,
+                    label: 'First name *',
+                    validator: _required,
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Student'),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _firstName,
-                      label: 'First name *',
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppFormField(
+                    controller: _lastName,
+                    label: 'Last name *',
+                    validator: _required,
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppFormField(
-                      controller: _lastName,
-                      label: 'Last name *',
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AppDateField(
-                      label: 'Date of birth',
-                      value: _dob,
-                      onTap: _pickDob,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppDropdownField<String>(
-                      label: 'Gender',
-                      value: _gender,
-                      items: const [
-                        DropdownMenuItem(value: 'male', child: Text('Male')),
-                        DropdownMenuItem(
-                          value: 'female',
-                          child: Text('Female'),
-                        ),
-                        DropdownMenuItem(value: 'other', child: Text('Other')),
-                      ],
-                      onChanged: (v) => setState(() => _gender = v),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Parent / Guardian'),
-              const SizedBox(height: AppSpacing.sm),
-              AppFormField(
-                controller: _parentName,
-                label: 'Parent name *',
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _parentPhone,
-                      label: 'Parent phone',
-                      keyboardType: TextInputType.phone,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppFormField(
-                      controller: _parentEmail,
-                      label: 'Parent email',
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Training'),
-              const SizedBox(height: AppSpacing.sm),
-              centresAsync.when(
-                loading: () => const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text(friendlyError(e)),
-                data: (centres) => AppDropdownField<String>(
-                  label: 'Center',
-                  value: _centerId,
-                  items: [
-                    const DropdownMenuItem<String>(child: Text('— none —')),
-                    for (final c in centres.where((c) => c.isActive))
-                      DropdownMenuItem(value: c.id, child: Text(c.name)),
-                  ],
-                  onChanged: (v) => setState(() => _centerId = v),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: SportPicker(
-                      value: _sportId,
-                      onChanged: (v) => setState(() => _sportId = v),
-                      centerId: _centerId,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppDropdownField<String>(
-                      label: 'Skill level',
-                      value: _skillLevel,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'beginner',
-                          child: Text('Beginner'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'intermediate',
-                          child: Text('Intermediate'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'advanced',
-                          child: Text('Advanced'),
-                        ),
-                      ],
-                      onChanged: (v) => setState(() => _skillLevel = v),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppDropdownField<String>(
-                label: 'Status',
-                value: _status,
-                items: const [
-                  DropdownMenuItem(value: 'active', child: Text('Active')),
-                  DropdownMenuItem(value: 'paused', child: Text('Paused')),
-                  DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
-                  DropdownMenuItem(
-                    value: 'graduated',
-                    child: Text('Graduated'),
-                  ),
-                ],
-                onChanged: (v) => setState(() => _status = v ?? 'active'),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Other'),
-              const SizedBox(height: AppSpacing.sm),
-              AppFormField(controller: _city, label: 'City'),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _medical,
-                label: 'Medical notes',
-                hint: 'Allergies, conditions, medications',
-                maxLines: 3,
-              ),
-              if (isEdit) ...[
-                const SizedBox(height: AppSpacing.xxl),
-                const Divider(),
-                const SizedBox(height: AppSpacing.lg),
-                _AttendanceSummaryCard(student: widget.existing!),
-                const SizedBox(height: AppSpacing.md),
-                _PerformanceShortcut(student: widget.existing!),
-                const SizedBox(height: AppSpacing.xl),
-                StudentFeesSection(studentId: widget.existing!.id),
-                const SizedBox(height: AppSpacing.xl),
-                StudentDiscountsSection(studentId: widget.existing!.id),
-                const SizedBox(height: AppSpacing.xl),
-                StudentDocumentsSection(studentId: widget.existing!.id),
-                const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'Logins & access'),
-                const SizedBox(height: AppSpacing.sm),
-                _InviteAccessRow(student: widget.existing!),
               ],
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save changes' : 'Create student'),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppDateField(
+                    label: 'Date of birth',
+                    value: _dob,
+                    onTap: _pickDob,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppDropdownField<String>(
+                    label: 'Gender',
+                    value: _gender,
+                    items: const [
+                      DropdownMenuItem(value: 'male', child: Text('Male')),
+                      DropdownMenuItem(value: 'female', child: Text('Female')),
+                      DropdownMenuItem(value: 'other', child: Text('Other')),
+                    ],
+                    onChanged: (v) => setState(() => _gender = v),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ----- Contact (parent + location kept together) -------------
+            const AppSectionHeader(title: 'Parent / Contact'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
+              controller: _parentName,
+              label: 'Parent name *',
+              validator: _required,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _parentPhone,
+                    label: 'Parent phone',
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppFormField(
+                    controller: _parentEmail,
+                    label: 'Parent email',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(controller: _city, label: 'City'),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ----- Training ----------------------------------------------
+            const AppSectionHeader(title: 'Training'),
+            const SizedBox(height: AppSpacing.sm),
+            centresAsync.when(
+              loading: () => const LinearProgressIndicator(minHeight: 2),
+              error: (e, _) => Text(friendlyError(e)),
+              data: (centres) => AppDropdownField<String>(
+                label: 'Center',
+                value: _centerId,
+                items: [
+                  const DropdownMenuItem<String>(child: Text('— none —')),
+                  for (final c in centres.where((c) => c.isActive))
+                    DropdownMenuItem(value: c.id, child: Text(c.name)),
+                ],
+                onChanged: (v) => setState(() => _centerId = v),
               ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SportPicker(
+                    value: _sportId,
+                    onChanged: (v) => setState(() => _sportId = v),
+                    centerId: _centerId,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppDropdownField<String>(
+                    label: 'Skill level',
+                    value: _skillLevel,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'beginner',
+                        child: Text('Beginner'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'intermediate',
+                        child: Text('Intermediate'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'advanced',
+                        child: Text('Advanced'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _skillLevel = v),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String>(
+              label: 'Status',
+              value: _status,
+              items: const [
+                DropdownMenuItem(value: 'active', child: Text('Active')),
+                DropdownMenuItem(value: 'paused', child: Text('Paused')),
+                DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+                DropdownMenuItem(value: 'graduated', child: Text('Graduated')),
+              ],
+              onChanged: (v) => setState(() => _status = v ?? 'active'),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ----- Health & notes ----------------------------------------
+            const AppSectionHeader(title: 'Health & notes'),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
+              controller: _medical,
+              label: 'Medical notes',
+              hint: 'Allergies, conditions, medications',
+              maxLines: 3,
+            ),
+
+            // ----- Edit-only record sections (clearly below a divider) ---
+            if (isEdit) ...[
+              const SizedBox(height: AppSpacing.xxl),
+              const Divider(),
+              const SizedBox(height: AppSpacing.lg),
+              const AppSectionHeader(title: 'Activity'),
+              const SizedBox(height: AppSpacing.sm),
+              _AttendanceSummaryCard(student: widget.existing!),
+              const SizedBox(height: AppSpacing.md),
+              _PerformanceShortcut(student: widget.existing!),
+              const SizedBox(height: AppSpacing.xl),
+              StudentFeesSection(studentId: widget.existing!.id),
+              const SizedBox(height: AppSpacing.xl),
+              StudentDiscountsSection(studentId: widget.existing!.id),
+              const SizedBox(height: AppSpacing.xl),
+              StudentDocumentsSection(studentId: widget.existing!.id),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Logins & access'),
+              const SizedBox(height: AppSpacing.sm),
+              _ParentAccessCard(student: widget.existing!),
+              const SizedBox(height: AppSpacing.md),
+              _StudentLoginCard(student: widget.existing!),
             ],
-          ),
+
+            const SizedBox(height: AppSpacing.xl),
+            FilledButton(
+              onPressed: _busy ? null : _save,
+              child: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(isEdit ? 'Save changes' : 'Create student'),
+            ),
+          ],
         ),
       ),
     );
@@ -423,62 +439,92 @@ class _PerformanceShortcut extends StatelessWidget {
   }
 }
 
-class _InviteAccessRow extends ConsumerWidget {
-  const _InviteAccessRow({required this.student});
-  final Student student;
+void _openInvite(BuildContext ctx, InvitePreset preset) {
+  showModalBottomSheet<void>(
+    context: ctx,
+    isScrollControlled: true,
+    builder: (_) => InviteUserSheet(preset: preset),
+  );
+}
 
-  void _open(BuildContext ctx, InvitePreset preset) {
-    showModalBottomSheet<void>(
-      context: ctx,
-      isScrollControlled: true,
-      builder: (_) => InviteUserSheet(preset: preset),
-    );
-  }
+/// Parent access — its own labeled row. Reflects an existing link instead of
+/// always re-offering the invite.
+class _ParentAccessCard extends ConsumerWidget {
+  const _ParentAccessCard({required this.student});
+  final Student student;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final linksAsync = ref.watch(studentParentLinksProvider(student.id));
     return AppCard(
       padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          // Parent — reflects existing links instead of always re-inviting.
-          linksAsync.when(
-            loading: () => const AppListTile(
-              leading: Icon(Icons.family_restroom_outlined),
-              title: Text('Invite parent'),
-              subtitle: LinearProgressIndicator(),
-            ),
-            error: (_, __) => _inviteParentTile(context),
-            data: (links) => links.isEmpty
-                ? _inviteParentTile(context)
-                : AppListTile(
-                    leading: const Icon(Icons.verified_user_outlined),
-                    title: const Text('Parent linked'),
-                    subtitle: Text(
-                      links
-                          .map((l) => '${l.name} (${l.relationship})')
-                          .join(', '),
-                    ),
-                  ),
+      child: linksAsync.when(
+        loading: () => const AppListTile(
+          leading: Icon(Icons.family_restroom_outlined),
+          title: Text('Invite parent'),
+          subtitle: LinearProgressIndicator(),
+        ),
+        error: (_, __) => _inviteParentTile(context),
+        data: (links) => links.isEmpty
+            ? _inviteParentTile(context)
+            : AppListTile(
+                leading: const Icon(Icons.verified_user_outlined),
+                title: const Text('Parent linked'),
+                subtitle: Text(
+                  links
+                      .map((l) => '${l.name} (${l.relationship})')
+                      .join(', '),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _inviteParentTile(BuildContext context) => AppListTile(
+        leading: const Icon(Icons.family_restroom_outlined),
+        title: const Text('Invite parent'),
+        subtitle: const Text(
+          'Send a magic-link email; they get the parent dashboard '
+          'and only see this student.',
+        ),
+        onTap: () => _openInvite(
+          context,
+          InvitePreset(
+            role: 'parent',
+            title: 'Invite parent of ${student.firstName}',
+            email: student.parentEmail,
+            firstName: student.parentName,
+            linkToStudentId: student.id,
+            linkRelationship: 'parent',
           ),
-          const Divider(height: 1),
-          // Student login — gated on whether the record already has a login.
-          if (student.userId != null)
-            const AppListTile(
+        ),
+      );
+}
+
+/// Student login — its own labeled row. Gated on whether the record already
+/// has a login.
+class _StudentLoginCard extends StatelessWidget {
+  const _StudentLoginCard({required this.student});
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: student.userId != null
+          ? const AppListTile(
               leading: Icon(Icons.verified_user_outlined),
               title: Text('Student can log in'),
               subtitle: Text('They already have their own login.'),
             )
-          else
-            AppListTile(
+          : AppListTile(
               leading: const Icon(Icons.school_outlined),
               title: const Text('Invite student to log in'),
               subtitle: const Text(
                 'For older students who manage their own attendance + '
                 'performance view.',
               ),
-              onTap: () => _open(
+              onTap: () => _openInvite(
                 context,
                 InvitePreset(
                   role: 'student',
@@ -490,28 +536,6 @@ class _InviteAccessRow extends ConsumerWidget {
                 ),
               ),
             ),
-        ],
-      ),
     );
   }
-
-  Widget _inviteParentTile(BuildContext context) => AppListTile(
-    leading: const Icon(Icons.family_restroom_outlined),
-    title: const Text('Invite parent'),
-    subtitle: const Text(
-      'Send a magic-link email; they get the parent dashboard '
-      'and only see this student.',
-    ),
-    onTap: () => _open(
-      context,
-      InvitePreset(
-        role: 'parent',
-        title: 'Invite parent of ${student.firstName}',
-        email: student.parentEmail,
-        firstName: student.parentName,
-        linkToStudentId: student.id,
-        linkRelationship: 'parent',
-      ),
-    ),
-  );
 }

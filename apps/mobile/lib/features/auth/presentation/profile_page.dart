@@ -116,64 +116,63 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           return ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              Center(
-                child: Column(
-                  children: [
-                    _AvatarPreview(
-                      url: photoUrl,
-                      fallback: (profile.firstName?.isNotEmpty ?? false)
-                          ? profile.firstName![0]
-                          : '?',
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    TextButton.icon(
-                      onPressed: _uploading ? null : _changePhoto,
-                      icon: _uploading
-                          ? const SizedBox(
-                              height: 14,
-                              width: 14,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.photo_camera_outlined),
-                      label: const Text('Change photo'),
-                    ),
-                  ],
-                ),
+              _ProfileHeader(
+                photoUrl: photoUrl,
+                name: profile.displayName,
+                role: _roleLabel(profile.role),
+                uploading: _uploading,
+                onChangePhoto: _changePhoto,
               ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Your details'),
               const SizedBox(height: AppSpacing.sm),
-              AppFormField(
-                controller: _firstName,
-                label: 'First name',
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _lastName,
-                label: 'Last name',
-                textInputAction: TextInputAction.next,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stack = constraints.maxWidth < AppBreakpoints.phone;
+                  final firstField = AppFormField(
+                    controller: _firstName,
+                    label: 'First name',
+                    enabled: !_saving,
+                    textInputAction: TextInputAction.next,
+                  );
+                  final lastField = AppFormField(
+                    controller: _lastName,
+                    label: 'Last name',
+                    enabled: !_saving,
+                    textInputAction: TextInputAction.next,
+                  );
+                  if (stack) {
+                    return Column(
+                      children: [
+                        firstField,
+                        const SizedBox(height: AppSpacing.md),
+                        lastField,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: firstField),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(child: lastField),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: AppSpacing.md),
               AppFormField(
                 controller: _phone,
                 label: 'Phone',
+                enabled: !_saving,
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Account'),
               const SizedBox(height: AppSpacing.sm),
-              AppFormField(
-                label: 'Email',
-                initialValue: profile.email ?? '—',
-                enabled: false,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                label: 'Role',
-                initialValue: profile.role,
-                enabled: false,
+              _AccountCard(
+                email: profile.email,
+                role: _roleLabel(profile.role),
               ),
               const SizedBox(height: AppSpacing.xl),
               FilledButton.icon(
@@ -195,6 +194,161 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 }
 
+/// Turns a raw `user_role` enum value (e.g. `center_admin`) into a readable
+/// label for display (e.g. `Center admin`).
+String _roleLabel(String role) {
+  if (role.isEmpty) return role;
+  final spaced = role.replaceAll('_', ' ');
+  return spaced[0].toUpperCase() + spaced.substring(1);
+}
+
+/// Compact identity header: avatar alongside name + role, with an inline
+/// "Change photo" affordance — replaces the tall centered avatar block.
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({
+    required this.photoUrl,
+    required this.name,
+    required this.role,
+    required this.uploading,
+    required this.onChangePhoto,
+  });
+
+  final String? photoUrl;
+  final String name;
+  final String role;
+  final bool uploading;
+  final VoidCallback onChangePhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Row(
+        children: [
+          _AvatarPreview(
+            url: photoUrl,
+            fallback: name.isNotEmpty ? name[0].toUpperCase() : '?',
+          ),
+          const SizedBox(width: AppSpacing.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: theme.textTheme.titleMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  role,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: uploading ? null : onChangePhoto,
+                    icon: uploading
+                        ? const SizedBox(
+                            height: 14,
+                            width: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.photo_camera_outlined),
+                    label: const Text('Change photo'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only account facts (email + role). Visually distinct from the editable
+/// "Your details" fields — rendered as labelled rows inside a card so they read
+/// as information, not inputs.
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.email, required this.role});
+
+  final String? email;
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        children: [
+          _AccountRow(
+            icon: Icons.mail_outline,
+            label: 'Email',
+            value: email ?? '—',
+          ),
+          const Divider(height: 1),
+          _AccountRow(
+            icon: Icons.badge_outlined,
+            label: 'Role',
+            value: role,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountRow extends StatelessWidget {
+  const _AccountRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: AppType.semibold,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(value, style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AvatarPreview extends StatelessWidget {
   const _AvatarPreview({required this.url, required this.fallback});
   final String? url;
@@ -204,25 +358,23 @@ class _AvatarPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     if (url == null) {
       return CircleAvatar(
-        radius: 48,
-        child: Text(fallback,
-            style: Theme.of(context).textTheme.headlineMedium),
+        radius: 28,
+        child: Text(fallback, style: Theme.of(context).textTheme.titleLarge),
       );
     }
     return ClipOval(
       child: CachedNetworkImage(
         imageUrl: url!,
-        width: 96,
-        height: 96,
+        width: 56,
+        height: 56,
         fit: BoxFit.cover,
         placeholder: (_, __) => const CircleAvatar(
-          radius: 48,
+          radius: 28,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
         errorWidget: (_, __, ___) => CircleAvatar(
-          radius: 48,
-          child: Text(fallback,
-              style: Theme.of(context).textTheme.headlineMedium),
+          radius: 28,
+          child: Text(fallback, style: Theme.of(context).textTheme.titleLarge),
         ),
       ),
     );

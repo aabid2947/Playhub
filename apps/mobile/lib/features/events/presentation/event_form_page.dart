@@ -18,7 +18,8 @@ class EventFormPage extends ConsumerStatefulWidget {
 
 class _EventFormPageState extends ConsumerState<EventFormPage> {
   final _form = GlobalKey<FormState>();
-  final _df = DateFormat('EEE, dd MMM yyyy · HH:mm');
+  final _df = DateFormat('EEE, dd MMM yyyy');
+  final _tf = DateFormat('HH:mm');
   final _title = TextEditingController();
   final _desc = TextEditingController();
   final _location = TextEditingController();
@@ -33,6 +34,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
   String? _sportId;
   bool _publish = false;
   bool _saving = false;
+  // Once the user has tried to submit, surface validation (including the
+  // cross-field start-before-end rule) live as they adjust dates.
+  bool _autoValidate = false;
 
   @override
   void dispose() {
@@ -40,6 +44,15 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // Cross-field: an end date is optional, but when set it must be after the
+  // start. Returns a user-facing message, or null when the schedule is valid.
+  String? get _scheduleError {
+    if (_endsAt != null && !_endsAt!.isAfter(_startsAt)) {
+      return 'The end must be after the start.';
+    }
+    return null;
   }
 
   Future<void> _pickDate(
@@ -62,7 +75,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate() || _scheduleError != null) {
+      setState(() => _autoValidate = true);
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = await ref.read(eventsRepoProvider.future);
@@ -85,7 +101,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
       ref.invalidate(eventsListProvider);
       if (!mounted) return;
       AppSnackbar.success(
-          context, _publish ? 'Event published.' : 'Saved as draft.');
+        context,
+        _publish ? 'Event published.' : 'Saved as draft.',
+      );
       Navigator.of(context).pop();
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));
@@ -94,33 +112,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
     }
   }
 
-  Widget _dateRow({
-    required String label,
-    required DateTime? value,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Builder(
-      builder: (context) => ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(label),
-        subtitle: Text(
-          value == null ? '—' : _df.format(value.toLocal()),
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: value == null
-                    ? Theme.of(context).colorScheme.onSurfaceVariant
-                    : null,
-              ),
-        ),
-        trailing: Icon(icon),
-        onTap: onTap,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final centers = ref.watch(centersProvider).valueOrNull ?? [];
+    final scheduleError = _autoValidate ? _scheduleError : null;
     return Scaffold(
       appBar: AppBar(title: const Text('New event')),
       body: Form(
@@ -128,11 +123,14 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            const AppSectionHeader(title: 'Event details'),
+            // ── Details ──────────────────────────────────────────────
+            const AppSectionHeader(title: 'Details'),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _title,
               label: 'Title *',
+              enabled: !_saving,
+              textInputAction: TextInputAction.next,
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
@@ -144,8 +142,9 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                 for (final k in EventKind.values)
                   DropdownMenuItem(value: k, child: Text(k.label)),
               ],
-              onChanged: (v) =>
-                  setState(() => _kind = v ?? EventKind.tournament),
+              onChanged: _saving
+                  ? null
+                  : (v) => setState(() => _kind = v ?? EventKind.tournament),
             ),
             const SizedBox(height: AppSpacing.md),
             SportPicker(
@@ -154,46 +153,85 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               centerId: _centerId,
             ),
             const SizedBox(height: AppSpacing.xl),
+
+            // ── Schedule ─────────────────────────────────────────────
             const AppSectionHeader(title: 'Schedule'),
-            const SizedBox(height: AppSpacing.xs),
-            _dateRow(
+            const SizedBox(height: AppSpacing.sm),
+            _DateTimeField(
               label: 'Starts at *',
               value: _startsAt,
-              icon: Icons.event,
+              icon: Icons.event_outlined,
+              dateFormat: _df,
+              timeFormat: _tf,
+              enabled: !_saving,
+              hasError: scheduleError != null,
               onTap: () =>
                   _pickDate(_startsAt, (v) => setState(() => _startsAt = v)),
             ),
-            _dateRow(
+            const SizedBox(height: AppSpacing.md),
+            _DateTimeField(
               label: 'Ends at',
               value: _endsAt,
-              icon: Icons.event,
+              icon: Icons.event_available_outlined,
+              dateFormat: _df,
+              timeFormat: _tf,
+              enabled: !_saving,
+              hasError: scheduleError != null,
+              onClear: _endsAt == null
+                  ? null
+                  : () => setState(() => _endsAt = null),
               onTap: () => _pickDate(
                 _endsAt ?? _startsAt,
                 (v) => setState(() => _endsAt = v),
               ),
             ),
-            _dateRow(
+            if (scheduleError != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              _FieldHint(text: scheduleError, isError: true),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            _DateTimeField(
               label: 'Registration opens',
               value: _regOpens,
-              icon: Icons.lock_open,
+              icon: Icons.lock_open_outlined,
+              dateFormat: _df,
+              timeFormat: _tf,
+              enabled: !_saving,
+              onClear: _regOpens == null
+                  ? null
+                  : () => setState(() => _regOpens = null),
               onTap: () => _pickDate(
                 _regOpens ?? _startsAt,
                 (v) => setState(() => _regOpens = v),
               ),
             ),
-            _dateRow(
+            const SizedBox(height: AppSpacing.md),
+            _DateTimeField(
               label: 'Registration closes',
               value: _regCloses,
-              icon: Icons.lock,
+              icon: Icons.lock_outline,
+              dateFormat: _df,
+              timeFormat: _tf,
+              enabled: !_saving,
+              onClear: _regCloses == null
+                  ? null
+                  : () => setState(() => _regCloses = null),
               onTap: () => _pickDate(
                 _regCloses ?? _startsAt,
                 (v) => setState(() => _regCloses = v),
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
+
+            // ── Location & capacity ──────────────────────────────────
             const AppSectionHeader(title: 'Location & capacity'),
             const SizedBox(height: AppSpacing.sm),
-            AppFormField(controller: _location, label: 'Location'),
+            AppFormField(
+              controller: _location,
+              label: 'Location',
+              enabled: !_saving,
+              textInputAction: TextInputAction.next,
+            ),
             const SizedBox(height: AppSpacing.md),
             AppDropdownField<String?>(
               label: 'Center (optional)',
@@ -203,61 +241,276 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                 for (final c in centers)
                   DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
               ],
-              onChanged: (v) => setState(() => _centerId = v),
+              onChanged: _saving ? null : (v) => setState(() => _centerId = v),
             ),
             const SizedBox(height: AppSpacing.md),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: AppFormField(
-                    controller: _capacity,
-                    label: 'Capacity (optional)',
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppFormField(
-                    controller: _fee,
-                    label: 'Fee (₹)',
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-              ],
+            // Capacity + fee sit side-by-side on wide layouts and stack to full
+            // width when the screen is too narrow to hold both usably.
+            _TwoUpRow(
+              left: AppFormField(
+                controller: _capacity,
+                label: 'Capacity (optional)',
+                enabled: !_saving,
+                keyboardType: TextInputType.number,
+              ),
+              right: AppFormField(
+                controller: _fee,
+                label: 'Fee (₹)',
+                enabled: !_saving,
+                keyboardType: TextInputType.number,
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
+
+            // ── Description ──────────────────────────────────────────
             const AppSectionHeader(title: 'Description'),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _desc,
               label: 'Details',
+              enabled: !_saving,
               maxLines: 5,
             ),
-            const SizedBox(height: AppSpacing.lg),
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: SwitchListTile(
-                value: _publish,
-                onChanged: (v) => setState(() => _publish = v),
-                title: const Text('Publish immediately'),
-                subtitle: const Text('Otherwise saved as draft'),
-              ),
-            ),
             const SizedBox(height: AppSpacing.xl),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Save'),
+
+            // ── Publish ──────────────────────────────────────────────
+            const AppSectionHeader(title: 'Publish'),
+            const SizedBox(height: AppSpacing.sm),
+            _PublishChoice(
+              publish: _publish,
+              enabled: !_saving,
+              onChanged: (v) => setState(() => _publish = v),
             ),
           ],
         ),
       ),
+      // Pinned, full-width primary action — inline spinner while saving.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(AppSpacing.lg),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            icon: _saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(_publish ? Icons.campaign_outlined : Icons.save_outlined),
+            label: Text(
+              _saving
+                  ? 'Saving…'
+                  : (_publish ? 'Publish event' : 'Save draft'),
+            ),
+            onPressed: _saving ? null : _save,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A tidy date-time picker field. Renders inside an [InputDecorator] so it
+/// reads as a labeled form field, showing the chosen date + time (or a muted
+/// placeholder) with a leading icon and an optional clear affordance.
+class _DateTimeField extends StatelessWidget {
+  const _DateTimeField({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.dateFormat,
+    required this.timeFormat,
+    required this.onTap,
+    this.onClear,
+    this.enabled = true,
+    this.hasError = false,
+  });
+
+  final String label;
+  final DateTime? value;
+  final IconData icon;
+  final DateFormat dateFormat;
+  final DateFormat timeFormat;
+  final VoidCallback onTap;
+  final VoidCallback? onClear;
+  final bool enabled;
+  final bool hasError;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final local = value?.toLocal();
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        errorText: hasError ? '' : null,
+        prefixIcon: Icon(
+          icon,
+          color: enabled ? scheme.onSurfaceVariant : scheme.outline,
+        ),
+        suffixIcon: onClear != null && enabled
+            ? IconButton(
+                tooltip: 'Clear',
+                icon: const Icon(Icons.close),
+                onPressed: onClear,
+              )
+            : const Icon(Icons.edit_calendar_outlined),
+      ),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: local == null
+              ? Text(
+                  'Tap to set',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                )
+              : Row(
+                  children: [
+                    Text(
+                      dateFormat.format(local),
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      '· ${timeFormat.format(local)}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A visible draft-vs-publish choice. A [SegmentedButton] makes the publish
+/// state explicit (vs. a buried toggle), with a one-line caption explaining
+/// what each option does.
+class _PublishChoice extends StatelessWidget {
+  const _PublishChoice({
+    required this.publish,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final bool publish;
+  final ValueChanged<bool> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.drafts_outlined),
+                  label: Text('Save as draft'),
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.campaign_outlined),
+                  label: Text('Publish now'),
+                ),
+              ],
+              selected: {publish},
+              onSelectionChanged:
+                  enabled ? (s) => onChanged(s.first) : null,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            publish
+                ? 'The event is visible and open for registration once the '
+                    'registration window allows.'
+                : 'The event stays hidden until you publish it later.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small caption shown under a field — muted by default, danger-toned when
+/// it carries a validation error.
+class _FieldHint extends StatelessWidget {
+  const _FieldHint({required this.text, this.isError = false});
+
+  final String text;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = isError
+        ? AppSemanticColors.of(context).danger
+        : theme.colorScheme.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (isError) ...[
+          Icon(Icons.error_outline, size: 16, color: color),
+          const SizedBox(width: AppSpacing.xs),
+        ],
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(color: color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Lays two fields side-by-side on wide layouts and stacks them to full width
+/// when the screen is too narrow to hold both inputs usably.
+class _TwoUpRow extends StatelessWidget {
+  const _TwoUpRow({required this.left, required this.right});
+
+  final Widget left;
+  final Widget right;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Two-up only when each half clears a usable minimum width.
+        final half = (constraints.maxWidth - AppSpacing.md) / 2;
+        if (half < 140) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              left,
+              const SizedBox(height: AppSpacing.md),
+              right,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: right),
+          ],
+        );
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 
@@ -11,6 +12,80 @@ List<CenterSport> _resolveSports(WidgetRef ref, String? centerId) {
     return ref.watch(centerSportsProvider(centerId)).valueOrNull ?? const [];
   }
   return ref.watch(academyCenterSportsProvider).valueOrNull ?? const [];
+}
+
+/// The single "no sports configured" message used by every picker. Scopes
+/// the wording to whether we're looking at a specific center or the academy
+/// union so the user knows exactly where to go fix it.
+String _emptyHint(String? centerId) => centerId == null
+    ? 'No sports configured yet — add them in Settings → Sports'
+    : 'This center has no sports yet — add them in Settings → Sports';
+
+/// One shared inline fallback for all three pickers when no sports exist.
+///
+/// Lives inline (not the centered [AppEmptyState], which is for full-page
+/// surfaces): a muted hint with a leading icon, optionally wrapped in a
+/// field-style border + label so it reads as a disabled input within a form.
+class _SportPickerEmpty extends StatelessWidget {
+  const _SportPickerEmpty({
+    required this.centerId,
+    this.label,
+    this.framed = false,
+  });
+
+  /// Center scope, only used to pick the wording.
+  final String? centerId;
+
+  /// When set, shown above the hint as a section/field label.
+  final String? label;
+
+  /// When true, renders inside an [InputDecorator] so the empty single-select
+  /// picker still looks like the form field it replaces.
+  final bool framed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final hint = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.sports_outlined,
+          size: 18,
+          color: scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            _emptyHint(centerId),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (framed) {
+      return InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: hint,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (label != null) ...[
+          Text(label!, style: theme.textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        hint,
+      ],
+    );
+  }
 }
 
 /// Returns a copy of [sports] de-duplicated by sport_id (a sport offered
@@ -58,15 +133,7 @@ class SportPicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sports = _dedup(_resolveSports(ref, centerId));
     if (sports.isEmpty) {
-      return InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          helperText: centerId == null
-              ? 'Add sports under Settings → Sports'
-              : 'This center has no sports yet — add them in Settings → Sports',
-        ),
-        child: const Text('— no sports configured —'),
-      );
+      return _SportPickerEmpty(centerId: centerId, label: label, framed: true);
     }
     return DropdownButtonFormField<String?>(
       initialValue: value,
@@ -106,6 +173,11 @@ class SportFilterChipBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sports = _dedup(_resolveSports(ref, centerId));
+    // A filter chip bar with nothing to filter is pure noise, so it stays
+    // collapsed rather than showing the shared `_SportPickerEmpty` hint —
+    // the empty wording belongs on the (visible) form pickers, not on a
+    // filter that would otherwise occupy a list page's header. The other two
+    // pickers surface `_emptyHint(centerId)` for the same root condition.
     if (sports.isEmpty) return const SizedBox.shrink();
     return SizedBox(
       height: 44,
@@ -155,19 +227,22 @@ class SportMultiSelect extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sports =
         _dedup(ref.watch(academyCenterSportsProvider).valueOrNull ?? const []);
-    if (sports.isEmpty) return const SizedBox.shrink();
+    if (sports.isEmpty) {
+      // Always academy-wide here, so pass a null center scope for the wording.
+      return _SportPickerEmpty(centerId: null, label: label);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (label != null)
           Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: Text(label!,
                 style: Theme.of(context).textTheme.titleSmall),
           ),
         Wrap(
-          spacing: 6,
-          runSpacing: 6,
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
           children: [
             for (final s in sports)
               FilterChip(

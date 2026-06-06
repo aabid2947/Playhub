@@ -26,6 +26,9 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
   String? _sportId;
   LeadSource _source = LeadSource.walkIn;
   bool _saving = false;
+  // Once the user has tried to submit, validate as they type so the
+  // phone-OR-email cross-field rule clears the moment a contact is filled.
+  bool _autoValidate = false;
 
   @override
   void dispose() {
@@ -43,8 +46,24 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
     super.dispose();
   }
 
+  // Phone-OR-email: at least one contact channel is required. Surfaced inline
+  // on both fields so the lead is reachable; re-runs live after first submit.
+  String? _contactValidator(String? _) {
+    if (_phone.text.trim().isEmpty && _email.text.trim().isEmpty) {
+      return 'Add a phone number or email';
+    }
+    return null;
+  }
+
+  void _revalidateContact() {
+    if (_autoValidate) _form.currentState?.validate();
+  }
+
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate()) {
+      setState(() => _autoValidate = true);
+      return;
+    }
     setState(() => _saving = true);
     try {
       final repo = await ref.read(leadsRepoProvider.future);
@@ -78,55 +97,76 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
       appBar: AppBar(title: const Text('New lead')),
       body: Form(
         key: _form,
+        autovalidateMode: _autoValidate
+            ? AutovalidateMode.onUserInteraction
+            : AutovalidateMode.disabled,
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
+            // ── Contact ──────────────────────────────────────────────
             const AppSectionHeader(title: 'Contact'),
             const SizedBox(height: AppSpacing.sm),
-            AppFormField(
-              controller: _first,
-              label: 'First name *',
-              textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppFormField(
-              controller: _last,
-              label: 'Last name',
-              textInputAction: TextInputAction.next,
+            // First + last sit side-by-side on wide layouts and stack to full
+            // width when the screen is too narrow to hold both usably.
+            _NameRow(
+              first: AppFormField(
+                controller: _first,
+                label: 'First name *',
+                enabled: !_saving,
+                textInputAction: TextInputAction.next,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+              ),
+              last: AppFormField(
+                controller: _last,
+                label: 'Last name',
+                enabled: !_saving,
+                textInputAction: TextInputAction.next,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             AppFormField(
               controller: _phone,
               label: 'Phone',
+              enabled: !_saving,
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
+              prefixIcon: const Icon(Icons.call_outlined),
+              onChanged: (_) => _revalidateContact(),
+              validator: _contactValidator,
             ),
             const SizedBox(height: AppSpacing.md),
             AppFormField(
               controller: _email,
               label: 'Email',
+              enabled: !_saving,
               keyboardType: TextInputType.emailAddress,
-              validator: (_) {
-                if (_phone.text.trim().isEmpty &&
-                    _email.text.trim().isEmpty) {
-                  return 'Phone or email required';
-                }
-                return null;
-              },
+              prefixIcon: const Icon(Icons.mail_outline),
+              onChanged: (_) => _revalidateContact(),
+              validator: _contactValidator,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'A phone number or email is required so the lead is reachable.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
             const SizedBox(height: AppSpacing.xl),
+            // ── Interest & source ────────────────────────────────────
             const AppSectionHeader(title: 'Interest & source'),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _parentName,
               label: 'Parent name',
+              enabled: !_saving,
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: AppSpacing.md),
             AppFormField(
               controller: _age,
               label: 'Age',
+              enabled: !_saving,
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: AppSpacing.md),
@@ -143,23 +183,73 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
                 for (final s in LeadSource.values)
                   DropdownMenuItem(value: s, child: Text(s.label)),
               ],
-              onChanged: (v) => setState(() => _source = v ?? _source),
+              onChanged:
+                  _saving ? null : (v) => setState(() => _source = v ?? _source),
             ),
             const SizedBox(height: AppSpacing.md),
             AppFormField(
               controller: _notes,
               label: 'Notes',
+              enabled: !_saving,
               maxLines: 3,
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            FilledButton.icon(
-              icon: const Icon(Icons.save),
-              label: Text(_saving ? 'Saving…' : 'Save lead'),
-              onPressed: _saving ? null : _save,
             ),
           ],
         ),
       ),
+      // Pinned, full-width primary action — inline spinner while saving.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(AppSpacing.lg),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            icon: _saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save),
+            label: Text(_saving ? 'Saving…' : 'Save lead'),
+            onPressed: _saving ? null : _save,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lays first/last name out side-by-side on wide layouts and stacks them to
+/// full width when the screen is too narrow to hold both inputs usably.
+class _NameRow extends StatelessWidget {
+  const _NameRow({required this.first, required this.last});
+
+  final Widget first;
+  final Widget last;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Two-up only when each half clears a usable minimum width.
+        final half = (constraints.maxWidth - AppSpacing.md) / 2;
+        if (half < 140) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              first,
+              const SizedBox(height: AppSpacing.md),
+              last,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: last),
+          ],
+        );
+      },
     );
   }
 }

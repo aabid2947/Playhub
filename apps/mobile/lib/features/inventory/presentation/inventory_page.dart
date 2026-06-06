@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_form_page.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_page.dart';
 import 'package:playhub/features/inventory/presentation/vendors_page.dart';
-import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Three-tab landing for inventory: All, Low stock, Vendors.
@@ -18,16 +20,39 @@ class InventoryPage extends ConsumerStatefulWidget {
 
 class _InventoryPageState extends ConsumerState<InventoryPage>
     with TickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 3, vsync: this)
+    ..addListener(_onTabChanged);
 
   @override
   void dispose() {
-    _tabs.dispose();
+    _tabs
+      ..removeListener(_onTabChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  // Rebuild so the FAB label/action tracks the active tab.
+  void _onTabChanged() {
+    if (!_tabs.indexIsChanging) setState(() {});
+  }
+
+  bool get _isVendorsTab => _tabs.index == 2;
+
+  void _onCreate() {
+    if (_isVendorsTab) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const VendorsPage()),
+      );
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const InventoryItemFormPage()),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final caps = ref.watch(capabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inventory'),
@@ -42,6 +67,7 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
             onPressed: () {
               ref.invalidate(inventoryItemsProvider);
               ref.invalidate(vendorsProvider);
@@ -49,23 +75,15 @@ class _InventoryPageState extends ConsumerState<InventoryPage>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('New'),
-        onPressed: () {
-          if (_tabs.index == 2) {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const VendorsPage()),
-            );
-          } else {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const InventoryItemFormPage(),
-              ),
-            );
-          }
-        },
-      ),
+      floatingActionButton: caps.manageInventory
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: Text(_isVendorsTab ? 'New vendor' : 'New item'),
+              tooltip:
+                  _isVendorsTab ? 'Add a vendor' : 'Add an inventory item',
+              onPressed: _onCreate,
+            )
+          : null,
       body: TabBarView(
         controller: _tabs,
         children: const [
@@ -111,12 +129,49 @@ class _ItemsList extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(inventoryItemsProvider),
           child: ListView.separated(
-            itemCount: list.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) => _ItemRow(item: list[i]),
+            padding: const EdgeInsets.only(bottom: AppSpacing.xxxl),
+            // +1 leading row for the result-count header.
+            itemCount: list.length + 1,
+            separatorBuilder: (_, i) =>
+                i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
+            itemBuilder: (_, i) {
+              if (i == 0) {
+                return _CountHeader(count: list.length, lowOnly: showOnlyLow);
+              }
+              return _ItemRow(item: list[i - 1]);
+            },
           ),
         );
       },
+    );
+  }
+}
+
+/// Thin overline showing how many items match the active tab.
+class _CountHeader extends StatelessWidget {
+  const _CountHeader({required this.count, required this.lowOnly});
+  final int count;
+  final bool lowOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final noun = count == 1 ? 'item' : 'items';
+    final label =
+        lowOnly ? '$count low-stock $noun' : '$count $noun';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
@@ -125,18 +180,26 @@ class _ItemRow extends StatelessWidget {
   const _ItemRow({required this.item});
   final InventoryItem item;
 
+  // Whole-number qty renders without a trailing ".0".
+  String get _qtyLabel {
+    final whole = item.onHand.truncateToDouble() == item.onHand;
+    return item.onHand.toStringAsFixed(whole ? 0 : 2);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Subtitle is always exactly one line (qty · unit, optional SKU prefix) so
+    // row height stays constant whether or not an item has a SKU. The low-stock
+    // signal lives in the trailing badge, not an extra subtitle line.
+    final subtitle = [
+      if (item.sku != null && item.sku!.isNotEmpty) item.sku!,
+      '$_qtyLabel ${item.unit}',
+    ].join(' · ');
+
     return AppListTile(
       leading: const Icon(Icons.inventory_2_outlined),
       title: Text(item.name),
-      subtitle: Text(
-        [
-          if (item.sku != null && item.sku!.isNotEmpty) item.sku!,
-          '${item.onHand.toStringAsFixed(item.onHand.truncateToDouble() == item.onHand ? 0 : 2)} ${item.unit}',
-          if (item.lowStock) 'Reorder ≥ ${item.reorderThreshold}',
-        ].join(' · '),
-      ),
+      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: item.lowStock
           ? const AppBadge(text: 'Low stock', tone: AppBadgeTone.warning)
           : null,

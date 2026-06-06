@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -12,6 +13,7 @@ class VendorsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(vendorsProvider);
+    final caps = ref.watch(capabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Vendors'),
@@ -23,15 +25,17 @@ class VendorsPage extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('New vendor'),
-        onPressed: () => showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          builder: (_) => const _VendorSheet(),
-        ),
-      ),
+      floatingActionButton: caps.manageInventory
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('New vendor'),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                builder: (_) => const _VendorSheet(),
+              ),
+            )
+          : null,
       body: async.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
@@ -49,19 +53,26 @@ class VendorsPage extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(vendorsProvider),
             child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               itemCount: rows.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (_, i) {
                 final v = rows[i];
+                final contact = [
+                  if (v.contactName != null && v.contactName!.isNotEmpty)
+                    v.contactName!,
+                  if (v.phone != null && v.phone!.isNotEmpty) v.phone!,
+                  if (v.email != null && v.email!.isNotEmpty) v.email!,
+                ].join(' · ');
                 return AppListTile(
                   leading: const Icon(Icons.store_outlined),
                   title: Text(v.name),
-                  subtitle: Text([
-                    if (v.contactName != null && v.contactName!.isNotEmpty)
-                      v.contactName!,
-                    if (v.phone != null && v.phone!.isNotEmpty) v.phone!,
-                    if (v.email != null && v.email!.isNotEmpty) v.email!,
-                  ].join(' · ')),
+                  subtitle: Text(
+                    contact.isEmpty ? 'No contact details' : contact,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: v.isActive ? null : const AppBadge(text: 'Inactive'),
                   onTap: () => showModalBottomSheet<void>(
                     context: context,
                     isScrollControlled: true,
@@ -97,6 +108,7 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
       TextEditingController(text: widget.existing?.address ?? '');
   late final _notes =
       TextEditingController(text: widget.existing?.notes ?? '');
+  late bool _isActive = widget.existing?.isActive ?? true;
   bool _saving = false;
 
   @override
@@ -123,6 +135,7 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
         address:
             _address.text.trim().isEmpty ? null : _address.text.trim(),
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        isActive: _isActive,
       );
       ref.invalidate(vendorsProvider);
       if (mounted) Navigator.of(context).pop();
@@ -135,75 +148,96 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            widget.existing == null ? 'New vendor' : 'Edit vendor',
-            style: Theme.of(context).textTheme.titleLarge,
+    final theme = Theme.of(context);
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.85;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg + viewInsets,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          AppFormField(
-            controller: _name,
-            label: 'Name *',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _contact,
-            label: 'Contact name',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: AppFormField(
-                  controller: _phone,
-                  label: 'Phone',
-                  keyboardType: TextInputType.phone,
+              Text(
+                widget.existing == null ? 'New vendor' : 'Edit vendor',
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppFormField(
+                controller: _name,
+                label: 'Name *',
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                controller: _contact,
+                label: 'Contact name',
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: AppFormField(
+                      controller: _phone,
+                      label: 'Phone',
+                      keyboardType: TextInputType.phone,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppFormField(
+                      controller: _email,
+                      label: 'Email',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                controller: _address,
+                label: 'Address',
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                controller: _notes,
+                label: 'Notes',
+                maxLines: 3,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _isActive,
+                onChanged: _saving
+                    ? null
+                    : (v) => setState(() => _isActive = v),
+                title: Text('Active', style: theme.textTheme.bodyLarge),
+                subtitle: Text(
+                  'Inactive vendors stay on record but are hidden from pickers.',
+                  style: theme.textTheme.bodySmall,
                 ),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppFormField(
-                  controller: _email,
-                  label: 'Email',
-                  keyboardType: TextInputType.emailAddress,
-                ),
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _address,
-            label: 'Address',
-          ),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _notes,
-            label: 'Notes',
-            maxLines: 3,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save'),
-          ),
-        ],
+        ),
       ),
     );
   }

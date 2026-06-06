@@ -54,21 +54,28 @@ class EventResultsPage extends ConsumerWidget {
           final byStudent = <String, EventResult>{
             for (final r in results) r.studentId: r,
           };
-          return ListView.separated(
-            itemCount: regs.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final r = regs[i];
-              final s = students.where((s) => s.id == r.studentId).firstOrNull;
-              final result = byStudent[r.studentId];
-              return _ResultRow(
-                eventId: eventId,
-                regId: r.id,
-                studentId: r.studentId,
-                studentName: s?.fullName ?? r.studentId.substring(0, 8),
-                existing: result,
-              );
-            },
+          return RefreshIndicator(
+            onRefresh: () async => ref
+              ..invalidate(eventRegistrationsProvider(eventId))
+              ..invalidate(eventResultsProvider(eventId)),
+            child: ListView.separated(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              itemCount: regs.length,
+              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
+              itemBuilder: (_, i) {
+                final r = regs[i];
+                final s =
+                    students.where((s) => s.id == r.studentId).firstOrNull;
+                final result = byStudent[r.studentId];
+                return _ResultCard(
+                  eventId: eventId,
+                  regId: r.id,
+                  studentId: r.studentId,
+                  studentName: s?.fullName ?? r.studentId.substring(0, 8),
+                  existing: result,
+                );
+              },
+            ),
           );
         },
       ),
@@ -76,8 +83,8 @@ class EventResultsPage extends ConsumerWidget {
   }
 }
 
-class _ResultRow extends ConsumerStatefulWidget {
-  const _ResultRow({
+class _ResultCard extends ConsumerStatefulWidget {
+  const _ResultCard({
     required this.eventId,
     required this.regId,
     required this.studentId,
@@ -91,10 +98,10 @@ class _ResultRow extends ConsumerStatefulWidget {
   final EventResult? existing;
 
   @override
-  ConsumerState<_ResultRow> createState() => _ResultRowState();
+  ConsumerState<_ResultCard> createState() => _ResultCardState();
 }
 
-class _ResultRowState extends ConsumerState<_ResultRow> {
+class _ResultCardState extends ConsumerState<_ResultCard> {
   late final TextEditingController _placement;
   late final TextEditingController _score;
   late final TextEditingController _category;
@@ -165,62 +172,109 @@ class _ResultRowState extends ConsumerState<_ResultRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final saved = widget.existing != null;
+    final issued = widget.existing?.certificateIssuedAt != null;
+
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.studentName,
-              style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: AppSpacing.sm),
+          // Identity row: tinted avatar → name → result/certificate status.
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 80,
-                child: AppFormField(
-                  controller: _placement,
-                  label: 'Place',
-                  keyboardType: TextInputType.number,
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: scheme.primaryContainer,
+                child: Icon(
+                  Icons.person_outline,
+                  size: 20,
+                  color: scheme.onPrimaryContainer,
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
-              SizedBox(
-                width: 100,
+              Expanded(
+                child: Text(
+                  widget.studentName,
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              AppBadge(
+                text: issued
+                    ? 'Certificate issued'
+                    : saved
+                        ? 'Result saved'
+                        : 'Not recorded',
+                tone: issued
+                    ? AppBadgeTone.success
+                    : saved
+                        ? AppBadgeTone.info
+                        : AppBadgeTone.neutral,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // Place + Score side-by-side; they wrap to stack on narrow widths.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
                 child: AppFormField(
-                  controller: _score,
-                  label: 'Score',
+                  controller: _placement,
+                  label: 'Placement',
+                  hint: 'e.g. 1',
                   keyboardType: TextInputType.number,
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: AppFormField(
-                  controller: _category,
-                  label: 'Category',
+                  controller: _score,
+                  label: 'Score',
+                  hint: 'e.g. 9.5',
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppFormField(
+            controller: _category,
+            label: 'Category',
+            hint: 'e.g. Under-14',
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // Step 1 — save the result. Step 2 — generate the certificate
+          // (only available once a result exists).
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _save,
+            icon: _busy
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: const Text('Save result'),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              FilledButton.tonal(
-                onPressed: _busy ? null : _save,
-                child: const Text('Save'),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _generateCertificate,
-                icon: const Icon(Icons.verified_outlined),
-                label: Text(
-                  widget.existing?.certificateIssuedAt == null
-                      ? 'Generate certificate'
-                      : 'Re-download',
-                ),
-              ),
-            ],
+          OutlinedButton.icon(
+            onPressed: (_busy || !saved) ? null : _generateCertificate,
+            icon: Icon(issued ? Icons.download_outlined : Icons.verified_outlined),
+            label: Text(issued ? 'Re-download certificate' : 'Generate certificate'),
           ),
+          if (!saved) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Save the result to enable certificate generation.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );

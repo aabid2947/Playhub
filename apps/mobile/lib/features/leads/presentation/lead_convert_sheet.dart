@@ -66,67 +66,144 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Convert ${widget.lead.displayName}',
-            style: theme.textTheme.titleLarge,
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Creates a student record from the lead, optionally enrolling '
-            'them into a batch.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+    final scheme = theme.colorScheme;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle — anchors the sheet and signals it's dismissible.
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          FutureBuilder<List<({String id, String name})>>(
-            future: _batchesFuture,
-            builder: (_, snap) {
-              if (!snap.hasData) {
-                return const SizedBox(height: 48, child: AppLoading());
-              }
-              return AppDropdownField<String?>(
-                label: 'Initial batch (optional)',
-                value: _batchId,
-                items: [
-                  const DropdownMenuItem<String?>(
-                      child: Text('No initial batch')),
-                  for (final b in snap.data!)
-                    DropdownMenuItem<String?>(
-                        value: b.id, child: Text(b.name)),
-                ],
-                onChanged: (v) => setState(() => _batchId = v),
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
+            const SizedBox(height: AppSpacing.lg),
+            // Title row: icon + title + lead name subtext.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.person_add_alt_1, color: scheme.primary),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Convert to student',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        widget.lead.displayName,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Creates a student record from the lead, optionally enrolling '
+              'them into a batch. You can enrol them later if no batch fits '
+              'yet.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
               ),
-              const SizedBox(width: AppSpacing.sm),
-              FilledButton.icon(
-                icon: const Icon(Icons.check),
-                label: Text(_busy ? 'Converting…' : 'Convert'),
-                onPressed: _busy ? null : _convert,
-              ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FutureBuilder<List<({String id, String name})>>(
+              future: _batchesFuture,
+              builder: (_, snap) {
+                if (snap.hasError) {
+                  // Inline (not full-screen) so the sheet stays compact and
+                  // the action row remains reachable — convert can still run
+                  // with no batch.
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: AppSemanticColors.of(context).danger,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            "Couldn't load batches. You can still convert "
+                            'without one.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                if (!snap.hasData) {
+                  return const SizedBox(
+                    height: 56,
+                    child: AppLoading(label: 'Loading batches…'),
+                  );
+                }
+                return AppDropdownField<String?>(
+                  label: 'Initial batch (optional)',
+                  value: _batchId,
+                  hint: 'No batch — enrol later',
+                  items: [
+                    for (final b in snap.data!)
+                      DropdownMenuItem<String?>(
+                        value: b.id,
+                        child: Text(b.name),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _batchId = v),
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                FilledButton.icon(
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(_busy ? 'Converting…' : 'Convert'),
+                  onPressed: _busy ? null : _convert,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

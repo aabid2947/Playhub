@@ -7,7 +7,6 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
-import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
@@ -18,9 +17,14 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:url_launcher/url_launcher.dart' as launcher;
 
-/// Parent / student dashboard. Shows linked-students switcher, attendance
-/// calendar (last 60 days), performance line, and outstanding dues.
-/// Razorpay checkout for outstanding invoices is triggered from this view.
+/// Parent / student dashboard. Shows a persistent linked-student switcher,
+/// the priority "this week" sections (next session + outstanding dues), then
+/// the heavier visualisations (attendance heatmap + weekly bars, performance
+/// line, media gallery) grouped under section headers, and an events link.
+///
+/// The wordmark + account entry point live in the parent home shell's AppBar;
+/// this tab renders only the scrollable body. Razorpay checkout for an
+/// outstanding invoice runs from here, behind a confirmation step.
 class ParentDashboardTab extends ConsumerStatefulWidget {
   const ParentDashboardTab({super.key});
 
@@ -35,32 +39,20 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
   Widget build(BuildContext context) {
     final studentsAsync = ref.watch(myLinkedStudentsProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: 'Profile',
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const ProfilePage()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(supabaseClientProvider).auth.signOut(),
-          ),
-        ],
-      ),
       body: studentsAsync.when(
         loading: () => const AppLoading(),
-        error: (e, _) => AppErrorView(message: friendlyError(e)),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(myLinkedStudentsProvider),
+        ),
         data: (students) {
           if (students.isEmpty) {
             return const AppEmptyState(
               icon: Icons.group_outlined,
-              title:
-                  'No students linked to your account yet. Ask the academy '
-                  'admin to link you.',
+              title: 'No students linked yet',
+              subtitle:
+                  'Ask your academy admin to link a student to your account '
+                  'so their schedule, attendance, and dues show up here.',
             );
           }
           _selectedStudentId ??= students.first.id;
@@ -82,44 +74,49 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 ..invalidate(myLinkedStudentBatchesProvider(selected.id));
             },
             child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                if (students.length > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: SegmentedButton<String>(
-                      segments: [
-                        for (final s in students)
-                          ButtonSegment<String>(
-                            value: s.id,
-                            label: Text(s.firstName),
-                          ),
-                      ],
-                      selected: {selected.id},
-                      onSelectionChanged: (sel) =>
-                          setState(() => _selectedStudentId = sel.first),
-                    ),
-                  ),
-                _StudentHeader(student: selected),
-                const SizedBox(height: AppSpacing.md),
+                // Persistent, prominent header: identity + (when there's more
+                // than one child) the switcher. Rendered for a single student
+                // too, so the layout never appears/disappears by count.
+                _StudentSwitcherHeader(
+                  students: students,
+                  selected: selected,
+                  onSelect: (id) => setState(() => _selectedStudentId = id),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+
+                // Priority: what matters right now sits at the top.
+                const AppSectionHeader(title: 'This week'),
                 _UpcomingSessionsCard(studentId: selected.id),
                 const SizedBox(height: AppSpacing.md),
-                _BatchesCard(studentId: selected.id),
-                const SizedBox(height: AppSpacing.md),
-                _AttendanceCard(studentId: selected.id),
-                const SizedBox(height: AppSpacing.md),
-                _PerformanceCard(studentId: selected.id),
-                const SizedBox(height: AppSpacing.md),
-                _MediaGalleryCard(studentId: selected.id),
-                const SizedBox(height: AppSpacing.md),
                 _OutstandingCard(studentId: selected.id),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.xl),
+
+                const AppSectionHeader(title: 'Batches'),
+                _BatchesCard(studentId: selected.id),
+                const SizedBox(height: AppSpacing.xl),
+
+                const AppSectionHeader(title: 'Attendance'),
+                _AttendanceCard(studentId: selected.id),
+                const SizedBox(height: AppSpacing.xl),
+
+                const AppSectionHeader(title: 'Performance'),
+                _PerformanceCard(studentId: selected.id),
+                const SizedBox(height: AppSpacing.xl),
+
+                const AppSectionHeader(title: 'Photos & videos'),
+                _MediaGalleryCard(studentId: selected.id),
+                const SizedBox(height: AppSpacing.xl),
+
+                const AppSectionHeader(title: 'More'),
                 AppCard(
                   padding: EdgeInsets.zero,
                   child: AppListTile(
                     leading: const Icon(Icons.emoji_events_outlined),
                     title: const Text('Events'),
                     subtitle: const Text('Browse + register for tournaments'),
+                    trailing: const Icon(Icons.chevron_right),
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute(builder: (_) => const EventsPage()),
                     ),
@@ -130,6 +127,45 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Persistent header: the selected student's identity card, with the
+/// segmented switcher pinned above it when more than one child is linked.
+class _StudentSwitcherHeader extends StatelessWidget {
+  const _StudentSwitcherHeader({
+    required this.students,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<Student> students;
+  final Student selected;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (students.length > 1) ...[
+          SegmentedButton<String>(
+            segments: [
+              for (final s in students)
+                ButtonSegment<String>(
+                  value: s.id,
+                  label: Text(s.firstName),
+                ),
+            ],
+            selected: {selected.id},
+            showSelectedIcon: false,
+            onSelectionChanged: (sel) => onSelect(sel.first),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        _StudentHeader(student: selected),
+      ],
     );
   }
 }
@@ -166,7 +202,9 @@ class _StudentHeader extends ConsumerWidget {
                 if (sportLabel != '—')
                   Text(
                     sportLabel,
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
               ],
             ),
@@ -224,14 +262,21 @@ class _UpcomingSessionsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(studentUpcomingSessionsProvider(studentId));
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Upcoming sessions — next 7 days',
-            style: Theme.of(context).textTheme.titleMedium,
+            'Upcoming sessions',
+            style: theme.textTheme.titleMedium,
+          ),
+          Text(
+            'Next 7 days',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           async.when(
@@ -242,7 +287,12 @@ class _UpcomingSessionsCard extends ConsumerWidget {
             error: (e, _) => Text(friendlyError(e)),
             data: (sessions) {
               if (sessions.isEmpty) {
-                return const Text('No sessions scheduled this week');
+                return Text(
+                  'No sessions scheduled this week',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                );
               }
               return Column(
                 children: [
@@ -274,32 +324,34 @@ class _BatchesCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(myLinkedStudentBatchesProvider(studentId));
     return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Batches', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          async.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              child: LinearProgressIndicator(),
-            ),
-            error: (e, _) => Text(friendlyError(e)),
-            data: (rows) {
-              if (rows.isEmpty) return const Text('No active batches');
-              return Column(
-                children: [
-                  for (var i = 0; i < rows.length; i++) ...[
-                    if (i > 0) const Divider(height: 24),
-                    _BatchRow(row: rows[i]),
-                  ],
-                ],
-              );
-            },
-          ),
-        ],
+      child: async.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: LinearProgressIndicator(),
+        ),
+        error: (e, _) => Text(friendlyError(e)),
+        data: (rows) {
+          if (rows.isEmpty) {
+            return Text(
+              'No active batches',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) const Divider(height: AppSpacing.xl),
+                _BatchRow(row: rows[i]),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -311,6 +363,7 @@ class _BatchRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final sportLabel = ref.watch(sportDisplayProvider((sportId: row.sportId)));
     final coachPhotoUrl = ref
         .watch(storageServiceProvider)
@@ -321,18 +374,29 @@ class _BatchRow extends ConsumerWidget {
       children: [
         Text(
           row.batchName + (sportLabel != '—' ? '  •  $sportLabel' : ''),
-          style: Theme.of(context).textTheme.titleSmall,
+          style: theme.textTheme.titleSmall,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.xs),
         Row(
           children: [
-            const Icon(Icons.schedule, size: 16),
-            const SizedBox(width: 6),
-            Expanded(child: Text(row.scheduleSummary)),
+            Icon(
+              Icons.schedule,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                row.scheduleSummary,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           ],
         ),
         if (coachName.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -341,19 +405,21 @@ class _BatchRow extends ConsumerWidget {
                 url: coachPhotoUrl,
                 fallback: coachName.isEmpty ? '?' : coachName[0],
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Coach $coachName',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                      style: theme.textTheme.bodyMedium,
                     ),
                     if (row.coachQualifications.isNotEmpty)
                       Text(
                         row.coachQualifications.join(', '),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                   ],
                 ),
@@ -387,14 +453,15 @@ class _AttendanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(studentAttendanceProvider(studentId));
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Attendance — last 60 days',
-            style: Theme.of(context).textTheme.titleMedium,
+            'Last 60 days',
+            style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: AppSpacing.md),
           async.when(
@@ -404,7 +471,14 @@ class _AttendanceCard extends ConsumerWidget {
             ),
             error: (e, _) => Text(friendlyError(e)),
             data: (days) {
-              if (days.isEmpty) return const Text('No records yet');
+              if (days.isEmpty) {
+                return Text(
+                  'No records yet',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                );
+              }
               final total = days.length;
               final present = days.where((d) => d.status == 'present').length;
               final pct = (present * 100 / total).toStringAsFixed(0);
@@ -412,8 +486,8 @@ class _AttendanceCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
                     children: [
                       for (final d in days)
                         Container(
@@ -421,7 +495,7 @@ class _AttendanceCard extends ConsumerWidget {
                           height: 14,
                           decoration: BoxDecoration(
                             color: _color(context, d.status),
-                            borderRadius: BorderRadius.circular(2),
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
                           ),
                         ),
                     ],
@@ -445,24 +519,30 @@ class _AttendanceCard extends ConsumerWidget {
                               height: 10,
                               decoration: BoxDecoration(
                                 color: _color(context, entry.$1),
-                                borderRadius: BorderRadius.circular(2),
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.sm),
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
                             Text(
                               entry.$2,
-                              style: Theme.of(context).textTheme.bodySmall,
+                              style: theme.textTheme.bodySmall,
                             ),
                           ],
                         ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  Text('$present / $total present ($pct%)'),
+                  Text(
+                    '$present / $total present ($pct%)',
+                    style: theme.textTheme.bodyMedium,
+                  ),
                   const SizedBox(height: AppSpacing.lg),
                   Text(
-                    'Weekly % (last 4 weeks)',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    'Weekly % · last 4 weeks',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   _WeeklyAttendanceChart(studentId: studentId),
@@ -482,16 +562,24 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(studentAttendanceWeeklyProvider(studentId));
     return async.when(
-      loading: () =>
-          const SizedBox(height: 40, child: LinearProgressIndicator()),
+      loading: () => const SizedBox(
+        height: 40,
+        child: LinearProgressIndicator(),
+      ),
       error: (e, _) => Text(friendlyError(e)),
       data: (weeks) {
         if (weeks.every((w) => w.total == 0)) {
-          return const Text('Not enough data');
+          return Text(
+            'Not enough data',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
         }
-        final primary = Theme.of(context).colorScheme.primary;
+        final primary = theme.colorScheme.primary;
         return SizedBox(
           height: 120,
           child: BarChart(
@@ -509,7 +597,7 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                         color: primary,
                         width: 16,
                         borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(4),
+                          top: Radius.circular(AppRadius.sm),
                         ),
                       ),
                     ],
@@ -519,7 +607,7 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                 drawVerticalLine: false,
                 horizontalInterval: 25,
                 getDrawingHorizontalLine: (_) => FlLine(
-                  color: Theme.of(context).dividerColor,
+                  color: theme.colorScheme.outlineVariant,
                   strokeWidth: 0.5,
                 ),
               ),
@@ -534,7 +622,9 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                     interval: 25,
                     getTitlesWidget: (v, _) => Text(
                       '${v.toInt()}%',
-                      style: Theme.of(context).textTheme.labelSmall,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
@@ -549,10 +639,12 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                       }
                       final ws = weeks[i].weekStart;
                       return Padding(
-                        padding: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.only(top: AppSpacing.xs),
                         child: Text(
                           '${ws.day}/${ws.month}',
-                          style: Theme.of(context).textTheme.labelSmall,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       );
                     },
@@ -560,7 +652,6 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                 ),
               ),
               barTouchData: BarTouchData(
-                enabled: true,
                 touchTooltipData: BarTouchTooltipData(
                   getTooltipItem: (group, _, __, ___) {
                     final w = weeks[group.x];
@@ -568,7 +659,12 @@ class _WeeklyAttendanceChart extends ConsumerWidget {
                       'Week of ${w.weekStart.day}/${w.weekStart.month}\n'
                       '${w.present}/${w.total}'
                       ' (${w.pct.toStringAsFixed(0)}%)',
-                      const TextStyle(color: Colors.white),
+                      theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onInverseSurface,
+                          ) ??
+                          TextStyle(
+                            color: theme.colorScheme.onInverseSurface,
+                          ),
                     );
                   },
                 ),
@@ -587,14 +683,15 @@ class _PerformanceCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(studentPerformanceProvider(studentId));
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Performance trend',
-            style: Theme.of(context).textTheme.titleMedium,
+            'Assessment trend',
+            style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: AppSpacing.md),
           async.when(
@@ -605,9 +702,14 @@ class _PerformanceCard extends ConsumerWidget {
             error: (e, _) => Text(friendlyError(e)),
             data: (pts) {
               if (pts.isEmpty) {
-                return const Text('No assessments yet');
+                return Text(
+                  'No assessments yet',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                );
               }
-              final primary = Theme.of(context).colorScheme.primary;
+              final primary = theme.colorScheme.primary;
               return SizedBox(
                 height: 160,
                 child: LineChart(
@@ -633,7 +735,7 @@ class _PerformanceCard extends ConsumerWidget {
                       drawVerticalLine: false,
                       horizontalInterval: 2.5,
                       getDrawingHorizontalLine: (_) => FlLine(
-                        color: Theme.of(context).dividerColor,
+                        color: theme.colorScheme.outlineVariant,
                         strokeWidth: 0.5,
                       ),
                     ),
@@ -649,7 +751,9 @@ class _PerformanceCard extends ConsumerWidget {
                           interval: 2.5,
                           getTitlesWidget: (v, _) => Text(
                             v.toStringAsFixed(0),
-                            style: Theme.of(context).textTheme.labelSmall,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ),
@@ -664,7 +768,12 @@ class _PerformanceCard extends ConsumerWidget {
                               '-${d.day.toString().padLeft(2, '0')}';
                           return LineTooltipItem(
                             '$dStr\n${p.score.toStringAsFixed(1)}/10',
-                            const TextStyle(color: Colors.white),
+                            theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onInverseSurface,
+                                ) ??
+                                TextStyle(
+                                  color: theme.colorScheme.onInverseSurface,
+                                ),
                           );
                         }).toList(),
                       ),
@@ -706,47 +815,38 @@ class _MediaGalleryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(mediaForStudentProvider(studentId));
     return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Photos & videos',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          async.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.all(AppSpacing.sm),
-              child: LinearProgressIndicator(),
+      child: async.when(
+        loading: () => const Padding(
+          padding: EdgeInsets.all(AppSpacing.sm),
+          child: LinearProgressIndicator(),
+        ),
+        error: (e, _) => Text(friendlyError(e)),
+        data: (media) {
+          if (media.isEmpty) {
+            return Text(
+              'No photos or videos shared yet',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            );
+          }
+          return SizedBox(
+            height: 96,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: media.length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(width: AppSpacing.sm),
+              itemBuilder: (_, i) => _MediaThumb(
+                media: media[i],
+                onTap: () => _open(context, ref, media[i]),
+              ),
             ),
-            error: (e, _) => Text(friendlyError(e)),
-            data: (media) {
-              if (media.isEmpty) {
-                return Text(
-                  'No photos or videos shared yet',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                );
-              }
-              return SizedBox(
-                height: 96,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: media.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(width: AppSpacing.sm),
-                  itemBuilder: (_, i) => _MediaThumb(
-                    media: media[i],
-                    onTap: () => _open(context, ref, media[i]),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -774,7 +874,7 @@ class _MediaThumb extends ConsumerWidget {
       final urlAsync = ref.watch(performanceMediaUrlProvider(media.filePath));
       inner = urlAsync.when(
         loading: () => ColoredBox(color: fill),
-        error: (_, __) => Container(
+        error: (_, __) => ColoredBox(
           color: fill,
           child: const Icon(Icons.broken_image_outlined),
         ),
@@ -782,7 +882,7 @@ class _MediaThumb extends ConsumerWidget {
           imageUrl: url,
           fit: BoxFit.cover,
           placeholder: (_, __) => ColoredBox(color: fill),
-          errorWidget: (_, __, ___) => Container(
+          errorWidget: (_, __, ___) => ColoredBox(
             color: fill,
             child: const Icon(Icons.broken_image_outlined),
           ),
@@ -803,18 +903,51 @@ class _OutstandingCard extends ConsumerWidget {
   const _OutstandingCard({required this.studentId});
   final String studentId;
 
+  /// Confirm before launching checkout so a single tap can't kick off a real
+  /// payment. Returns true only on explicit confirmation.
+  Future<bool> _confirmPay(
+    BuildContext context,
+    OutstandingDues r,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Pay invoice'),
+        content: Text(
+          'Pay ₹${r.balance.toStringAsFixed(0)} towards invoice '
+          '${r.invoiceNumber}? You will be taken to the secure '
+          'Razorpay checkout.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Pay ₹${r.balance.toStringAsFixed(0)}'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _payInvoice(
     BuildContext context,
     WidgetRef ref,
-    String invoiceId,
+    OutstandingDues r,
   ) async {
+    final confirmed = await _confirmPay(context, r);
+    if (!confirmed || !context.mounted) return;
+
     final client = ref.read(supabaseClientProvider);
     final profile = ref.read(currentProfileProvider).valueOrNull;
     final academy = ref.read(myAcademyProvider).valueOrNull;
     final checkout = RazorpayCheckout(client);
     try {
       final result = await checkout.payInvoice(
-        invoiceId: invoiceId,
+        invoiceId: r.invoiceId,
         academyName: academy?.name ?? 'PlayHub',
         prefillEmail: profile?.email,
         prefillContact: profile?.phone,
@@ -838,8 +971,19 @@ class _OutstandingCard extends ConsumerWidget {
     }
   }
 
+  AppBadgeTone _toneFor(String status) {
+    switch (status) {
+      case 'overdue':
+        return AppBadgeTone.danger;
+      case 'partial':
+        return AppBadgeTone.warning;
+    }
+    return AppBadgeTone.info;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final async = ref.watch(studentOutstandingDuesProvider(studentId));
     return AppCard(
       child: Column(
@@ -847,7 +991,7 @@ class _OutstandingCard extends ConsumerWidget {
         children: [
           Text(
             'Outstanding dues',
-            style: Theme.of(context).textTheme.titleMedium,
+            style: theme.textTheme.titleMedium,
           ),
           const SizedBox(height: AppSpacing.sm),
           async.when(
@@ -858,42 +1002,105 @@ class _OutstandingCard extends ConsumerWidget {
             error: (e, _) => Text(friendlyError(e)),
             data: (rows) {
               if (rows.isEmpty) {
-                return const Text('Nothing due 🎉');
+                return Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 20,
+                      color: AppSemanticColors.of(context).success,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Nothing due right now',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                );
               }
               return Column(
                 children: [
-                  for (final r in rows)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(r.invoiceNumber),
-                      subtitle: Text(
-                        'Due ${r.dueDate.year}-'
-                        '${r.dueDate.month.toString().padLeft(2, '0')}-'
-                        '${r.dueDate.day.toString().padLeft(2, '0')}'
-                        '  •  ${r.status}',
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '₹${r.balance.toStringAsFixed(0)}',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          FilledButton.tonal(
-                            onPressed: () =>
-                                _payInvoice(context, ref, r.invoiceId),
-                            child: const Text('Pay'),
-                          ),
-                        ],
-                      ),
+                  for (var i = 0; i < rows.length; i++) ...[
+                    if (i > 0) const Divider(height: AppSpacing.lg),
+                    _DuesRow(
+                      row: rows[i],
+                      tone: _toneFor(rows[i].status),
+                      onPay: () => _payInvoice(context, ref, rows[i]),
                     ),
+                  ],
                 ],
               );
             },
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DuesRow extends StatelessWidget {
+  const _DuesRow({
+    required this.row,
+    required this.tone,
+    required this.onPay,
+  });
+
+  final OutstandingDues row;
+  final AppBadgeTone tone;
+  final VoidCallback onPay;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dueStr = '${row.dueDate.year}-'
+        '${row.dueDate.month.toString().padLeft(2, '0')}-'
+        '${row.dueDate.day.toString().padLeft(2, '0')}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.invoiceNumber,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Due $dueStr',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '₹${row.balance.toStringAsFixed(0)}',
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppBadge(text: row.status, tone: tone),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonal(
+            onPressed: onPay,
+            child: const Text('Pay'),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/performance/data/performance.dart';
@@ -7,6 +8,7 @@ import 'package:playhub/features/performance/data/performance_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Coach-facing form: pick sport rubric, score skills, attach media,
 /// add qualitative feedback, save.
@@ -95,14 +97,10 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
       );
       setState(() => _savedAssessmentId = id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Assessment saved.')),
-      );
+      AppSnackbar.success(context, 'Assessment saved.');
     } on Object catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyError(e))),
-      );
+      AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -156,14 +154,17 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final saved = _savedAssessmentId != null;
     return Scaffold(
       appBar: AppBar(
         title: Text('Assess · ${widget.student.fullName}'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
+          // --- Rubric ---------------------------------------------------
+          const AppSectionHeader(title: 'Rubric'),
           AbsorbPointer(
             absorbing: saved,
             child: SportPicker(
@@ -173,29 +174,39 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
               centerId: widget.student.centerId,
             ),
           ),
-          const SizedBox(height: 16),
-          Text('Skills', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.xl),
+
+          // --- Skills ---------------------------------------------------
+          const AppSectionHeader(title: 'Skills'),
+          const SizedBox(height: AppSpacing.xs),
           for (var i = 0; i < _skills.length; i++)
-            _SkillRow(
-              entry: _skills[i],
-              onChanged: () => setState(() {}),
-              onRemove: saved
-                  ? null
-                  : () => setState(() => _skills.removeAt(i)),
-              readOnly: saved,
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: _SkillRow(
+                entry: _skills[i],
+                onChanged: () => setState(() {}),
+                onRemove: saved
+                    ? null
+                    : () => setState(() => _skills.removeAt(i)),
+                readOnly: saved,
+              ),
             ),
-          if (!saved) ...[
-            const SizedBox(height: 4),
-            TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Add skill'),
-              onPressed: () {
-                setState(() => _skills.add(SkillEntry(name: '')));
-              },
+          if (!saved)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Add skill'),
+                onPressed: () {
+                  setState(() => _skills.add(SkillEntry(name: '')));
+                },
+              ),
             ),
-          ],
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.xl),
+
+          // --- Feedback -------------------------------------------------
+          const AppSectionHeader(title: 'Feedback'),
+          const SizedBox(height: AppSpacing.xs),
           TextField(
             controller: _feedback,
             enabled: !saved,
@@ -206,23 +217,50 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
               hintText: 'Strengths, areas to work on, parent-facing notes…',
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Text('Average score: ',
-                  style: Theme.of(context).textTheme.bodyMedium),
-              Text(
-                _overall().toStringAsFixed(2),
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ],
+          const SizedBox(height: AppSpacing.lg),
+
+          // --- Average score callout -----------------------------------
+          AppCard(
+            child: Row(
+              children: [
+                Icon(
+                  Icons.insights_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    'Average score',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                Text(
+                  _overall().toStringAsFixed(2),
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.xl),
+
+          // --- Primary action / post-save evidence ---------------------
           if (saved) ...[
-            Text('Evidence', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: AppSpacing.lg),
+            const AppSectionHeader(title: 'Evidence'),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Attach photos or video to support this assessment.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
             Wrap(
-              spacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
                 FilledButton.tonalIcon(
                   icon: const Icon(Icons.photo_camera_outlined),
@@ -237,26 +275,44 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
               ],
             ),
             if (_mediaPaths.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('${_mediaPaths.length} attached',
-                  style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 16,
+                    color: AppSemanticColors.of(context).success,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    '${_mediaPaths.length} attached',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ],
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Done'),
+            const SizedBox(height: AppSpacing.xl),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
             ),
           ] else
-            FilledButton.icon(
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: Text(_saving ? 'Saving…' : 'Save assessment'),
-              onPressed: _saving ? null : _save,
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_saving ? 'Saving…' : 'Save assessment'),
+                onPressed: _saving ? null : _save,
+              ),
             ),
         ],
       ),
@@ -264,6 +320,10 @@ class _PerformanceFormPageState extends ConsumerState<PerformanceFormPage> {
   }
 }
 
+/// A single scored skill. The name spans the full width on its own line, and
+/// the slider + score + remove sit on a second line so nothing crushes on a
+/// narrow screen. The score badge keeps a fixed width so it doesn't jitter as
+/// the value crosses single → double digits.
 class _SkillRow extends StatelessWidget {
   const _SkillRow({
     required this.entry,
@@ -279,57 +339,74 @@ class _SkillRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+    final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              enabled: !readOnly,
-              controller: TextEditingController(text: entry.name)
-                ..selection =
-                    TextSelection.collapsed(offset: entry.name.length),
-              onChanged: (v) {
-                entry.name = v;
-                onChanged();
-              },
-              decoration: const InputDecoration(
-                isDense: true,
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  enabled: !readOnly,
+                  controller: TextEditingController(text: entry.name)
+                    ..selection =
+                        TextSelection.collapsed(offset: entry.name.length),
+                  onChanged: (v) {
+                    entry.name = v;
+                    onChanged();
+                  },
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    hintText: 'Skill name',
+                  ),
+                ),
               ),
-            ),
+              if (onRemove != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Remove skill',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onRemove,
+                ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 4,
-            child: Slider(
-              value: entry.score.toDouble(),
-              min: 1,
-              max: 10,
-              divisions: 9,
-              label: '${entry.score}',
-              onChanged: readOnly
-                  ? null
-                  : (v) {
-                      entry.score = v.round();
-                      onChanged();
-                    },
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Slider(
+                  value: entry.score.toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  label: '${entry.score}',
+                  onChanged: readOnly
+                      ? null
+                      : (v) {
+                          entry.score = v.round();
+                          onChanged();
+                        },
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              // Fixed-width box keeps the layout stable across 1–10.
+              SizedBox(
+                width: 36,
+                child: Text(
+                  '${entry.score}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(
-            width: 24,
-            child: Text(
-              '${entry.score}',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          if (onRemove != null)
-            IconButton(
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: onRemove,
-            ),
         ],
       ),
     );

@@ -74,6 +74,11 @@ class BatchFeesSection extends ConsumerWidget {
                       fee: byId[a.feeStructureId],
                       onDeactivate: canManage
                           ? () async {
+                              final ok = await _confirmDeactivate(
+                                context,
+                                byId[a.feeStructureId],
+                              );
+                              if (!ok) return;
                               await deactivateBatchAssignment(
                                 ref,
                                 assignmentId: a.id,
@@ -111,6 +116,37 @@ class BatchFeesSection extends ConsumerWidget {
       ),
     );
   }
+
+  Future<bool> _confirmDeactivate(
+    BuildContext context,
+    FeeStructure? fee,
+  ) async {
+    final name = fee?.name ?? 'this fee';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stop billing?'),
+        content: Text(
+          'New invoices for "$name" will no longer be generated for this '
+          'batch. Invoices already issued are unaffected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppSemanticColors.of(ctx).danger,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Stop billing'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
 }
 
 class _AssignmentTile extends StatelessWidget {
@@ -123,26 +159,33 @@ class _AssignmentTile extends StatelessWidget {
   final BatchFeeAssignment assignment;
   final FeeStructure? fee;
 
-  /// Null in read-only mode — the tile then shows a status badge instead of a
-  /// stop-billing control.
+  /// Null in read-only mode — the stop-billing control is then hidden, but the
+  /// active/inactive badge still shows.
   final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
     final isActive = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
-    final Widget trailing;
-    if (!isActive) {
-      trailing = const AppBadge(text: 'Inactive');
-    } else if (onDeactivate != null) {
-      trailing = IconButton(
-        tooltip: 'Stop billing for this batch',
-        icon: const Icon(Icons.stop_circle_outlined),
-        onPressed: onDeactivate,
-      );
-    } else {
-      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
-    }
+    final badge = isActive
+        ? const AppBadge(text: 'Active', tone: AppBadgeTone.success)
+        : const AppBadge(text: 'Inactive');
+    // The status badge is always present so active/inactive reads consistently;
+    // the deactivate control is appended only when active and manageable.
+    final trailing = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        badge,
+        if (isActive && onDeactivate != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          IconButton(
+            tooltip: 'Stop billing for this batch',
+            icon: const Icon(Icons.stop_circle_outlined),
+            onPressed: onDeactivate,
+          ),
+        ],
+      ],
+    );
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
@@ -191,12 +234,35 @@ class _AssignSheetState extends State<_AssignSheet> {
     super.initState();
     _feeId = widget.fees.first.id;
     _billingDay.text = DateTime.now().day.clamp(1, 28).toString();
+    // Keep the invoice-generation explainer in sync as the billing day changes.
+    _billingDay.addListener(_onBillingDayChanged);
   }
 
   @override
   void dispose() {
-    _billingDay.dispose();
+    _billingDay
+      ..removeListener(_onBillingDayChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onBillingDayChanged() => setState(() {});
+
+  /// One-line summary of when the recurring-invoice cron will bill this fee.
+  String _invoiceExplainer(FeeType type, int? billingDay) {
+    final day = (billingDay == null || billingDay < 1 || billingDay > 28)
+        ? 'the billing day'
+        : 'day $billingDay';
+    switch (type) {
+      case FeeType.monthly:
+        return 'Generates an invoice every month on $day.';
+      case FeeType.quarterly:
+        return 'Generates an invoice every quarter on $day.';
+      case FeeType.annual:
+        return 'Generates an invoice every year on $day.';
+      case FeeType.oneTime:
+        return 'Generates a single invoice on $day.';
+    }
   }
 
   Future<void> _pickStart() async {
@@ -230,6 +296,12 @@ class _AssignSheetState extends State<_AssignSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = widget.fees.firstWhere(
+      (f) => f.id == _feeId,
+      orElse: () => widget.fees.first,
+    );
+    final billingDay = int.tryParse(_billingDay.text.trim());
     return Padding(
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
@@ -243,7 +315,14 @@ class _AssignSheetState extends State<_AssignSheet> {
         children: [
           Text(
             'Assign fee to batch',
-            style: Theme.of(context).textTheme.titleLarge,
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            _invoiceExplainer(selected.type, billingDay),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
           AppDropdownField<String>(

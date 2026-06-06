@@ -141,7 +141,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Form(
           key: _formKey,
           child: Column(
@@ -156,6 +156,8 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
+
+              // ── Personal ──────────────────────────────────────────────
               const AppSectionHeader(title: 'Personal'),
               const SizedBox(height: AppSpacing.sm),
               Row(
@@ -202,10 +204,14 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 ],
               ),
               const SizedBox(height: AppSpacing.xl),
+
+              // ── Expertise ─────────────────────────────────────────────
+              // Sports coached is its own labeled block (a structured
+              // multi-select), kept distinct from the free-text sub-specialty
+              // and the comma-separated credential fields below it.
               const AppSectionHeader(title: 'Expertise'),
               const SizedBox(height: AppSpacing.sm),
-              SportMultiSelect(
-                label: 'Sports coached',
+              _SportsField(
                 selectedIds: _sportIds,
                 onToggle: (sid, sel) => setState(() {
                   if (sel) {
@@ -222,40 +228,10 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 hint: 'Batting, Wicket-keeping, …',
               ),
               const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _experience,
-                      label: 'Experience (yrs)',
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: centresAsync.when(
-                      loading: () =>
-                          const LinearProgressIndicator(minHeight: 2),
-                      error: (e, _) => Text(friendlyError(e)),
-                      data: (centres) => AppDropdownField<String>(
-                        label: 'Center',
-                        value: _centerId,
-                        items: [
-                          const DropdownMenuItem<String>(
-                            child: Text('— none —'),
-                          ),
-                          for (final c in centres.where((c) => c.isActive))
-                            DropdownMenuItem(
-                              value: c.id,
-                              child: Text(c.name),
-                            ),
-                        ],
-                        onChanged: (v) => setState(() => _centerId = v),
-                      ),
-                    ),
-                  ),
-                ],
+              AppFormField(
+                controller: _experience,
+                label: 'Experience (yrs)',
+                keyboardType: TextInputType.number,
               ),
               const SizedBox(height: AppSpacing.md),
               AppFormField(
@@ -270,6 +246,38 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 hint: 'NIS Level 1, ICC Coaching Certificate',
               ),
               const SizedBox(height: AppSpacing.xl),
+
+              // ── Assignment ────────────────────────────────────────────
+              const AppSectionHeader(title: 'Assignment'),
+              const SizedBox(height: AppSpacing.sm),
+              centresAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  child: AppLoading(),
+                ),
+                error: (e, _) => AppErrorView(
+                  message: friendlyError(e),
+                  onRetry: () => ref.invalidate(centersProvider),
+                ),
+                data: (centres) => AppDropdownField<String>(
+                  label: 'Center',
+                  value: _centerId,
+                  items: [
+                    const DropdownMenuItem<String>(
+                      child: Text('— none —'),
+                    ),
+                    for (final c in centres.where((c) => c.isActive))
+                      DropdownMenuItem(
+                        value: c.id,
+                        child: Text(c.name),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _centerId = v),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+
+              // ── Compensation ──────────────────────────────────────────
               const AppSectionHeader(title: 'Compensation'),
               const SizedBox(height: AppSpacing.sm),
               Row(
@@ -306,6 +314,8 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   ),
                 ],
               ),
+
+              // ── Edit-only sections, clearly separated below a divider ──
               if (isEdit) ...[
                 const SizedBox(height: AppSpacing.xxl),
                 const Divider(),
@@ -314,55 +324,9 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 const SizedBox(height: AppSpacing.xl),
                 const AppSectionHeader(title: 'Login & access'),
                 const SizedBox(height: AppSpacing.sm),
-                AppCard(
-                  padding: EdgeInsets.zero,
-                  child: AppListTile(
-                    leading: Icon(
-                      widget.existing!.userId == null
-                          ? Icons.lock_open_outlined
-                          : Icons.verified_user_outlined,
-                    ),
-                    title: Text(
-                      widget.existing!.userId == null
-                          ? 'Invite this coach to log in'
-                          : 'Coach has a login',
-                    ),
-                    subtitle: Text(
-                      widget.existing!.userId == null
-                          ? 'Sends a magic-link to the email above so they '
-                              'can sign in as a coach.'
-                          : 'They can already sign in.',
-                    ),
-                    onTap: widget.existing!.userId != null
-                        ? null
-                        : () {
-                            final email =
-                                (widget.existing!.email ?? '').trim();
-                            if (email.isEmpty) {
-                              AppSnackbar.info(
-                                context,
-                                "Set the coach's email above first, then "
-                                'save before inviting.',
-                              );
-                              return;
-                            }
-                            showModalBottomSheet<void>(
-                              context: context,
-                              isScrollControlled: true,
-                              builder: (_) => InviteUserSheet(
-                                preset: InvitePreset(
-                                  role: 'coach',
-                                  title:
-                                      'Invite ${widget.existing!.firstName} to log in',
-                                  email: widget.existing!.email,
-                                  firstName: widget.existing!.firstName,
-                                  lastName: widget.existing!.lastName,
-                                  linkCoachId: widget.existing!.id,
-                                ),
-                              ),
-                            );
-                          },
-                  ),
+                _LoginAccessCard(
+                  coach: widget.existing!,
+                  onInvite: () => _invite(context),
                 ),
               ],
               const SizedBox(height: AppSpacing.xl),
@@ -379,6 +343,124 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Opens the invite sheet for the (saved) coach, after checking an email
+  /// is on file. Kept on the State so the gated edit-only login card can call
+  /// it without duplicating the email-check / preset wiring.
+  void _invite(BuildContext context) {
+    final coach = widget.existing!;
+    final email = (coach.email ?? '').trim();
+    if (email.isEmpty) {
+      AppSnackbar.info(
+        context,
+        "Set the coach's email above first, then save before inviting.",
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => InviteUserSheet(
+        preset: InvitePreset(
+          role: 'coach',
+          title: 'Invite ${coach.firstName} to log in',
+          email: coach.email,
+          firstName: coach.firstName,
+          lastName: coach.lastName,
+          linkCoachId: coach.id,
+        ),
+      ),
+    );
+  }
+}
+
+/// The "Sports coached" expertise block. Watches the academy-wide sports
+/// source directly so the form can show a real loading / error state while
+/// the catalog resolves — the [SportMultiSelect] itself only sees resolved
+/// data, so it never flashes its "no sports configured" hint during load.
+class _SportsField extends ConsumerWidget {
+  const _SportsField({required this.selectedIds, required this.onToggle});
+
+  final Set<String> selectedIds;
+  final void Function(String sportId, bool selected) onToggle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sportsAsync = ref.watch(academyCenterSportsProvider);
+    return sportsAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: AppLoading(),
+      ),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(academyCenterSportsProvider),
+      ),
+      data: (_) => SportMultiSelect(
+        label: 'Sports coached',
+        selectedIds: selectedIds,
+        onToggle: onToggle,
+      ),
+    );
+  }
+}
+
+/// Edit-only card explaining and acting on the coach's login state.
+///
+/// Three states, each with its own badge so the situation is unambiguous:
+///   • no email on file  → can't invite yet (info badge, disabled)
+///   • email, no user_id → invite available (warning "Not invited" badge)
+///   • user_id present    → already has a login (success "Active" badge)
+class _LoginAccessCard extends StatelessWidget {
+  const _LoginAccessCard({required this.coach, required this.onInvite});
+
+  final Coach coach;
+  final VoidCallback onInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLogin = coach.userId != null;
+    final hasEmail = (coach.email ?? '').trim().isNotEmpty;
+
+    final (IconData icon, String title, String subtitle, Widget badge) =
+        switch ((hasLogin, hasEmail)) {
+      (true, _) => (
+          Icons.verified_user_outlined,
+          'Coach has a login',
+          'They can already sign in as a coach.',
+          const AppBadge(text: 'Active', tone: AppBadgeTone.success),
+        ),
+      (false, true) => (
+          Icons.lock_open_outlined,
+          'Invite this coach to log in',
+          'Sends a magic-link to the email above so they can sign in as a '
+              'coach.',
+          const AppBadge(text: 'Not invited', tone: AppBadgeTone.warning),
+        ),
+      (false, false) => (
+          Icons.mark_email_unread_outlined,
+          'Add an email to invite',
+          "Set the coach's email above and save first, then you can invite "
+              'them to log in.',
+          const AppBadge(text: 'No email', tone: AppBadgeTone.info),
+        ),
+    };
+
+    // Only the "email, no login" state is actionable; the other two have no
+    // tap target (already has a login / needs an email first).
+    final canInvite = !hasLogin && hasEmail;
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: AppListTile(
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: badge,
+        onTap: canInvite ? onInvite : null,
       ),
     );
   }

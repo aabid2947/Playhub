@@ -29,19 +29,101 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   }
 
   void _applySearch() {
-    ref.read(studentsFilterProvider.notifier).state = ref
-        .read(studentsFilterProvider)
-        .copyWith(search: _search.text);
+    ref.read(studentsFilterProvider.notifier).state =
+        ref.read(studentsFilterProvider).copyWith(search: _search.text);
+  }
+
+  void _openForm({Student? existing}) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => StudentFormPage(existing: existing)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final studentsAsync = ref.watch(studentsProvider);
-    final filter = ref.watch(studentsFilterProvider);
     final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
       body: Column(
+        children: [
+          _FilterBar(
+            controller: _search,
+            onSearch: _applySearch,
+            onImport: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const StudentBulkImportPage(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: studentsAsync.when(
+              loading: () => const AppSkeletonList(),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(studentsProvider),
+              ),
+              data: (students) {
+                if (students.isEmpty) {
+                  return const _EmptyState();
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(studentsProvider),
+                  child: ListView.separated(
+                    itemCount: students.length + 1,
+                    separatorBuilder: (_, i) =>
+                        i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        return _ResultCount(count: students.length);
+                      }
+                      return _StudentTile(
+                        student: students[i - 1],
+                        onTap: () => _openForm(existing: students[i - 1]),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: caps.manageStudents
+          ? FloatingActionButton.extended(
+              heroTag: 'fab-students',
+              onPressed: _openForm,
+              icon: const Icon(Icons.person_add),
+              label: const Text('New student'),
+            )
+          : null,
+    );
+  }
+}
+
+/// The single, unified filter block: a search field with an inline status
+/// menu, then the sport chip bar in the same coherent surface so the two
+/// filters never read as orphaned controls.
+class _FilterBar extends ConsumerWidget {
+  const _FilterBar({
+    required this.controller,
+    required this.onSearch,
+    required this.onImport,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onSearch;
+  final VoidCallback onImport;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filter = ref.watch(studentsFilterProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: scheme.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -54,20 +136,21 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _search,
-                    onSubmitted: (_) => _applySearch(),
+                    controller: controller,
+                    onSubmitted: (_) => onSearch(),
                     decoration: InputDecoration(
                       hintText: 'Search name, parent…',
                       prefixIcon: const Icon(Icons.search),
                       border: const OutlineInputBorder(),
                       isDense: true,
-                      suffixIcon: _search.text.isEmpty
+                      suffixIcon: controller.text.isEmpty
                           ? null
                           : IconButton(
+                              tooltip: 'Clear search',
                               icon: const Icon(Icons.close),
                               onPressed: () {
-                                _search.clear();
-                                _applySearch();
+                                controller.clear();
+                                onSearch();
                               },
                             ),
                     ),
@@ -76,11 +159,16 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                 const SizedBox(width: AppSpacing.sm),
                 PopupMenuButton<String?>(
                   tooltip: 'Filter status',
-                  icon: const Icon(Icons.filter_list),
+                  icon: Icon(
+                    Icons.filter_list,
+                    color: filter.status == null
+                        ? scheme.onSurfaceVariant
+                        : scheme.primary,
+                  ),
                   initialValue: filter.status,
                   onSelected: (v) {
-                    ref.read(studentsFilterProvider.notifier).state = filter
-                        .copyWith(status: v);
+                    ref.read(studentsFilterProvider.notifier).state =
+                        filter.copyWith(status: v);
                   },
                   itemBuilder: (_) => const [
                     PopupMenuItem<String?>(child: Text('All')),
@@ -93,11 +181,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                 IconButton(
                   tooltip: 'Import CSV',
                   icon: const Icon(Icons.upload_file_outlined),
-                  onPressed: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const StudentBulkImportPage(),
-                    ),
-                  ),
+                  onPressed: onImport,
                 ),
               ],
             ),
@@ -110,68 +194,67 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                   : filter.copyWith(sportId: id);
             },
           ),
-          Expanded(
-            child: studentsAsync.when(
-              loading: () => const AppLoading(),
-              error: (e, _) => AppErrorView(message: friendlyError(e)),
-              data: (students) {
-                if (students.isEmpty) {
-                  return const _EmptyState();
-                }
-                return RefreshIndicator(
-                  onRefresh: () async => ref.invalidate(studentsProvider),
-                  child: ListView.separated(
-                    itemCount: students.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) =>
-                        _StudentTile(student: students[i]),
-                  ),
-                );
-              },
-            ),
-          ),
         ],
       ),
-      floatingActionButton: caps.manageStudents
-          ? FloatingActionButton.extended(
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(builder: (_) => const StudentFormPage()),
-              ),
-              icon: const Icon(Icons.person_add),
-              label: const Text('New student'),
-            )
-          : null,
+    );
+  }
+}
+
+/// Visible result count above the list, e.g. "12 students".
+class _ResultCount extends StatelessWidget {
+  const _ResultCount({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+      child: Text(
+        count == 1 ? '1 student' : '$count students',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
 
 class _StudentTile extends ConsumerWidget {
-  const _StudentTile({required this.student});
+  const _StudentTile({required this.student, required this.onTap});
   final Student student;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final initials =
         (student.firstName.isNotEmpty ? student.firstName[0] : '?') +
-        (student.lastName.isNotEmpty ? student.lastName[0] : '');
+            (student.lastName.isNotEmpty ? student.lastName[0] : '');
     final sportLabel = ref.watch(
       sportDisplayProvider((sportId: student.sportId)),
     );
+    // Two facts that matter on a people list: sport and the parent it maps to.
+    // Skill level lives on the detail page so the subtitle stays one tight line.
+    final facts = <String>[
+      if (sportLabel != '—') sportLabel,
+      'Parent: ${student.parentName}',
+    ];
     return AppListTile(
       wrapLeading: false,
       leading: AvatarView(url: student.photo, fallbackInitials: initials),
       title: Text(student.fullName),
       subtitle: Text(
-        [
-          if (sportLabel != '—') sportLabel,
-          if (student.skillLevel != null) student.skillLevel!,
-          'parent: ${student.parentName}',
-        ].join(' • '),
+        facts.join(' • '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       trailing: _StatusBadge(status: student.status),
-      onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => StudentFormPage(existing: student)),
-      ),
+      onTap: onTap,
     );
   }
 }

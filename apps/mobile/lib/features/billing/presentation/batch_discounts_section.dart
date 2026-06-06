@@ -6,6 +6,10 @@ import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Embedded section listing a batch's discount assignments. Mirrors the
+/// fee-assignment sections: a gated "Assign discount" action, tiles with a
+/// consistent active/inactive [AppBadge], a titled assign sheet, and a
+/// confirmation before deactivation.
 class BatchDiscountsSection extends ConsumerWidget {
   const BatchDiscountsSection({
     required this.batchId,
@@ -71,6 +75,11 @@ class BatchDiscountsSection extends ConsumerWidget {
                       structure: byId[a.discountStructureId],
                       onDeactivate: canManage
                           ? () async {
+                              final ok = await _confirmDeactivate(
+                                context,
+                                byId[a.discountStructureId],
+                              );
+                              if (!ok) return;
                               await deactivateBatchDiscount(
                                 ref,
                                 assignmentId: a.id,
@@ -108,6 +117,37 @@ class BatchDiscountsSection extends ConsumerWidget {
       ),
     );
   }
+
+  Future<bool> _confirmDeactivate(
+    BuildContext context,
+    DiscountStructure? structure,
+  ) async {
+    final name = structure?.name ?? 'this discount';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Stop discount?'),
+        content: Text(
+          'New invoices for this batch will no longer apply "$name". '
+          'Invoices already issued are unaffected.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppSemanticColors.of(ctx).danger,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Stop discount'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
 }
 
 class _Tile extends StatelessWidget {
@@ -120,31 +160,38 @@ class _Tile extends StatelessWidget {
   final BatchDiscountAssignment assignment;
   final DiscountStructure? structure;
 
-  /// Null in read-only mode — the tile then shows a status badge instead of a
-  /// stop control.
+  /// Null in read-only mode — the stop control is then hidden, but the
+  /// active/inactive badge still shows.
   final Future<void> Function()? onDeactivate;
 
   @override
   Widget build(BuildContext context) {
-    final active = assignment.isActive;
+    final isActive = assignment.isActive;
     final scheme = Theme.of(context).colorScheme;
-    final Widget trailing;
-    if (!active) {
-      trailing = const AppBadge(text: 'Inactive');
-    } else if (onDeactivate != null) {
-      trailing = IconButton(
-        tooltip: 'Stop discount',
-        icon: const Icon(Icons.stop_circle_outlined),
-        onPressed: onDeactivate,
-      );
-    } else {
-      trailing = const AppBadge(text: 'Active', tone: AppBadgeTone.success);
-    }
+    final badge = isActive
+        ? const AppBadge(text: 'Active', tone: AppBadgeTone.success)
+        : const AppBadge(text: 'Inactive');
+    // The status badge is always present so active/inactive reads consistently;
+    // the deactivate control is appended only when active and manageable.
+    final trailing = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        badge,
+        if (isActive && onDeactivate != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          IconButton(
+            tooltip: 'Stop discount for this batch',
+            icon: const Icon(Icons.stop_circle_outlined),
+            onPressed: onDeactivate,
+          ),
+        ],
+      ],
+    );
     return AppListTile(
       wrapLeading: false,
       leading: Icon(
         Icons.local_offer_outlined,
-        color: active ? scheme.onSurfaceVariant : scheme.outline,
+        color: isActive ? scheme.onSurfaceVariant : scheme.outline,
       ),
       title: Text(structure?.name ?? '(unknown discount)'),
       subtitle: Text(
@@ -216,6 +263,7 @@ class _SheetState extends State<_Sheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
@@ -229,7 +277,15 @@ class _SheetState extends State<_Sheet> {
         children: [
           Text(
             'Assign discount to batch',
-            style: Theme.of(context).textTheme.titleLarge,
+            style: theme.textTheme.titleLarge,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Applies to invoices generated for every enrolled student with '
+            'stack-with-batch enabled.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
           AppDropdownField<String>(

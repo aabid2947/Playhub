@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/attendance/data/attendance.dart';
@@ -10,7 +11,12 @@ import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// How many activity rows are shown before the "load more" cue. Each tap on
+/// the cue reveals another page of this size.
+const _activityPageSize = 40;
 
 /// Live attendance feed for admins. Subscribes to inserts/updates on
 /// `attendance_records` for the current academy, today only, and surfaces
@@ -84,11 +90,21 @@ final _todaysAttendanceStreamProvider =
 
 /// Admin live overview: total marked today, present/absent split, recent
 /// activity feed, all updating in real-time as coaches mark attendance.
-class AdminAttendanceOverview extends ConsumerWidget {
+class AdminAttendanceOverview extends ConsumerStatefulWidget {
   const AdminAttendanceOverview({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminAttendanceOverview> createState() =>
+      _AdminAttendanceOverviewState();
+}
+
+class _AdminAttendanceOverviewState
+    extends ConsumerState<AdminAttendanceOverview> {
+  /// Number of activity rows currently revealed. Grows on "load more".
+  int _visibleCount = _activityPageSize;
+
+  @override
+  Widget build(BuildContext context) {
     final feedAsync = ref.watch(_todaysAttendanceStreamProvider);
     final batches = ref.watch(batchesProvider).valueOrNull ?? const <Batch>[];
     final students =
@@ -97,8 +113,11 @@ class AdminAttendanceOverview extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Live attendance')),
       body: feedAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppSkeletonList(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(_todaysAttendanceStreamProvider),
+        ),
         data: (records) {
           final present = records
               .where((r) =>
@@ -111,54 +130,100 @@ class AdminAttendanceOverview extends ConsumerWidget {
           final excused = records
               .where((r) => r.status == AttendanceStatus.excused)
               .length;
-          final byBatch = <String, int>{};
-          for (final r in records) {
-            byBatch[r.batchId] = (byBatch[r.batchId] ?? 0) + 1;
-          }
+
+          final semantics = AppSemanticColors.of(context);
+          final visible = records.take(_visibleCount).toList();
+          final hasMore = records.length > visible.length;
 
           return ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              _SummaryRow(
-                total: records.length,
-                present: present,
-                absent: absent,
-                excused: excused,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Activity',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              if (records.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                      child: Text('No attendance marked yet today.'),
+              // KPI tiles — 2-up via Rows of Expanded so each tile sizes to its
+              // content (a fixed GridView aspect ratio clips the value/label at
+              // larger text scales). Theme-aware status accents (§3.4).
+              Row(
+                children: [
+                  Expanded(
+                    child: AppStatTile(
+                      icon: Icons.fact_check_outlined,
+                      label: 'Marked',
+                      value: '${records.length}',
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppStatTile(
+                      icon: Icons.check_circle_outline,
+                      label: 'Present',
+                      value: '$present',
+                      color: semantics.success,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppStatTile(
+                      icon: Icons.cancel_outlined,
+                      label: 'Absent',
+                      value: '$absent',
+                      color: semantics.danger,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppStatTile(
+                      icon: Icons.event_busy_outlined,
+                      label: 'Excused',
+                      value: '$excused',
+                      color: semantics.warning,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              const AppSectionHeader(title: 'Activity'),
+              if (records.isEmpty)
+                const AppEmptyState(
+                  icon: Icons.timeline_outlined,
+                  title: 'No attendance yet',
+                  subtitle:
+                      'Marks appear here in real time as coaches take '
+                      'attendance today.',
                 )
-              else
-                Card(
+              else ...[
+                AppCard(
+                  padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      for (final r in records.take(40))
-                        ListTile(
+                      for (final r in visible)
+                        AppListTile(
+                          wrapLeading: false,
                           leading: _StatusDot(status: r.status),
                           title: Text(_studentName(r.studentId, students)),
                           subtitle: Text(
-                            _batchName(r.batchId, batches),
+                            _subtitle(r, batches),
                           ),
-                          trailing: Text(
-                            r.status.label,
-                            style: Theme.of(context).textTheme.bodySmall,
+                          trailing: AppBadge(
+                            text: r.status.label,
+                            tone: _toneFor(r.status),
                           ),
                         ),
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
+                _LoadMoreFooter(
+                  shown: visible.length,
+                  total: records.length,
+                  hasMore: hasMore,
+                  onLoadMore: () => setState(
+                    () => _visibleCount += _activityPageSize,
+                  ),
+                ),
+              ],
             ],
           );
         },
@@ -179,79 +244,68 @@ class AdminAttendanceOverview extends ConsumerWidget {
     }
     return '(unknown batch)';
   }
-}
 
-class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({
-    required this.total,
-    required this.present,
-    required this.absent,
-    required this.excused,
-  });
-
-  final int total;
-  final int present;
-  final int absent;
-  final int excused;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: _Cell(label: 'Marked', value: '$total')),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _Cell(
-            label: 'Present',
-            value: '$present',
-            color: Colors.green,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _Cell(
-            label: 'Absent',
-            value: '$absent',
-            color: Colors.red,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _Cell(
-            label: 'Excused',
-            value: '$excused',
-            color: Colors.orange,
-          ),
-        ),
-      ],
-    );
+  /// Batch name plus a check-in time when one was recorded, e.g.
+  /// "Evening squad · 5:04 PM".
+  String _subtitle(AttendanceRecord r, List<Batch> batches) {
+    final batch = _batchName(r.batchId, batches);
+    final time = r.checkInTime;
+    if (time == null) return batch;
+    return '$batch · ${_formatTime(time)}';
   }
 }
 
-class _Cell extends StatelessWidget {
-  const _Cell({required this.label, required this.value, this.color});
-  final String label;
-  final String value;
-  final Color? color;
+/// 12-hour clock formatting without pulling in `intl` for one label.
+String _formatTime(DateTime dt) {
+  final local = dt.toLocal();
+  final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:$minute $period';
+}
+
+AppBadgeTone _toneFor(AttendanceStatus status) => switch (status) {
+      AttendanceStatus.present => AppBadgeTone.success,
+      AttendanceStatus.late => AppBadgeTone.warning,
+      AttendanceStatus.absent => AppBadgeTone.danger,
+      AttendanceStatus.excused => AppBadgeTone.info,
+    };
+
+/// Bottom-of-list cap cue: "Showing N of M" + an explicit Load more action,
+/// so the silent cap reads as deliberate (§3.6).
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter({
+    required this.shown,
+    required this.total,
+    required this.hasMore,
+    required this.onLoadMore,
+  });
+
+  final int shown;
+  final int total;
+  final bool hasMore;
+  final VoidCallback onLoadMore;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: color?.withValues(alpha: 0.1),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: color,
-                    )),
-            const SizedBox(height: 2),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        Text(
+          'Showing $shown of $total',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
-      ),
+        if (hasMore) ...[
+          const SizedBox(height: AppSpacing.sm),
+          TextButton(
+            onPressed: onLoadMore,
+            child: const Text('Load more'),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -262,25 +316,33 @@ class _StatusDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (status) {
-      AttendanceStatus.present => Colors.green,
-      AttendanceStatus.late => Colors.amber,
-      AttendanceStatus.absent => Colors.red,
-      AttendanceStatus.excused => Colors.orange,
+    final semantics = AppSemanticColors.of(context);
+    final (color, bg, icon) = switch (status) {
+      AttendanceStatus.present => (
+          semantics.success,
+          semantics.successContainer,
+          Icons.check,
+        ),
+      AttendanceStatus.late => (
+          semantics.warning,
+          semantics.warningContainer,
+          Icons.access_time,
+        ),
+      AttendanceStatus.absent => (
+          semantics.danger,
+          semantics.dangerContainer,
+          Icons.close,
+        ),
+      AttendanceStatus.excused => (
+          semantics.info,
+          semantics.infoContainer,
+          Icons.event_busy,
+        ),
     };
     return CircleAvatar(
-      radius: 14,
-      backgroundColor: color.withValues(alpha: 0.15),
-      child: Icon(
-        switch (status) {
-          AttendanceStatus.present => Icons.check,
-          AttendanceStatus.late => Icons.access_time,
-          AttendanceStatus.absent => Icons.close,
-          AttendanceStatus.excused => Icons.event_busy,
-        },
-        size: 14,
-        color: color,
-      ),
+      radius: 16,
+      backgroundColor: bg,
+      child: Icon(icon, size: 16, color: color),
     );
   }
 }
