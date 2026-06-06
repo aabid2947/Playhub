@@ -63,6 +63,15 @@ final mediaForStudentProvider = FutureProvider.family<
       .toList();
 });
 
+/// Short-lived signed URL for a performance-media object, cached by path so
+/// a gallery doesn't re-sign on every rebuild. URLs expire (~5 min); a
+/// pull-to-refresh re-issues them.
+final performanceMediaUrlProvider =
+    FutureProvider.family<String, String>((ref, filePath) async {
+  final storage = ref.read(storageServiceProvider);
+  return storage.signedPerformanceMediaUrl(filePath);
+});
+
 /// Per-student trend row from the materialized view.
 final performanceTrendProvider = FutureProvider.family<
     Map<String, dynamic>?, String>((ref, studentId) async {

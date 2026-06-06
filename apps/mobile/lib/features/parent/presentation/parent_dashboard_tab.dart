@@ -11,9 +11,12 @@ import 'package:playhub/features/auth/presentation/profile_page.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
+import 'package:playhub/features/performance/data/performance.dart';
+import 'package:playhub/features/performance/data/performance_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
 
 /// Parent / student dashboard. Shows linked-students switcher, attendance
 /// calendar (last 60 days), performance line, and outstanding dues.
@@ -73,6 +76,7 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 ..invalidate(studentAttendanceProvider(selected.id))
                 ..invalidate(studentAttendanceWeeklyProvider(selected.id))
                 ..invalidate(studentPerformanceProvider(selected.id))
+                ..invalidate(mediaForStudentProvider(selected.id))
                 ..invalidate(studentOutstandingDuesProvider(selected.id))
                 ..invalidate(studentUpcomingSessionsProvider(selected.id))
                 ..invalidate(myLinkedStudentBatchesProvider(selected.id));
@@ -105,6 +109,8 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
                 _AttendanceCard(studentId: selected.id),
                 const SizedBox(height: AppSpacing.md),
                 _PerformanceCard(studentId: selected.id),
+                const SizedBox(height: AppSpacing.md),
+                _MediaGalleryCard(studentId: selected.id),
                 const SizedBox(height: AppSpacing.md),
                 _OutstandingCard(studentId: selected.id),
                 const SizedBox(height: AppSpacing.md),
@@ -669,6 +675,125 @@ class _PerformanceCard extends ConsumerWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MediaGalleryCard extends ConsumerWidget {
+  const _MediaGalleryCard({required this.studentId});
+  final String studentId;
+
+  Future<void> _open(
+    BuildContext context,
+    WidgetRef ref,
+    PerformanceMedia m,
+  ) async {
+    final storage = ref.read(storageServiceProvider);
+    try {
+      final url = await storage.signedPerformanceMediaUrl(m.filePath);
+      final ok = await launcher.launchUrl(
+        Uri.parse(url),
+        mode: launcher.LaunchMode.externalApplication,
+      );
+      if (!ok && context.mounted) {
+        AppSnackbar.error(context, 'Could not open file.');
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(mediaForStudentProvider(studentId));
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Photos & videos',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          async.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.all(AppSpacing.sm),
+              child: LinearProgressIndicator(),
+            ),
+            error: (e, _) => Text(friendlyError(e)),
+            data: (media) {
+              if (media.isEmpty) {
+                return Text(
+                  'No photos or videos shared yet',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                );
+              }
+              return SizedBox(
+                height: 96,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: media.length,
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(width: AppSpacing.sm),
+                  itemBuilder: (_, i) => _MediaThumb(
+                    media: media[i],
+                    onTap: () => _open(context, ref, media[i]),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaThumb extends ConsumerWidget {
+  const _MediaThumb({required this.media, required this.onTap});
+  final PerformanceMedia media;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fill = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final isVideo = media.mediaType == 'video';
+    final Widget inner;
+    if (isVideo) {
+      inner = Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: fill),
+          const Center(child: Icon(Icons.play_circle_outline, size: 30)),
+        ],
+      );
+    } else {
+      final urlAsync = ref.watch(performanceMediaUrlProvider(media.filePath));
+      inner = urlAsync.when(
+        loading: () => ColoredBox(color: fill),
+        error: (_, __) => Container(
+          color: fill,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+        data: (url) => CachedNetworkImage(
+          imageUrl: url,
+          fit: BoxFit.cover,
+          placeholder: (_, __) => ColoredBox(color: fill),
+          errorWidget: (_, __, ___) => Container(
+            color: fill,
+            child: const Icon(Icons.broken_image_outlined),
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: SizedBox(width: 96, height: 96, child: inner),
       ),
     );
   }
