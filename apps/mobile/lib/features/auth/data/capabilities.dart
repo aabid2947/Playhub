@@ -65,9 +65,20 @@ class Capabilities {
   bool get inviteScopedToOwnCenter =>
       role == 'center_admin' || role == 'head_coach' || role == 'coach';
 
-  // Admin tier + center_admin (their own center).
-  bool get manageStudents => _isAdmin || role == 'center_admin';
-  bool get manageCoaches => _isAdmin || role == 'center_admin';
+  // Admin tier + center_admin (their own center). manageStudents also includes
+  // head_coach AND coach (own center) — the people running training onboard
+  // athletes directly (can_manage_student, 20260607000700). Leads/inventory
+  // stay center_admin+.
+  bool get manageStudents =>
+      _isAdmin ||
+      role == 'center_admin' ||
+      role == 'head_coach' ||
+      role == 'coach';
+  // head_coach can also create/edit coach RECORDS in their own center
+  // (can_manage_coach_record, 20260607000800) so they can build a coach and
+  // assign them to a batch — completing create-coach -> assign-to-batch.
+  bool get manageCoaches =>
+      _isAdmin || role == 'center_admin' || role == 'head_coach';
   bool get manageLeads => _isAdmin || role == 'center_admin';
   bool get manageInventory => _isAdmin || role == 'center_admin';
 

@@ -52,6 +52,25 @@ class InviteRepo {
       hasSignedIn: body['has_signed_in'] as bool? ?? false,
     );
   }
+
+  /// Removes a team member's login (public.users row). The users_admin_delete
+  /// RLS policy enforces the provisioning ladder (can_provision_role), so a
+  /// caller can only remove a rung strictly below them in their own center;
+  /// anything else deletes zero rows. We `select()` the deleted row back and
+  /// throw if nothing came back, surfacing a clean "not allowed" instead of a
+  /// silent no-op. Linked coach/student records survive (FK is set-null).
+  Future<void> removeMember(String userId) async {
+    final deleted = await _client
+        .from('users')
+        .delete()
+        .eq('id', userId)
+        .select('id');
+    if ((deleted as List).isEmpty) {
+      throw StateError(
+        "You can't remove this member — they're outside the staff you manage.",
+      );
+    }
+  }
 }
 
 final inviteRepoProvider = Provider<InviteRepo>(

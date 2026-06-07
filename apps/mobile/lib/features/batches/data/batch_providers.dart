@@ -79,6 +79,32 @@ Future<Batch> updateBatch(
   return Batch.fromMap(row);
 }
 
+/// Soft-delete a batch by archiving it (`is_active = false`). A hard delete
+/// cascades and wipes enrollments + attendance for the batch; archiving keeps
+/// that history and is reversible via [restoreBatch]. Returns the updated row;
+/// a null result means RLS blocked the write (center/sport out of scope).
+Future<void> setBatchActive(
+  WidgetRef ref,
+  String batchId, {
+  required bool isActive,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final row = await client
+      .from('batches')
+      .update({'is_active': isActive})
+      .eq('id', batchId)
+      .select()
+      .maybeSingle();
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Blocked by row-level security '
+          '(you can only manage batches in your own center/sport).',
+      code: '42501',
+    );
+  }
+  ref.invalidate(batchesProvider);
+}
+
 Future<void> enrollStudent(
   WidgetRef ref, {
   required String batchId,

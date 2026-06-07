@@ -12,6 +12,7 @@ import 'package:playhub/features/billing/presentation/batch_discounts_section.da
 import 'package:playhub/features/billing/presentation/batch_fees_section.dart';
 import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/chat/presentation/message_parent_button.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/coach/presentation/coach_student_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
@@ -81,6 +82,18 @@ class BatchDetailPage extends ConsumerWidget {
                   builder: (_) => BatchFormPage(existing: batch),
                 ),
               ),
+            ),
+          if (canManageEnroll)
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (v) =>
+                  _confirmSetActive(context, ref, makeActive: v == 'restore'),
+              itemBuilder: (_) => [
+                PopupMenuItem<String>(
+                  value: batch.isActive ? 'archive' : 'restore',
+                  child: Text(batch.isActive ? 'Archive batch' : 'Restore batch'),
+                ),
+              ],
             ),
         ],
       ),
@@ -222,6 +235,41 @@ class BatchDetailPage extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Archive (soft-delete) or restore the batch. Archiving keeps enrollment +
+  /// attendance history (a hard delete would cascade and wipe it) and is
+  /// reversible. Both list providers are invalidated so the admin Batches tab
+  /// and the head-coach "My batches" tab refresh, then we pop back to the list.
+  Future<void> _confirmSetActive(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool makeActive,
+  }) async {
+    if (!makeActive) {
+      final ok = await confirmAction(
+        context,
+        title: 'Archive this batch?',
+        message:
+            "It will be hidden from active lists and today's sessions. "
+            'Enrollments and attendance history are kept, and you can restore '
+            'it later.',
+        confirmLabel: 'Archive',
+        destructive: true,
+      );
+      if (!ok) return;
+    }
+    try {
+      await setBatchActive(ref, batch.id, isActive: makeActive);
+      ref
+        ..invalidate(batchesProvider)
+        ..invalidate(myBatchesProvider);
+      if (!context.mounted) return;
+      AppSnackbar.success(context, makeActive ? 'Batch restored.' : 'Batch archived.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
   }
 
   Future<void> _showTransferSheet(
@@ -525,7 +573,8 @@ class _EnrollmentSection extends StatelessWidget {
                     if (s == null) return;
                     Navigator.of(context).push<void>(
                       MaterialPageRoute(
-                        builder: (_) => CoachStudentPage(student: s),
+                        builder: (_) =>
+                            CoachStudentPage(student: s, batchId: e.batchId),
                       ),
                     );
                   },

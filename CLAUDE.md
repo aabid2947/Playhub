@@ -223,6 +223,45 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-07 — student list scoped to own center for center_admin/head_coach
+[`studentsProvider`](apps/mobile/lib/features/students/data/student_providers.dart)
+now center-filters for center_admin/head_coach (own center + null-center,
+mirroring `can_manage_student`) — the students *read* RLS is academy-wide, so the
+list otherwise showed students they couldn't save and 42501'd on edit. This is a
+**shared provider that now scopes by role** (don't assume it's academy-wide for
+everyone). Also `createStudent`/`updateStudent` switched `.single()` → `.maybeSingle()`
++ a thrown `42501 PostgrestException` so an RLS block reads as "no permission"
+rather than the opaque PGRST116 (same pattern as `updateBatch`). **Still open
+(create side):** the student form's Center dropdown isn't restricted to the
+head_coach's center, so picking another center still 42501s on save (now with a
+clean message) — same residual gap as the batch form's Center dropdown.
+
+### 2026-06-07 — head_coach batch list scoped to manageable batches
+[`myBatchesProvider`](apps/mobile/lib/features/coach/data/coach_home_providers.dart)
+no longer shows a head_coach **every** academy batch (the old "oversight" behavior).
+It now client-filters to what RLS allows — own center (or no center) AND own sport
+(or no sport), mirroring `can_manage_batch_fields` — so the coach-shell batch list /
+KPIs / today / trend never offer a batch whose enrol/edit/attendance would 42501.
+A head_coach with no linked `coaches` row owns zero sports → sees only sport-less
+batches in their center. **Still NOT mirrored:** [batch_detail_page.dart](apps/mobile/lib/features/batches/presentation/batch_detail_page.dart)'s
+`scopeOk` checks center only (not sport) — moot when reached via the now-scoped
+list, but a latent over-offer if a head_coach reaches a batch by another path.
+
+### 2026-06-07 — head_coach: own-center students + null-sport batch relaxation
+Two follow-ups to the hierarchy work: **(1)** head_coach can now create/edit
+STUDENT records in their own center (`can_manage_student`, 20260607000700);
+`capabilities.manageStudents` includes head_coach, and the coach home has a
+"Manage" section (Students / Invite staff). Students are center-scoped (not
+sport-tagged), so this is center-wide for the head_coach's center. **(2)**
+head_coach may manage NULL-`sport_id` batches in their center
+([20260607000600](supabase/migrations/20260607000600_relax_head_coach_null_sport.sql)
+relaxed `can_manage_batch_fields`/`batch_in_my_sport`: sport-tagged batches stay
+sport-limited; untagged ones fall back to center scope). **UPDATE:** head_coach
+creating COACH *records* is now DONE
+([20260607000800](supabase/migrations/20260607000800_head_coach_manage_coaches.sql)
++ `capabilities.manageCoaches` includes head_coach) — center-scoped, completing
+create-coach → assign-to-batch.
+
 ### 2026-06-07 — Org-hierarchy re-architecture started (Phase 1: provisioning ladder)
 Building an explicit creation/delegation hierarchy on top of role+center scoping
 (each role provisions the rung below; "higher ⊇ lower"). Phase 1 added
@@ -249,10 +288,14 @@ or assigned staffer; `student_assigned_to_me(s)` = enrolled in a batch I staff.
 Trainers now record performance **but only against a batch they staff** (a NULL
 `batch_id` free-standing assessment stays denied — no scope to check); attendance
 + perf "coach"/"trainer" branches use `staff_on_batch`. Coaches can now **enrol**
-into their own batch (`can_manage_enrollment` += `coach_owns_batch`). `ai-insights`
-now gates coach/trainer on `student_assigned_to_me` (the students read is
-academy-wide, so RLS alone didn't scope it). `capabilities.recordPerformance` now
-includes trainer. **UI not yet wired:** coach enrolment screen + a batch_staff
+into their own batch (`can_manage_enrollment` += `coach_owns_batch`).
+`capabilities.recordPerformance` now includes trainer.
+
+> Update: the `ai-insights` coach/trainer `student_assigned_to_me` gate was later
+> **removed** — AI insights are visible to every role that can READ the student
+> (staff academy-wide; parent/student their own). Visibility is RLS on the
+> students read only. (`student_assigned_to_me` still exists, used for
+> attendance/performance scope.) **UI not yet wired:** coach enrolment screen + a batch_staff
 (assign-trainer) management screen — backend supports both; add when building UI.
 
 **Phase 4 done** ([20260607000400](supabase/migrations/20260607000400_center_scoped_finance.sql)):

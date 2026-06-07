@@ -119,6 +119,36 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
     super.dispose();
   }
 
+  /// Hard-delete the vendor after confirmation. RLS limits this to center_admin
+  /// and above; `manageInventory` mirrors that on the UI. Items/movements that
+  /// referenced it keep their row (FK set-null).
+  Future<void> _confirmDelete() async {
+    final existing = widget.existing;
+    if (existing == null) return;
+    final ok = await confirmAction(
+      context,
+      title: 'Delete "${existing.name}"?',
+      message:
+          'This permanently removes the vendor. Items and stock movements that '
+          'referenced it stay, just unlinked. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final repo = await ref.read(inventoryRepoProvider.future);
+      if (repo == null) throw StateError('no academy');
+      await repo.deleteVendor(existing.id);
+      ref.invalidate(vendorsProvider);
+      if (mounted) Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) return;
     setState(() => _saving = true);
@@ -149,6 +179,7 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final caps = ref.watch(capabilitiesProvider);
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
     final maxHeight = MediaQuery.of(context).size.height * 0.85;
     return SafeArea(
@@ -235,6 +266,22 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
                       )
                     : const Text('Save'),
               ),
+              if (widget.existing != null && caps.manageInventory) ...[
+                const SizedBox(height: AppSpacing.sm),
+                TextButton.icon(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: AppSemanticColors.of(context).danger,
+                  ),
+                  label: Text(
+                    'Delete vendor',
+                    style: TextStyle(
+                      color: AppSemanticColors.of(context).danger,
+                    ),
+                  ),
+                  onPressed: _saving ? null : _confirmDelete,
+                ),
+              ],
             ],
           ),
         ),

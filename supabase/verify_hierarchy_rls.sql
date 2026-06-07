@@ -1,21 +1,18 @@
 -- ============================================================================
--- PlayHub - backend RLS verification for the hierarchy work (Phases 1-5).
+-- PlayHub - backend RLS verification for the hierarchy work.
 --
--- Paste-and-run in the Supabase SQL editor AFTER applying
--- apply_hierarchy_phases_1_to_5.sql.
+-- Paste-and-run in the Supabase SQL editor AFTER applying the migrations
+-- (apply_hierarchy_phases_1_to_5.sql). Covers the 5 new hierarchy tests plus
+-- the 2 base tests the hierarchy work changed (rls_capabilities, rls_trainer_media).
 --
--- HOW TO READ THE RESULT:
---   * Completes with NO error  = ALL checks passed (each block raises an
---     exception the moment something is wrong).
---   * Stops with 'FAIL: ...'   = that specific assertion failed; everything
---     before it had already rolled back.
+-- HOW TO READ: completes with NO error = ALL passed (each block raises the
+-- moment something is wrong). Stops with 'FAIL: ...' = that assertion failed.
 --
--- NON-DESTRUCTIVE: every test runs inside begin;...rollback; so the test data
--- (academies/users/etc.) is discarded. Prefer a staging DB anyway.
+-- NON-DESTRUCTIVE: every test runs inside begin;...rollback; (test data is
+-- discarded). Prefer a staging/dev project over production anyway.
 --
--- (psql meta-commands \set / \echo from the original pgTAP files are stripped
---  so this runs in the editor. The originals under supabase/tests/ are the
---  CI source of truth, run via 'psql -f'.)
+-- (psql meta-commands \set / \echo are stripped so this runs in the editor;
+--  the originals under supabase/tests/ are the CI source of truth.)
 -- ============================================================================
 
 
@@ -1143,6 +1140,562 @@ begin
     where academy_id = current_setting('cri.academy')::uuid;
   if v_coaches < 2 then raise exception 'FAIL: owner cannot see all coaches'; end if;
   raise notice 'PASS: owner — academy-wide reads intact';
+end $$;
+
+reset role;
+rollback;
+
+
+
+
+-- ##########################################################################
+-- ## rls_capabilities.sql
+-- ##########################################################################
+
+-- ============================================================================
+-- Role-capability regression test (the "scope + management ladder").
+--
+-- One academy, two centers (C1, C2), one user per staff role. Asserts the
+-- per-role write matrix introduced in 20260527000000_role_capabilities.sql:
+--
+--   • trainer    → attendance on OWN batch yes; performance NO
+--   • coach      → attendance + performance on OWN batch; other batch NO
+--   • center_admin (C1) → manage students in C1 yes; C2 no
+--   • head_coach (C1)   → manage batches in C1 yes; C2 no; students NO
+--   • coach      → cannot create students or batches
+--
+-- Runs in a transaction and rolls back. Any 'FAIL' aborts. Same harness as
+-- rls_tenancy.sql: impersonate by setting request.jwt.claim.sub.
+-- ============================================================================
+
+
+begin;
+
+-- ---------- Setup (superuser; RLS bypassed) ---------------------------------
+
+do $$
+declare
+  v_owner constant uuid := '00000000-0e00-0000-0000-000000000001';
+  v_admin constant uuid := '00000000-0e00-0000-0000-000000000002';
+  v_ca1   constant uuid := '00000000-0e00-0000-0000-000000000003';
+  v_hc1   constant uuid := '00000000-0e00-0000-0000-000000000004';
+  v_co1   constant uuid := '00000000-0e00-0000-0000-000000000005';
+  v_tr1   constant uuid := '00000000-0e00-0000-0000-000000000006';
+  v_academy uuid;
+  v_c1 uuid;
+  v_c2 uuid;
+  v_coach_co1 uuid;
+  v_coach_tr1 uuid;
+  v_coach_hc1 uuid;
+  v_coach_other uuid;
+  v_sport_cricket uuid;
+  v_sport_football uuid;
+  v_b1 uuid;  -- C1, owned by co1
+  v_b2 uuid;  -- C1, owned by tr1
+  v_b3 uuid;  -- C2, owned by neither
+  v_s1 uuid;  -- C1
+  v_s2 uuid;  -- C2
+begin
+  -- auth.users → triggers stub public.users rows (role student, academy null,
+  -- allowed since the academy-required check was relaxed in Sprint 0).
+  insert into auth.users (id, instance_id, email, role, aud,
+                          email_confirmed_at, created_at, updated_at)
+  values
+    (v_owner, '00000000-0000-0000-0000-000000000000', 'cap-owner@x.invalid', 'authenticated', 'authenticated', now(), now(), now()),
+    (v_admin, '00000000-0000-0000-0000-000000000000', 'cap-admin@x.invalid', 'authenticated', 'authenticated', now(), now(), now()),
+    (v_ca1,   '00000000-0000-0000-0000-000000000000', 'cap-ca1@x.invalid',   'authenticated', 'authenticated', now(), now(), now()),
+    (v_hc1,   '00000000-0000-0000-0000-000000000000', 'cap-hc1@x.invalid',   'authenticated', 'authenticated', now(), now(), now()),
+    (v_co1,   '00000000-0000-0000-0000-000000000000', 'cap-co1@x.invalid',   'authenticated', 'authenticated', now(), now(), now()),
+    (v_tr1,   '00000000-0000-0000-0000-000000000000', 'cap-tr1@x.invalid',   'authenticated', 'authenticated', now(), now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.academies (name, owner_id)
+  values ('Capability Academy', v_owner)
+  returning id into v_academy;
+
+  insert into public.centers (academy_id, name) values (v_academy, 'C1')
+  returning id into v_c1;
+  insert into public.centers (academy_id, name) values (v_academy, 'C2')
+  returning id into v_c2;
+
+  insert into public.users (id, role, academy_id, center_id, first_name, last_name, email)
+  values
+    (v_owner, 'academy_owner', v_academy, null, 'Owner', 'O', 'cap-owner@x.invalid'),
+    (v_admin, 'academy_admin', v_academy, null, 'Admin', 'A', 'cap-admin@x.invalid'),
+    (v_ca1,   'center_admin',  v_academy, v_c1, 'Center', 'Admin1', 'cap-ca1@x.invalid'),
+    (v_hc1,   'head_coach',    v_academy, v_c1, 'Head', 'Coach1', 'cap-hc1@x.invalid'),
+    (v_co1,   'coach',         v_academy, v_c1, 'Coach', 'One', 'cap-co1@x.invalid'),
+    (v_tr1,   'trainer',       v_academy, v_c1, 'Trainer', 'One', 'cap-tr1@x.invalid')
+  on conflict (id) do update
+    set role = excluded.role, academy_id = excluded.academy_id,
+        center_id = excluded.center_id;
+
+  -- Coaches: co1 + tr1 have logins (user_id); a third coach in C2 has none.
+  insert into public.coaches (academy_id, center_id, user_id, first_name, last_name)
+  values (v_academy, v_c1, v_co1, 'Coach', 'One') returning id into v_coach_co1;
+  insert into public.coaches (academy_id, center_id, user_id, first_name, last_name)
+  values (v_academy, v_c1, v_tr1, 'Trainer', 'One') returning id into v_coach_tr1;
+  insert into public.coaches (academy_id, center_id, first_name, last_name)
+  values (v_academy, v_c2, 'Other', 'Coach') returning id into v_coach_other;
+
+  -- head_coach hc1 has a coaches row + is qualified for cricket only (C1).
+  -- Phase 2 (20260607000200) scopes a head_coach to their center AND sport.
+  insert into public.coaches (academy_id, center_id, user_id, first_name, last_name)
+  values (v_academy, v_c1, v_hc1, 'Head', 'Coach1') returning id into v_coach_hc1;
+  select id into v_sport_cricket  from public.sports where code = 'cricket';
+  select id into v_sport_football from public.sports where code = 'football';
+  insert into public.coach_sports (academy_id, coach_id, sport_id)
+  values (v_academy, v_coach_hc1, v_sport_cricket);
+
+  insert into public.batches (academy_id, center_id, coach_id, name)
+  values (v_academy, v_c1, v_coach_co1, 'B1') returning id into v_b1;
+  insert into public.batches (academy_id, center_id, coach_id, name)
+  values (v_academy, v_c1, v_coach_tr1, 'B2') returning id into v_b2;
+  insert into public.batches (academy_id, center_id, coach_id, name)
+  values (v_academy, v_c2, v_coach_other, 'B3') returning id into v_b3;
+
+  insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+  values (v_academy, v_c1, 'Sam', 'C1', 'Parent 1') returning id into v_s1;
+  insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+  values (v_academy, v_c2, 'Sara', 'C2', 'Parent 2') returning id into v_s2;
+
+  perform set_config('cap.academy', v_academy::text, true);
+  perform set_config('cap.c1', v_c1::text, true);
+  perform set_config('cap.c2', v_c2::text, true);
+  perform set_config('cap.b1', v_b1::text, true);
+  perform set_config('cap.b2', v_b2::text, true);
+  perform set_config('cap.b3', v_b3::text, true);
+  perform set_config('cap.s1', v_s1::text, true);
+  perform set_config('cap.s2', v_s2::text, true);
+  perform set_config('cap.sport_cricket', v_sport_cricket::text, true);
+  perform set_config('cap.sport_football', v_sport_football::text, true);
+
+  raise notice '[cap setup] academy %, centers % %', v_academy, v_c1, v_c2;
+end $$;
+
+-- ---------- C1: trainer — attendance + performance on own batch; other no ---
+-- Phase 3 (20260607000300) grants trainers performance, scoped to batches they
+-- staff (here tr1 is the coach_id of b2). A batch they don't staff (b1) stays
+-- denied for both.
+
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000006';  -- tr1
+
+do $$
+declare
+  v_academy uuid := current_setting('cap.academy')::uuid;
+  v_b1 uuid := current_setting('cap.b1')::uuid;
+  v_b2 uuid := current_setting('cap.b2')::uuid;
+  v_s1 uuid := current_setting('cap.s1')::uuid;
+  v_caught boolean := false;
+begin
+  -- Own batch (b2): attendance + performance allowed.
+  begin
+    insert into public.attendance_records
+      (academy_id, batch_id, student_id, date, status, method)
+    values (v_academy, v_b2, v_s1, current_date, 'present', 'manual');
+    insert into public.performance_assessments
+      (academy_id, student_id, batch_id, assessment_date, overall_score)
+    values (v_academy, v_s1, v_b2, current_date, 7.0);
+  exception when others then
+    raise exception 'FAIL: trainer blocked on own batch (attendance/performance): %', SQLERRM;
+  end;
+
+  -- A batch they do NOT staff (b1, owned by co1): attendance denied.
+  v_caught := false;
+  begin
+    insert into public.attendance_records
+      (academy_id, batch_id, student_id, date, status, method)
+    values (v_academy, v_b1, v_s1, current_date + 1, 'present', 'manual');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: trainer marked attendance on a batch they do not staff';
+  end if;
+
+  -- A batch they do NOT staff (b1): performance denied.
+  v_caught := false;
+  begin
+    insert into public.performance_assessments
+      (academy_id, student_id, batch_id, assessment_date, overall_score)
+    values (v_academy, v_s1, v_b1, current_date, 6.0);
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: trainer recorded performance on a batch they do not staff';
+  end if;
+  raise notice 'PASS: trainer — own-batch attendance + performance, other batch blocked';
+end $$;
+
+-- ---------- C2: coach — own batch ok, other batch blocked -------------------
+
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000005';  -- co1
+
+do $$
+declare
+  v_academy uuid := current_setting('cap.academy')::uuid;
+  v_b1 uuid := current_setting('cap.b1')::uuid;
+  v_b3 uuid := current_setting('cap.b3')::uuid;
+  v_s1 uuid := current_setting('cap.s1')::uuid;
+  v_caught boolean := false;
+begin
+  -- Own batch (B1): attendance + performance allowed.
+  begin
+    insert into public.attendance_records
+      (academy_id, batch_id, student_id, date, status, method)
+    values (v_academy, v_b1, v_s1, current_date, 'present', 'manual');
+    insert into public.performance_assessments
+      (academy_id, student_id, batch_id, assessment_date, overall_score)
+    values (v_academy, v_s1, v_b1, current_date, 8.0);
+  exception when others then
+    raise exception 'FAIL: coach could not write to own batch: %', SQLERRM;
+  end;
+
+  -- Batch the coach does NOT own (B3, center C2): attendance denied.
+  begin
+    insert into public.attendance_records
+      (academy_id, batch_id, student_id, date, status, method)
+    values (v_academy, v_b3, v_s1, current_date + 1, 'present', 'manual');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: coach marked attendance on a batch they do not own';
+  end if;
+  raise notice 'PASS: coach — own batch read/write, other batch blocked';
+end $$;
+
+-- ---------- C3: center_admin — students in own center only ------------------
+
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000003';  -- ca1 (C1)
+
+do $$
+declare
+  v_academy uuid := current_setting('cap.academy')::uuid;
+  v_c1 uuid := current_setting('cap.c1')::uuid;
+  v_c2 uuid := current_setting('cap.c2')::uuid;
+  v_caught boolean := false;
+begin
+  -- Own center → allowed.
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c1, 'New', 'InC1', 'Parent');
+  exception when others then
+    raise exception 'FAIL: center_admin could not create a student in own center: %', SQLERRM;
+  end;
+
+  -- Other center → denied.
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c2, 'New', 'InC2', 'Parent');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: center_admin created a student in a center they do not own';
+  end if;
+  raise notice 'PASS: center_admin — student writes scoped to own center';
+end $$;
+
+-- ---------- C4: head_coach — batches in own center + OWN SPORT; no students --
+
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000004';  -- hc1 (C1, cricket)
+
+do $$
+declare
+  v_academy uuid := current_setting('cap.academy')::uuid;
+  v_c1 uuid := current_setting('cap.c1')::uuid;
+  v_c2 uuid := current_setting('cap.c2')::uuid;
+  v_cricket uuid := current_setting('cap.sport_cricket')::uuid;
+  v_football uuid := current_setting('cap.sport_football')::uuid;
+  v_caught boolean := false;
+begin
+  -- Batch in own center AND own sport (cricket) → allowed.
+  begin
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c1, v_cricket, 'HC cricket C1');
+  exception when others then
+    raise exception 'FAIL: head_coach could not create a batch in own center+sport: %', SQLERRM;
+  end;
+
+  -- Batch in own center but a sport they do NOT coach (football) → denied.
+  v_caught := false;
+  begin
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c1, v_football, 'HC football C1');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: head_coach created a batch in a sport they do not coach';
+  end if;
+
+  -- Batch in their sport but another center → denied.
+  v_caught := false;
+  begin
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c2, v_cricket, 'HC cricket C2');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: head_coach created a batch in a center they do not manage';
+  end if;
+
+  -- A sport-less batch in own center IS head_coach-manageable: 20260607000600
+  -- relaxed the strict sport gate so untagged batches fall back to center scope.
+  begin
+    insert into public.batches (academy_id, center_id, name)
+    values (v_academy, v_c1, 'HC no-sport C1');
+  exception when others then
+    raise exception 'FAIL: head_coach could not create a sport-less batch in own center: %', SQLERRM;
+  end;
+
+  -- Students: head_coach CAN create in own center (20260607000700), NOT another.
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c1, 'HC', 'Student', 'Parent');
+  exception when others then
+    raise exception 'FAIL: head_coach could not create a student in own center: %', SQLERRM;
+  end;
+
+  v_caught := false;
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c2, 'HC', 'StudentC2', 'Parent');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: head_coach created a student in a center they do not manage';
+  end if;
+  raise notice 'PASS: head_coach — batches scoped to own center+sport; students own-center only';
+end $$;
+
+-- ---------- C5: coach — creates students (own center) but NOT batches -------
+
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000005';  -- co1 (C1)
+
+do $$
+declare
+  v_academy uuid := current_setting('cap.academy')::uuid;
+  v_c1 uuid := current_setting('cap.c1')::uuid;
+  v_c2 uuid := current_setting('cap.c2')::uuid;
+  v_caught boolean := false;
+begin
+  -- Batches are NOT a coach capability.
+  begin
+    insert into public.batches (academy_id, center_id, name)
+    values (v_academy, v_c1, 'Coach sneaky batch');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: coach created a batch';
+  end if;
+
+  -- Students: coach CAN create in own center (20260607000700).
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c1, 'Coach', 'Student', 'Parent');
+  exception when others then
+    raise exception 'FAIL: coach could not create a student in own center: %', SQLERRM;
+  end;
+
+  -- ...but NOT in another center.
+  v_caught := false;
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c2, 'Coach', 'StudentC2', 'Parent');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: coach created a student in a center they do not manage';
+  end if;
+  raise notice 'PASS: coach — creates students (own center) but not batches';
+end $$;
+
+-- ---------- Reset and roll back ---------------------------------------------
+
+reset role;
+rollback;
+
+
+
+
+-- ##########################################################################
+-- ## rls_trainer_media.sql
+-- ##########################################################################
+
+-- ============================================================================
+-- Trainer standalone-media write capability regression test.
+--
+-- Verifies 20260606000000_trainer_student_media.sql:
+--   * a TRAINER can attach standalone media (assessment_id null) to a student
+--     enrolled in a batch they run — table row AND storage object;
+--   * a trainer CANNOT attach media for a student outside their batches;
+--   * a trainer still CANNOT create a scored performance_assessment;
+--   * a PARENT cannot attach student media at all.
+--
+-- Runs in a transaction and rolls back. Any 'FAIL' raises and aborts.
+-- ============================================================================
+
+
+begin;
+
+-- ---------- Setup (service role / superuser) --------------------------------
+
+do $$
+declare
+  v_trainer constant uuid := '00000000-7777-0000-0000-000000000001';
+  v_parent  constant uuid := '00000000-7777-0000-0000-000000000002';
+  v_academy uuid;
+  v_center  uuid;
+  v_coach   uuid;  -- coaches row owned by the trainer
+  v_batch   uuid;
+  v_student_x uuid;  -- enrolled in the trainer's batch
+  v_student_z uuid;  -- NOT in the trainer's batch
+begin
+  insert into auth.users (
+    id, instance_id, email, role, aud,
+    email_confirmed_at, created_at, updated_at
+  )
+  values
+    (v_trainer, '00000000-0000-0000-0000-000000000000',
+     'trainer-media@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now()),
+    (v_parent, '00000000-0000-0000-0000-000000000000',
+     'parent-media@example.invalid', 'authenticated', 'authenticated',
+     now(), now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.academies (name)
+    values ('Trainer Media Academy') returning id into v_academy;
+  insert into public.centers (academy_id, name)
+    values (v_academy, 'Centre') returning id into v_center;
+
+  insert into public.users
+    (id, role, academy_id, center_id, first_name, last_name, email)
+  values
+    (v_trainer, 'trainer', v_academy, v_center, 'Trainer', 'T',
+     'trainer-media@example.invalid')
+  on conflict (id) do update
+    set role = excluded.role, academy_id = excluded.academy_id,
+        center_id = excluded.center_id;
+
+  insert into public.users
+    (id, role, academy_id, first_name, last_name, email)
+  values
+    (v_parent, 'parent', v_academy, 'Parent', 'P',
+     'parent-media@example.invalid')
+  on conflict (id) do update
+    set role = excluded.role, academy_id = excluded.academy_id;
+
+  -- coaches row owned by the trainer, assigned as the batch's coach.
+  insert into public.coaches
+    (academy_id, center_id, user_id, first_name, last_name)
+  values (v_academy, v_center, v_trainer, 'Trainer', 'T')
+  returning id into v_coach;
+
+  insert into public.batches (academy_id, center_id, name, coach_id)
+  values (v_academy, v_center, 'Batch', v_coach) returning id into v_batch;
+
+  insert into public.students
+    (academy_id, center_id, first_name, last_name, parent_name)
+  values (v_academy, v_center, 'Child', 'X', 'P')
+  returning id into v_student_x;
+  insert into public.students
+    (academy_id, center_id, first_name, last_name, parent_name)
+  values (v_academy, v_center, 'Child', 'Z', 'Q')
+  returning id into v_student_z;
+
+  insert into public.batch_enrollments (academy_id, batch_id, student_id)
+  values (v_academy, v_batch, v_student_x);
+
+  perform set_config('test.academy', v_academy::text, true);
+  perform set_config('test.student_x', v_student_x::text, true);
+  perform set_config('test.student_z', v_student_z::text, true);
+end $$;
+
+-- ---------- As the TRAINER --------------------------------------------------
+
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-7777-0000-0000-000000000001';
+
+do $$
+declare
+  v_academy uuid := current_setting('test.academy')::uuid;
+  v_x uuid := current_setting('test.student_x')::uuid;
+  v_z uuid := current_setting('test.student_z')::uuid;
+  v_caught boolean := false;
+begin
+  -- Allowed: standalone media for a student in the trainer's batch.
+  insert into public.performance_media
+    (academy_id, student_id, media_type, file_path)
+  values (v_academy, v_x, 'photo',
+          v_academy::text || '/students/' || v_x::text || '/a.jpg');
+  raise notice 'PASS: trainer attached standalone media for own-batch student';
+
+  -- Allowed: the backing storage object (widened bucket insert policy).
+  insert into storage.objects (bucket_id, name, metadata)
+  values ('performance_media',
+          v_academy::text || '/students/' || v_x::text || '/a.jpg', '{}');
+  raise notice 'PASS: trainer can write to performance_media storage';
+
+  -- Denied: a student NOT in the trainer's batch.
+  begin
+    insert into public.performance_media
+      (academy_id, student_id, media_type, file_path)
+    values (v_academy, v_z, 'photo',
+            v_academy::text || '/students/' || v_z::text || '/b.jpg');
+  exception when others then v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: trainer attached media for a non-batch student';
+  end if;
+  raise notice 'PASS: trainer blocked from non-batch student media';
+
+  -- Denied: a FREE-STANDING (no-batch) scored assessment. Since Phase 3
+  -- (20260607000300) trainers CAN record performance, but only against a batch
+  -- they staff — a null batch_id has no scope to check, so it stays denied.
+  -- (The allowed batch-scoped case is covered by rls_batch_staff.sql.)
+  v_caught := false;
+  begin
+    insert into public.performance_assessments
+      (academy_id, student_id, overall_score)
+    values (v_academy, v_x, 7.0);
+  exception when others then v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: trainer created a free-standing (no-batch) assessment';
+  end if;
+  raise notice 'PASS: trainer cannot record a free-standing (no-batch) assessment';
+end $$;
+
+-- ---------- As the PARENT — cannot upload at all ----------------------------
+
+set local request.jwt.claim.sub = '00000000-7777-0000-0000-000000000002';
+
+do $$
+declare
+  v_academy uuid := current_setting('test.academy')::uuid;
+  v_x uuid := current_setting('test.student_x')::uuid;
+  v_caught boolean := false;
+begin
+  begin
+    insert into public.performance_media
+      (academy_id, student_id, media_type, file_path)
+    values (v_academy, v_x, 'photo',
+            v_academy::text || '/students/' || v_x::text || '/c.jpg');
+  exception when others then v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: parent uploaded student media';
+  end if;
+  raise notice 'PASS: parent cannot upload student media';
 end $$;
 
 reset role;

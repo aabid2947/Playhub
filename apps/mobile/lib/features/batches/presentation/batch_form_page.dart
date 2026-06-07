@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/schedule_picker.dart';
 import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
@@ -97,6 +99,15 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
     final coachesAsync = ref.watch(coachesProvider);
+    // A head_coach / coach may only tag a batch with one of their own sports
+    // (RLS rejects the rest), so restrict the picker for them. Other roles see
+    // the full center/academy list (null = no restriction). Empty-while-loading
+    // is safe — it just shows the "no sports" hint until the future resolves.
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    final sportScoped = role == 'head_coach' || role == 'coach';
+    final restrictSports = sportScoped
+        ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
+        : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit batch' : 'New batch')),
@@ -126,6 +137,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                   value: _sportId,
                   onChanged: (v) => setState(() => _sportId = v),
                   centerId: _centerId,
+                  restrictToSportIds: restrictSports,
                 );
                 final ageGroup = AppFormField(
                   controller: _ageGroup,

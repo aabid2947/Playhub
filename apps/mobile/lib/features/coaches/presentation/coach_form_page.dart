@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
@@ -134,9 +135,37 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     }
   }
 
+  /// Soft-delete: archive the coach (is_active → false). Reversible, and keeps
+  /// the record so historical attendance/performance stay attributed.
+  Future<void> _confirmArchive() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Archive this coach?',
+      message:
+          'They will be marked inactive and hidden from coach pickers, and '
+          'unassigned from new work. Their record, documents and history are '
+          'kept — you can reactivate later.',
+      confirmLabel: 'Archive',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await archiveCoach(ref, widget.existing!.id);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Coach archived.');
+      context.pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
+    final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
@@ -328,6 +357,16 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                   coach: widget.existing!,
                   onInvite: () => _invite(context),
                 ),
+                if (caps.manageCoaches) ...[
+                  const SizedBox(height: AppSpacing.xl),
+                  const AppSectionHeader(title: 'Danger zone'),
+                  const SizedBox(height: AppSpacing.sm),
+                  _ArchiveButton(
+                    label: 'Archive coach',
+                    busy: _busy,
+                    onPressed: _confirmArchive,
+                  ),
+                ],
               ],
               const SizedBox(height: AppSpacing.xl),
               FilledButton(
@@ -462,6 +501,35 @@ class _LoginAccessCard extends StatelessWidget {
         trailing: badge,
         onTap: canInvite ? onInvite : null,
       ),
+    );
+  }
+}
+
+/// Full-width destructive outlined button for the form "Danger zone". Tinted
+/// with the theme danger color and disabled while [busy], matching the
+/// lifecycle-action styling used on the center form.
+class _ArchiveButton extends StatelessWidget {
+  const _ArchiveButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = AppSemanticColors.of(context).danger;
+    return OutlinedButton.icon(
+      icon: Icon(Icons.archive_outlined, color: danger),
+      label: Text(label, style: TextStyle(color: danger)),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        side: BorderSide(color: danger.withValues(alpha: 0.5)),
+      ),
+      onPressed: busy ? null : onPressed,
     );
   }
 }

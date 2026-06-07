@@ -5,9 +5,13 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/presentation/attendance_marking_page.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
+import 'package:playhub/features/coaches/presentation/coaches_tab.dart';
+import 'package:playhub/features/students/presentation/students_tab.dart';
+import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Home tab for the coach / head_coach / trainer shell.
@@ -28,11 +32,57 @@ class CoachHomeTab extends ConsumerWidget {
     final myCoach = ref.watch(myCoachRecordProvider);
     final stats = ref.watch(myCoachStatsProvider);
     final todays = ref.watch(myTodaysBatchesProvider);
+    final caps = ref.watch(capabilitiesProvider);
     final isHeadCoach = profile?.role == 'head_coach';
 
     // Head coaches get academy-wide oversight via myBatchesProvider and don't
     // need a coaches.user_id link, so they never see the not-linked notice.
     final notLinked = !isHeadCoach && myCoach.valueOrNull == null;
+
+    // "Manage" tiles, capability-gated (RLS is the real gate). head_coach gets
+    // Students + Coaches + Invite; plain coach gets Invite (trainers); trainer
+    // gets none → the whole section hides.
+    final manageTiles = <Widget>[
+      if (caps.manageStudents)
+        AppListTile(
+          leading: const Icon(Icons.group_add_outlined),
+          title: const Text('Students'),
+          subtitle: const Text('Add or edit students'),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Students')),
+                body: const StudentsTab(),
+              ),
+            ),
+          ),
+        ),
+      if (caps.manageCoaches)
+        AppListTile(
+          leading: const Icon(Icons.sports_outlined),
+          title: const Text('Coaches'),
+          subtitle: const Text('Add or edit coaches'),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Coaches')),
+                body: const CoachesTab(),
+              ),
+            ),
+          ),
+        ),
+      if (caps.canProvisionAnyone)
+        AppListTile(
+          leading: const Icon(Icons.person_add_alt_1_outlined),
+          title: const Text('Invite staff'),
+          subtitle: const Text('Coaches and trainers you manage'),
+          onTap: () => showModalBottomSheet<bool>(
+            context: context,
+            isScrollControlled: true,
+            builder: (_) => const InviteUserSheet(),
+          ),
+        ),
+    ];
 
     return Scaffold(
       body: RefreshIndicator(
@@ -58,6 +108,21 @@ class CoachHomeTab extends ConsumerWidget {
           if (notLinked) ...[
             const SizedBox(height: AppSpacing.md),
             const _NotLinkedNotice(),
+          ],
+          if (manageTiles.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            const AppSectionHeader(title: 'Manage'),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  for (var i = 0; i < manageTiles.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
+                    manageTiles[i],
+                  ],
+                ],
+              ),
+            ),
           ],
           const SizedBox(height: AppSpacing.lg),
           const AppSectionHeader(title: 'Daily ops'),

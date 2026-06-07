@@ -21,8 +21,13 @@ import 'package:url_launcher/url_launcher.dart' as launcher;
 /// Coaches see basic profile, attendance summary, and a path into
 /// performance history (where they can record new assessments).
 class CoachStudentPage extends ConsumerWidget {
-  const CoachStudentPage({required this.student, super.key});
+  const CoachStudentPage({required this.student, this.batchId, super.key});
   final Student student;
+
+  /// The batch this student was opened from (batch detail). Threaded into the
+  /// performance form so a trainer's assessment carries a batch_id (RLS requires
+  /// trainer performance to be batch-scoped; a NULL batch is rejected).
+  final String? batchId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,7 +54,8 @@ class CoachStudentPage extends ConsumerWidget {
                   const Text('View history or record a new assessment'),
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => PerformanceHistoryPage(student: student),
+                  builder: (_) =>
+                      PerformanceHistoryPage(student: student, batchId: batchId),
                 ),
               ),
             ),

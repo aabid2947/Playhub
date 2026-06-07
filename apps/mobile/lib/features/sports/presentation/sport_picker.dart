@@ -114,6 +114,7 @@ class SportPicker extends ConsumerWidget {
     required this.onChanged,
     this.label = 'Sport',
     this.centerId,
+    this.restrictToSportIds,
   });
 
   /// Current `sport_id`. Pass null when nothing is selected.
@@ -129,9 +130,18 @@ class SportPicker extends ConsumerWidget {
   /// the union of every center's sports in the academy.
   final String? centerId;
 
+  /// When non-null, the picker only offers sports whose id is in this set —
+  /// used so a head_coach can only tag a batch with a sport they own (RLS
+  /// rejects the rest). An empty set therefore shows the "no sports" hint.
+  final Set<String>? restrictToSportIds;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sports = _dedup(_resolveSports(ref, centerId));
+    var sports = _dedup(_resolveSports(ref, centerId));
+    final restrict = restrictToSportIds;
+    if (restrict != null) {
+      sports = sports.where((s) => restrict.contains(s.sport.id)).toList();
+    }
     if (sports.isEmpty) {
       return _SportPickerEmpty(centerId: centerId, label: label, framed: true);
     }

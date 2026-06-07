@@ -1,6 +1,7 @@
 /// Barrel export for the PlayHub mobile design-system widgets.
 export 'app_badge.dart';
 export 'app_card.dart';
+export 'app_confirm.dart';
 export 'app_date_field.dart';
 export 'app_dropdown_field.dart';
 export 'app_empty_state.dart';

@@ -12,9 +12,14 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class PerformanceHistoryPage extends ConsumerWidget {
-  const PerformanceHistoryPage({required this.student, super.key});
+  const PerformanceHistoryPage({required this.student, this.batchId, super.key});
 
   final Student student;
+
+  /// The batch this student was opened from, if any. Threaded into the new
+  /// assessment so a trainer's record (which RLS requires to be batch-scoped via
+  /// staff_on_batch) carries a batch_id instead of a NULL that RLS rejects.
+  final String? batchId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,7 +89,8 @@ class PerformanceHistoryPage extends ConsumerWidget {
           ? FloatingActionButton.extended(
               onPressed: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => PerformanceFormPage(student: student),
+                  builder: (_) =>
+                      PerformanceFormPage(student: student, batchId: batchId),
                 ),
               ),
               icon: const Icon(Icons.add_chart_outlined),

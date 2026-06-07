@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_form_page.dart';
@@ -25,11 +26,38 @@ class InventoryItemPage extends ConsumerStatefulWidget {
 class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
   int _visible = _kMovementsPageSize;
 
+  /// Hard-delete the item after confirmation. RLS limits this to admin tier +
+  /// center_admin (own center); `manageInventory` mirrors that on the UI.
+  Future<void> _confirmDelete(InventoryItem item) async {
+    final ok = await confirmAction(
+      context,
+      title: 'Delete "${item.name}"?',
+      message:
+          'This permanently removes the item and its movement history. '
+          'This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      final repo = await ref.read(inventoryRepoProvider.future);
+      if (repo == null) return;
+      await repo.deleteItem(item.id);
+      ref.invalidate(inventoryItemsProvider);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Item deleted.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(inventoryItemsProvider).valueOrNull ?? const [];
     final item = items.where((i) => i.id == widget.itemId).firstOrNull;
     final movesAsync = ref.watch(itemMovementsProvider(widget.itemId));
+    final caps = ref.watch(capabilitiesProvider);
 
     if (item == null) {
       return const Scaffold(
@@ -50,6 +78,12 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
               ),
             ),
           ),
+          if (caps.manageInventory)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete item',
+              onPressed: () => _confirmDelete(item),
+            ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(

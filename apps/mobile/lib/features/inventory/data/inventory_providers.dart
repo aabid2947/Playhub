@@ -127,6 +127,20 @@ class InventoryRepo {
     return InventoryCategory.fromMap(r);
   }
 
+  /// Hard-delete an inventory item. Its movement ledger (inventory_movements)
+  /// is FK-cascaded away with it — acceptable, the ledger has no meaning once
+  /// the item is gone. RLS (`can_admin_center_scope`) gates this to admin tier
+  /// + center_admin for their own center.
+  Future<void> deleteItem(String id) async {
+    await _client.from('inventory_items').delete().eq('id', id);
+  }
+
+  /// Hard-delete a vendor. Items/movements that referenced it keep their row
+  /// (the FK is `on delete set null`). RLS gates this to center_admin and above.
+  Future<void> deleteVendor(String id) async {
+    await _client.from('vendors').delete().eq('id', id);
+  }
+
   Future<Vendor> upsertVendor({
     String? id,
     required String name,

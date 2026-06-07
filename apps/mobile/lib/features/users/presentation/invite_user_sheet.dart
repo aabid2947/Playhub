@@ -58,6 +58,14 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   String? _centerId;
   bool _busy = false;
 
+  // Center-scoped staff roles: when an ADMIN-tier inviter picks one of these,
+  // surface the center picker so the new staffer lands in a center (else they're
+  // academy-wide). center-scoped inviters never see it — the invite-user fn
+  // forces their own center.
+  static const _centerScopedTargets = {
+    'center_admin', 'head_coach', 'coach', 'trainer',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -80,7 +88,11 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    if (widget.preset == null && _role == 'center_admin' && _centerId == null) {
+    final caps = ref.read(capabilitiesProvider);
+    if (widget.preset == null &&
+        !caps.inviteScopedToOwnCenter &&
+        _role == 'center_admin' &&
+        _centerId == null) {
       AppSnackbar.error(context, 'Pick a center for the center admin.');
       return;
     }
@@ -123,7 +135,8 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
     // → can_provision_role). Capabilities load with the profile, so the default
     // _role may not be invitable for this user — clamp it to a valid option so
     // the dropdown's value is always one of its items.
-    final roleOptions = ref.watch(capabilitiesProvider).invitableRoles;
+    final caps = ref.watch(capabilitiesProvider);
+    final roleOptions = caps.invitableRoles;
     if (preset == null &&
         roleOptions.isNotEmpty &&
         !roleOptions.contains(_role)) {
@@ -214,12 +227,18 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                     ],
                     onChanged: (v) => setState(() {
                       _role = v ?? _role;
-                      if (_role != 'center_admin') _centerId = null;
+                      if (!_centerScopedTargets.contains(_role)) {
+                        _centerId = null;
+                      }
                     }),
                   ),
-                // A center admin must be scoped to a center — otherwise the
-                // center-narrowed RLS leaves them seeing nothing. Required.
-                if (preset == null && _role == 'center_admin') ...[
+                // Center-scoped staff need a center. Admin-tier inviters pick it
+                // here (required for center_admin, optional for head_coach/coach/
+                // trainer). center-scoped inviters never see this — the
+                // invite-user fn forces their own center.
+                if (preset == null &&
+                    !caps.inviteScopedToOwnCenter &&
+                    _centerScopedTargets.contains(_role)) ...[
                   const SizedBox(height: AppSpacing.md),
                   ref
                       .watch(centersProvider)
@@ -238,15 +257,19 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                               .toList();
                           if (active.isEmpty) {
                             return Text(
-                              'Create a center first — a center admin must be '
-                              'assigned to one.',
+                              _role == 'center_admin'
+                                  ? 'Create a center first — a center admin must '
+                                      'be assigned to one.'
+                                  : 'No centers yet. This staffer will be '
+                                      'academy-wide until you assign a center.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: AppSemanticColors.of(context).danger,
                               ),
                             );
                           }
                           return AppDropdownField<String>(
-                            label: 'Center *',
+                            label:
+                                _role == 'center_admin' ? 'Center *' : 'Center',
                             value: _centerId,
                             items: [
                               for (final c in active)

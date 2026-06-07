@@ -53,6 +53,12 @@ class EventDetailPage extends ConsumerWidget {
                 ),
               ),
             ),
+          if (canManage)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete event',
+              onPressed: () => _confirmDelete(context, ref),
+            ),
         ],
       ),
       body: eventAsync.when(
@@ -87,6 +93,34 @@ class EventDetailPage extends ConsumerWidget {
         },
       ),
     );
+  }
+
+  /// Hard-delete the event after confirmation. Cascades to its registrations
+  /// and results (FK on delete cascade). RLS limits this to admin tier +
+  /// center_admin + head_coach, which is exactly the page's [canManage] gate.
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final ok = await confirmAction(
+      context,
+      title: 'Delete this event?',
+      message:
+          'This permanently removes the event and all its registrations and '
+          'results. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok) return;
+    try {
+      final repo = await ref.read(eventsRepoProvider.future);
+      if (repo == null) return;
+      await repo.deleteEvent(eventId);
+      ref.invalidate(eventsListProvider);
+      if (context.mounted) {
+        AppSnackbar.success(context, 'Event deleted.');
+        Navigator.of(context).pop();
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
   }
 }
 

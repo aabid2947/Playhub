@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/presentation/student_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/student_fees_section.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/performance/presentation/performance_history_page.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
@@ -144,10 +146,46 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   String? _required(String? v) =>
       (v == null || v.trim().isEmpty) ? 'Required' : null;
 
+  /// Soft-delete: archive the student (status → inactive). Confirmed first
+  /// because it's a destructive-feeling action, even though it's reversible.
+  Future<void> _confirmArchive() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Archive this student?',
+      message:
+          'They will be set to Inactive and hidden from active lists. Their '
+          'attendance, performance and billing history is kept — you can '
+          'reactivate them anytime by changing their status back.',
+      confirmLabel: 'Archive',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await archiveStudent(ref, widget.existing!.id);
+      if (!mounted) return;
+      AppSnackbar.success(context, 'Student archived.');
+      context.pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
+    final caps = ref.watch(capabilitiesProvider);
     final theme = Theme.of(context);
+    // head_coach / coach own specific sports; show only those in the sport
+    // picker so it stays consistent with the batch form. (Student writes are
+    // center-scoped — sport_id isn't RLS-gated — so this is for clarity, not
+    // error-avoidance.)
+    final sportScoped = caps.role == 'head_coach' || caps.role == 'coach';
+    final restrictSports = sportScoped
+        ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
+        : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit student' : 'New student')),
@@ -283,6 +321,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                     value: _sportId,
                     onChanged: (v) => setState(() => _sportId = v),
                     centerId: _centerId,
+                    restrictToSportIds: restrictSports,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -344,10 +383,16 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               const SizedBox(height: AppSpacing.md),
               _PerformanceShortcut(student: widget.existing!),
               const SizedBox(height: AppSpacing.xl),
-              StudentFeesSection(studentId: widget.existing!.id),
-              const SizedBox(height: AppSpacing.xl),
-              StudentDiscountsSection(studentId: widget.existing!.id),
-              const SizedBox(height: AppSpacing.xl),
+              // Finance is only visible to roles with viewRevenue (admin tier +
+              // center_admin). head_coach/coach reach this form via manageStudents
+              // but can't read finance (can_view_student_finance) — hiding the
+              // sections avoids a misleading "nothing assigned" empty state.
+              if (ref.watch(capabilitiesProvider).viewRevenue) ...[
+                StudentFeesSection(studentId: widget.existing!.id),
+                const SizedBox(height: AppSpacing.xl),
+                StudentDiscountsSection(studentId: widget.existing!.id),
+                const SizedBox(height: AppSpacing.xl),
+              ],
               StudentDocumentsSection(studentId: widget.existing!.id),
               const SizedBox(height: AppSpacing.xl),
               const AppSectionHeader(title: 'Logins & access'),
@@ -355,6 +400,16 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               _ParentAccessCard(student: widget.existing!),
               const SizedBox(height: AppSpacing.md),
               _StudentLoginCard(student: widget.existing!),
+              if (caps.manageStudents) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Danger zone'),
+                const SizedBox(height: AppSpacing.sm),
+                _ArchiveButton(
+                  label: 'Archive student',
+                  busy: _busy,
+                  onPressed: _confirmArchive,
+                ),
+              ],
             ],
 
             const SizedBox(height: AppSpacing.xl),
@@ -445,6 +500,35 @@ void _openInvite(BuildContext ctx, InvitePreset preset) {
     isScrollControlled: true,
     builder: (_) => InviteUserSheet(preset: preset),
   );
+}
+
+/// Full-width destructive outlined button for the form "Danger zone". Tinted
+/// with the theme danger color and disabled while [busy], matching the
+/// lifecycle-action styling used on the center form.
+class _ArchiveButton extends StatelessWidget {
+  const _ArchiveButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = AppSemanticColors.of(context).danger;
+    return OutlinedButton.icon(
+      icon: Icon(Icons.archive_outlined, color: danger),
+      label: Text(label, style: TextStyle(color: danger)),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        side: BorderSide(color: danger.withValues(alpha: 0.5)),
+      ),
+      onPressed: busy ? null : onPressed,
+    );
+  }
 }
 
 /// Parent access — its own labeled row. Reflects an existing link instead of

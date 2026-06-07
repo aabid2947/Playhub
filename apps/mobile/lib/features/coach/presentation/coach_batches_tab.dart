@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
+import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/chat/presentation/batch_chat_button.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
@@ -15,7 +17,23 @@ class CoachBatchesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(myBatchesProvider);
+    // head_coach can create batches (in their sport, enforced by RLS); plain
+    // coach/trainer cannot — manageBatches is false for them.
+    final canCreate = ref.watch(capabilitiesProvider).manageBatches;
     return Scaffold(
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              heroTag: 'fab-coach-batch',
+              icon: const Icon(Icons.add),
+              label: const Text('New batch'),
+              onPressed: () async {
+                await Navigator.of(context).push<void>(
+                  MaterialPageRoute(builder: (_) => const BatchFormPage()),
+                );
+                ref.invalidate(myBatchesProvider);
+              },
+            )
+          : null,
       body: async.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(

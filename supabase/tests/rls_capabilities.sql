@@ -292,42 +292,48 @@ begin
     raise exception 'FAIL: head_coach created a batch in a center they do not manage';
   end if;
 
-  -- A sport-less batch is NOT head_coach-manageable (they own specific sports).
-  v_caught := false;
+  -- A sport-less batch in own center IS head_coach-manageable: 20260607000600
+  -- relaxed the strict sport gate so untagged batches fall back to center scope.
   begin
     insert into public.batches (academy_id, center_id, name)
     values (v_academy, v_c1, 'HC no-sport C1');
   exception when others then
-    v_caught := true;
+    raise exception 'FAIL: head_coach could not create a sport-less batch in own center: %', SQLERRM;
   end;
-  if not v_caught then
-    raise exception 'FAIL: head_coach created a sport-less batch';
-  end if;
 
-  -- Students are NOT a head_coach capability.
-  v_caught := false;
+  -- Students: head_coach CAN create in own center (20260607000700), NOT another.
   begin
     insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
     values (v_academy, v_c1, 'HC', 'Student', 'Parent');
   exception when others then
+    raise exception 'FAIL: head_coach could not create a student in own center: %', SQLERRM;
+  end;
+
+  v_caught := false;
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c2, 'HC', 'StudentC2', 'Parent');
+  exception when others then
     v_caught := true;
   end;
   if not v_caught then
-    raise exception 'FAIL: head_coach created a student (should be admin/center_admin only)';
+    raise exception 'FAIL: head_coach created a student in a center they do not manage';
   end if;
-  raise notice 'PASS: head_coach — batches scoped to own center+sport, no student management';
+  raise notice 'PASS: head_coach — batches scoped to own center+sport; students own-center only';
 end $$;
 
--- ---------- C5: coach — cannot manage students or batches -------------------
+-- ---------- C5: coach — creates students (own center) but NOT batches -------
 
-set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000005';  -- co1
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000005';  -- co1 (C1)
 
 do $$
 declare
   v_academy uuid := current_setting('cap.academy')::uuid;
   v_c1 uuid := current_setting('cap.c1')::uuid;
+  v_c2 uuid := current_setting('cap.c2')::uuid;
   v_caught boolean := false;
 begin
+  -- Batches are NOT a coach capability.
   begin
     insert into public.batches (academy_id, center_id, name)
     values (v_academy, v_c1, 'Coach sneaky batch');
@@ -338,17 +344,26 @@ begin
     raise exception 'FAIL: coach created a batch';
   end if;
 
-  v_caught := false;
+  -- Students: coach CAN create in own center (20260607000700).
   begin
     insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
     values (v_academy, v_c1, 'Coach', 'Student', 'Parent');
   exception when others then
+    raise exception 'FAIL: coach could not create a student in own center: %', SQLERRM;
+  end;
+
+  -- ...but NOT in another center.
+  v_caught := false;
+  begin
+    insert into public.students (academy_id, center_id, first_name, last_name, parent_name)
+    values (v_academy, v_c2, 'Coach', 'StudentC2', 'Parent');
+  exception when others then
     v_caught := true;
   end;
   if not v_caught then
-    raise exception 'FAIL: coach created a student';
+    raise exception 'FAIL: coach created a student in a center they do not manage';
   end if;
-  raise notice 'PASS: coach — cannot manage batches or students';
+  raise notice 'PASS: coach — creates students (own center) but not batches';
 end $$;
 
 -- ---------- Reset and roll back ---------------------------------------------

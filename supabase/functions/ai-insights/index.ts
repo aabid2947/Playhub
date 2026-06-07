@@ -75,19 +75,11 @@ Deno.serve(async (req) => {
     return j({ ok: false, error: 'Student not found or not visible to you.' }, 403);
   }
 
-  // The students read is academy-wide, so RLS alone lets any staffer see any
-  // student. A coach/trainer should only get insights for students in THEIR
-  // OWN batches — gate explicitly (student_assigned_to_me, 20260607000300).
-  // Management tiers (center_admin/head_coach/admin) keep their broader view.
-  if (role === 'coach' || role === 'trainer') {
-    const { data: mine, error: gErr } = await db.rpc('student_assigned_to_me', {
-      p_student_id: studentId,
-    });
-    if (gErr) return j({ ok: false, error: gErr.message }, 400);
-    if (mine !== true) {
-      return j({ ok: false, error: 'This student is not in one of your batches.' }, 403);
-    }
-  }
+  // Visibility is governed purely by RLS on the students read above: any role
+  // that can SEE the student (staff academy-wide; parent/student their own) can
+  // generate its insights. (We previously restricted coach/trainer to their own
+  // batches via student_assigned_to_me — that gate was removed so insights are
+  // available to all roles that can open the student.)
 
   // Attendance — last 90 days.
   const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
@@ -191,6 +183,16 @@ Deno.serve(async (req) => {
   if (!geminiRes || !geminiRes.ok) {
     const detail = geminiRes ? await geminiRes.text().catch(() => '') : 'network error';
     console.error('Gemini error', geminiRes?.status, detail);
+    // 429 = the Gemini key is rate-limited / out of quota. Surface a clear,
+    // actionable message (the client shows the `error` string verbatim) so it's
+    // obvious this is an ops fix — rotate/upgrade the GEMINI_API_KEY — not a
+    // transient app glitch.
+    if (geminiRes?.status === 429) {
+      return j(
+        { ok: false, error: 'AI rate limited — API key quota exhausted. Change the API key.' },
+        429,
+      );
+    }
     return j({ ok: false, error: 'The AI service is unavailable right now.' }, 502);
   }
 

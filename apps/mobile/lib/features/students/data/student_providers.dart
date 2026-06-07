@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentsFilter {
   const StudentsFilter({this.search, this.status, this.centerId, this.sportId});
@@ -61,6 +62,19 @@ final studentsProvider = FutureProvider<List<Student>>((ref) async {
 
   var query = client.from('students').select().eq('academy_id', academyId);
 
+  // center_admin / head_coach / coach can only *manage* students in their own
+  // center (can_manage_student), but the students read policy is academy-wide —
+  // so without this they'd see (and could open the editor for) students they
+  // can't save, then hit a 42501. Scope the list to their own center (plus
+  // null-center students, which can_manage_student also allows) to match RLS.
+  final role = profile!.role;
+  if (role == 'center_admin' || role == 'head_coach' || role == 'coach') {
+    final myCenter = profile.centerId;
+    query = myCenter == null
+        ? query.isFilter('center_id', null)
+        : query.or('center_id.eq.$myCenter,center_id.is.null');
+  }
+
   if (filter.status != null && filter.status!.isNotEmpty) {
     query = query.eq('status', filter.status!);
   }
@@ -92,7 +106,18 @@ Future<Student> createStudent(WidgetRef ref, Map<String, dynamic> data) async {
       .from('students')
       .insert({...data, 'academy_id': academyId})
       .select()
-      .single();
+      .maybeSingle();
+  // Null means the INSERT was blocked by RLS — a center_admin / head_coach /
+  // coach can only create students in their own center (can_manage_student).
+  // Surface a clean permission error instead of the opaque PGRST116 that
+  // `.single()` throws on zero rows.
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Create blocked by row-level security '
+          '(you can only manage students in your own center).',
+      code: '42501',
+    );
+  }
   ref.invalidate(studentsProvider);
   return Student.fromMap(row);
 }
@@ -108,7 +133,29 @@ Future<Student> updateStudent(
       .update(patch)
       .eq('id', studentId)
       .select()
-      .single();
+      .maybeSingle();
+  // Null means the UPDATE matched nothing under RLS — the caller can't write
+  // this student (center_admin / head_coach / coach are limited to their own
+  // center via can_manage_student). Clean permission error over PGRST116.
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Update blocked by row-level security '
+          '(you can only manage students in your own center).',
+      code: '42501',
+    );
+  }
   ref.invalidate(studentsProvider);
   return Student.fromMap(row);
+}
+
+/// Soft-delete: mark the student inactive instead of hard-deleting, so their
+/// attendance / performance / invoice history is preserved (a hard delete
+/// cascades and wipes all of it). Reversible by editing the status back.
+Future<void> archiveStudent(WidgetRef ref, String studentId) async {
+  final client = ref.read(supabaseClientProvider);
+  await client
+      .from('students')
+      .update({'status': 'inactive'})
+      .eq('id', studentId);
+  ref.invalidate(studentsProvider);
 }

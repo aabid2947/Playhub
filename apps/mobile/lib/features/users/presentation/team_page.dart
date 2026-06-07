@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -224,13 +226,22 @@ class _RoleSection extends StatelessWidget {
   }
 }
 
-class _MemberTile extends StatelessWidget {
+class _MemberTile extends ConsumerWidget {
   const _MemberTile({required this.member});
 
   final TeamMember member;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Removal mirrors the provisioning ladder: you can only remove a rung you
+    // could have invited (canInvite → can_provision_role), and never yourself.
+    // RLS (users_admin_delete) is the real gate and also enforces center scope.
+    final canRemove = member.id != ref.watch(currentUserIdProvider) &&
+        ref.watch(capabilitiesProvider).canInvite(member.role);
+    final badge = AppBadge(
+      text: member.isActive ? 'Active' : 'Inactive',
+      tone: member.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
+    );
     return AppListTile(
       wrapLeading: false,
       leading: CircleAvatar(child: Text(_initials(member.displayName))),
@@ -240,11 +251,48 @@ class _MemberTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: AppBadge(
-        text: member.isActive ? 'Active' : 'Inactive',
-        tone: member.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
-      ),
+      trailing: canRemove
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                badge,
+                PopupMenuButton<String>(
+                  tooltip: 'Member actions',
+                  onSelected: (v) {
+                    if (v == 'remove') _confirmRemove(context, ref);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem<String>(
+                      value: 'remove',
+                      child: Text('Remove from academy'),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : badge,
     );
+  }
+
+  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+    final ok = await confirmAction(
+      context,
+      title: 'Remove ${member.displayName}?',
+      message:
+          'This deletes their login and revokes their access to this academy. '
+          'Any coach or student record they were linked to is kept (just '
+          'unlinked). This cannot be undone.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (!ok) return;
+    try {
+      await ref.read(inviteRepoProvider).removeMember(member.id);
+      ref.invalidate(teamMembersProvider);
+      if (context.mounted) AppSnackbar.success(context, 'Member removed.');
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
   }
 
   static String _initials(String name) {
