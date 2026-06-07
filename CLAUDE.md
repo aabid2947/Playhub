@@ -223,6 +223,30 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-07 — Org-hierarchy re-architecture started (Phase 1: provisioning ladder)
+Building an explicit creation/delegation hierarchy on top of role+center scoping
+(each role provisions the rung below; "higher ⊇ lower"). Phase 1 added
+[`role_rank()`](supabase/migrations/20260607000000_provisioning_ladder.sql) +
+`can_provision_role(target_role, center_id)` — the new vocabulary for "who may
+create whom" (use these, not bare `has_admin_or_higher()`, for user provisioning).
+`public.users` writes are now gated by `can_provision_role` (insert/update/delete
+split; update blocks upward/lateral promotion + cross-center poaching).
+invite-user enforces it server-side. Phases 2–5 (head_coach→sport, trainer→student
+via `batch_staff`, center-scoped fees, full read isolation) are tracked but **not
+yet built** — don't assume head_coach is sport-scoped or fees are center-scoped yet.
+
+### 2026-06-07 — SECURITY: auth trigger no longer trusts client `user_metadata`
+[`handle_new_auth_user`](supabase/migrations/20260607000100_harden_auth_trigger.sql)
+honours privileged fields (`role`/`academy_id`/`center_id`/links) **only** from
+`raw_app_meta_data` (service-role-only) **or** from `user_metadata` when
+`invited_at` is set (the GoTrue invite path). This closes a self-signup
+escalation (anyone could `auth.signUp({data:{role:'academy_admin',academy_id}})`).
+**Consequence:** any service-role user creation must pass privileged fields via
+**`app_metadata`** (e.g. `admin.createUser({app_metadata})`), not `user_metadata` —
+`create_demo_users.mjs` was updated accordingly. `inviteUserByEmail` still works
+(it sets `invited_at`). Self-signups always land as `student`/no-academy and
+onboard via `bootstrap_owner_academy()`.
+
 ### 2026-06-06 — Global type scale tuned down for mobile density
 The Material 3 default sizes read oversized on a dense mobile ops tool, so the type
 scale in [`_textTheme()`](apps/mobile/lib/core/theme.dart) now sets explicit, smaller

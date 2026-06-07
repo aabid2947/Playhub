@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/announcements/presentation/announcements_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/chat/presentation/threads_page.dart';
 import 'package:playhub/features/coach/presentation/coach_batches_tab.dart';
 import 'package:playhub/features/coach/presentation/coach_home_tab.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
 import 'package:playhub/features/notifications/presentation/notification_center_page.dart';
+import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Shell for coach / head_coach / trainer roles. Five-tab nav:
@@ -28,9 +30,21 @@ class CoachHomeShell extends ConsumerStatefulWidget {
 class _CoachHomeShellState extends ConsumerState<CoachHomeShell> {
   int _index = 0;
 
+  Future<void> _openInvite() async {
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const InviteUserSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final unread = ref.watch(unreadNotificationCountProvider);
+    // head_coach → coach/trainer, coach → trainer: surface the invite entry
+    // when this user may provision anyone (RLS + the invite-user fn enforce the
+    // ladder; this only shows the button).
+    final canInvite = ref.watch(capabilitiesProvider).canProvisionAnyone;
     const pages = [
       CoachHomeTab(),
       CoachBatchesTab(),
@@ -41,9 +55,15 @@ class _CoachHomeShellState extends ConsumerState<CoachHomeShell> {
     return Scaffold(
       appBar: AppBar(
         title: const BrandWordmark(),
-        actions: const [
-          AccountAction(),
-          SizedBox(width: AppSpacing.xs),
+        actions: [
+          if (canInvite)
+            IconButton(
+              tooltip: 'Invite staff',
+              icon: const Icon(Icons.person_add_outlined),
+              onPressed: _openInvite,
+            ),
+          const AccountAction(),
+          const SizedBox(width: AppSpacing.xs),
         ],
       ),
       body: IndexedStack(index: _index, children: pages),

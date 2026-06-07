@@ -110,7 +110,12 @@ async function main() {
       email: u.email,
       password: PASSWORD,
       email_confirm: true,
-      user_metadata: { first_name: u.first_name, last_name: u.last_name, ...u.meta },
+      // Privileged fields (role / academy_id / center_id / links) go in
+      // app_metadata: handle_new_auth_user only trusts privileged fields from
+      // app_metadata (service-role-only) or from invited users, never from
+      // client-supplied user_metadata. See 20260607000100_harden_auth_trigger.
+      user_metadata: { first_name: u.first_name, last_name: u.last_name },
+      app_metadata: u.meta,
     });
     if (error || !data.user) {
       console.error(`  ! create ${u.email} failed: ${error?.message}`);

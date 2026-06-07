@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     global: { headers: { authorization: `Bearer ${token}` } },
   });
   const { data: caller, error: cerr } = await callerClient.from('users')
-    .select('id, role, academy_id').eq('id', callerId).single();
+    .select('id, role, academy_id, center_id').eq('id', callerId).single();
   if (cerr || !caller?.academy_id) {
     console.log('[invite-user] caller lookup failed', cerr?.message,
       'callerId', callerId);
@@ -99,9 +99,28 @@ Deno.serve(async (req) => {
     }, 403);
   }
 
-  if (!['super_admin', 'academy_owner', 'academy_admin']
-        .includes(caller.role as string)) {
-    return j({ error: 'admin-or-higher required' }, 403);
+  // Center-scoped callers (center_admin / head_coach / coach) can only provision
+  // into their OWN center — never trust a center_id from the body for them.
+  // Admin-tier callers may target any center in their academy (validated below).
+  const centerScoped = ['center_admin', 'head_coach', 'coach']
+    .includes(caller.role as string);
+  const effectiveCenterId = centerScoped
+    ? (caller.center_id ?? null)
+    : (body.center_id ?? null);
+
+  // Authoritative gate — mirrors the users RLS policy. can_provision_role()
+  // encodes the full creation ladder (rank ceiling + center scope), so this is
+  // the one place that decides who may mint whom.
+  const { data: allowed, error: provErr } = await callerClient.rpc(
+    'can_provision_role',
+    { p_target_role: body.role, p_center_id: effectiveCenterId },
+  );
+  if (provErr) {
+    console.log('[invite-user] can_provision_role failed', provErr.message);
+    return j({ error: provErr.message }, 400);
+  }
+  if (allowed !== true) {
+    return j({ error: `you are not allowed to invite a ${body.role}` }, 403);
   }
 
   // Validate any linked rows belong to caller's academy.
@@ -129,9 +148,9 @@ Deno.serve(async (req) => {
       return j({ error: 'student not in your academy' }, 400);
     }
   }
-  if (body.center_id) {
+  if (effectiveCenterId) {
     const { data: ce } = await admin.from('centers')
-      .select('id, academy_id').eq('id', body.center_id).maybeSingle();
+      .select('id, academy_id').eq('id', effectiveCenterId).maybeSingle();
     if (!ce || ce.academy_id !== academyId) {
       return j({ error: 'center not in your academy' }, 400);
     }
@@ -142,7 +161,7 @@ Deno.serve(async (req) => {
     academy_id: academyId,
     ...(body.first_name ? { first_name: body.first_name } : {}),
     ...(body.last_name ? { last_name: body.last_name } : {}),
-    ...(body.center_id ? { center_id: body.center_id } : {}),
+    ...(effectiveCenterId ? { center_id: effectiveCenterId } : {}),
     ...(body.link_to_student_id
       ? { link_to_student_id: body.link_to_student_id } : {}),
     ...(body.link_relationship

@@ -5,6 +5,7 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/presentation/academy_settings_page.dart';
 import 'package:playhub/features/audit/presentation/audit_log_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
 import 'package:playhub/features/sports/presentation/sports_settings_page.dart';
@@ -20,6 +21,7 @@ class SettingsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final client = ref.watch(supabaseClientProvider);
     final role = ref.watch(currentProfileProvider).valueOrNull?.role ?? '';
+    final caps = ref.watch(capabilitiesProvider);
     final isOwner = role == 'academy_owner';
     final isOwnerOrAdmin = role == 'academy_owner' || role == 'academy_admin';
 
@@ -80,6 +82,25 @@ class SettingsTab extends ConsumerWidget {
                 title: 'Support',
                 subtitle: 'Tickets to PlayHub support',
                 builder: _supportPageBuilder,
+              ),
+            ],
+          ),
+        ],
+
+        // Team — non-admin provisioners (center_admin) can invite the rungs
+        // below them, scoped to their center by RLS + the invite-user fn.
+        // Owners/admins get Team inside "Team & billing" above instead.
+        if (caps.canProvisionAnyone && !isOwnerOrAdmin) ...[
+          const SizedBox(height: AppSpacing.xl),
+          const AppSectionHeader(title: 'Team'),
+          const SizedBox(height: AppSpacing.sm),
+          const _SettingsGroup(
+            tiles: [
+              _SettingsDestination(
+                icon: Icons.group_outlined,
+                title: 'Team',
+                subtitle: 'Invite the staff you manage',
+                builder: _teamPageBuilder,
               ),
             ],
           ),

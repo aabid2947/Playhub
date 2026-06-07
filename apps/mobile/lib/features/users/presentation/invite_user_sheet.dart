@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -56,14 +57,6 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   String _role = 'coach';
   String? _centerId;
   bool _busy = false;
-
-  static const _normalRoles = [
-    ('academy_admin', 'Admin'),
-    ('center_admin', 'Center admin'),
-    ('head_coach', 'Head coach'),
-    ('coach', 'Coach'),
-    ('trainer', 'Trainer'),
-  ];
 
   @override
   void initState() {
@@ -126,6 +119,16 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   Widget build(BuildContext context) {
     final preset = widget.preset;
     final theme = Theme.of(context);
+    // Role options mirror the DB provisioning ladder (capabilities.invitableRoles
+    // → can_provision_role). Capabilities load with the profile, so the default
+    // _role may not be invitable for this user — clamp it to a valid option so
+    // the dropdown's value is always one of its items.
+    final roleOptions = ref.watch(capabilitiesProvider).invitableRoles;
+    if (preset == null &&
+        roleOptions.isNotEmpty &&
+        !roleOptions.contains(_role)) {
+      _role = roleOptions.first;
+    }
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -206,8 +209,8 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                     label: 'Role',
                     value: _role,
                     items: [
-                      for (final r in _normalRoles)
-                        DropdownMenuItem(value: r.$1, child: Text(r.$2)),
+                      for (final r in roleOptions)
+                        DropdownMenuItem(value: r, child: Text(_roleLabel(r))),
                     ],
                     onChanged: (v) => setState(() {
                       _role = v ?? _role;
