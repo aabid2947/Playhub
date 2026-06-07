@@ -12,13 +12,14 @@ import 'package:playhub/shared/widgets/widgets.dart';
 
 final _dateFmt = DateFormat('dd MMM yyyy');
 
+/// Tab body under the billing dashboard — the parent page owns the AppBar +
+/// TabBar, so this screen is intentionally app-bar-less.
 class InvoiceListPage extends ConsumerWidget {
   const InvoiceListPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final invoicesAsync = ref.watch(invoicesProvider);
-    final filter = ref.watch(invoiceFilterProvider);
     final students =
         ref.watch(studentsProvider).valueOrNull ?? const <Student>[];
     final byId = {for (final s in students) s.id: s};
@@ -26,43 +27,10 @@ class InvoiceListPage extends ConsumerWidget {
     return Scaffold(
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.sm,
-              AppSpacing.md,
-              AppSpacing.xs,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: AppSpacing.sm,
-                    children: [
-                      _StatusFilterChip(
-                        label: 'All',
-                        selected: filter.status == null,
-                        onSelected: () => ref
-                            .read(invoiceFilterProvider.notifier)
-                            .state = const InvoiceFilter(),
-                      ),
-                      for (final s in InvoiceStatus.values)
-                        _StatusFilterChip(
-                          label: s.label,
-                          selected: filter.status == s,
-                          onSelected: () => ref
-                              .read(invoiceFilterProvider.notifier)
-                              .state = InvoiceFilter(status: s),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          const _FilterBar(),
           Expanded(
             child: invoicesAsync.when(
-              loading: () => const AppLoading(),
+              loading: () => const AppSkeletonList(),
               error: (e, _) => AppErrorView(
                 message: friendlyError(e),
                 onRetry: () => ref.invalidate(invoicesProvider),
@@ -80,18 +48,72 @@ class InvoiceListPage extends ConsumerWidget {
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(invoicesProvider),
                   child: ListView.separated(
-                    itemCount: invoices.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) => _InvoiceTile(
-                      invoice: invoices[i],
-                      student: byId[invoices[i].studentId],
-                    ),
+                    itemCount: invoices.length + 1,
+                    separatorBuilder: (_, i) => i == 0
+                        ? const SizedBox.shrink()
+                        : const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        return _ResultCount(count: invoices.length);
+                      }
+                      final invoice = invoices[i - 1];
+                      return _InvoiceTile(
+                        invoice: invoice,
+                        student: byId[invoice.studentId],
+                      );
+                    },
                   ),
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The single, unified status filter for the invoice list: an "All" chip plus
+/// one chip per [InvoiceStatus], in one coherent surface so the controls never
+/// read as an orphaned tag cloud.
+class _FilterBar extends ConsumerWidget {
+  const _FilterBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filter = ref.watch(invoiceFilterProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: scheme.surface,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            _StatusFilterChip(
+              label: 'All',
+              selected: filter.status == null,
+              onSelected: () => ref.read(invoiceFilterProvider.notifier).state =
+                  const InvoiceFilter(),
+            ),
+            for (final s in InvoiceStatus.values) ...[
+              const SizedBox(width: AppSpacing.sm),
+              _StatusFilterChip(
+                label: s.label,
+                selected: filter.status == s,
+                onSelected: () =>
+                    ref.read(invoiceFilterProvider.notifier).state =
+                        InvoiceFilter(status: s),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -118,6 +140,31 @@ class _StatusFilterChip extends StatelessWidget {
   }
 }
 
+/// Visible result count above the list, e.g. "12 invoices".
+class _ResultCount extends StatelessWidget {
+  const _ResultCount({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.xs,
+      ),
+      child: Text(
+        count == 1 ? '1 invoice' : '$count invoices',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
 class _InvoiceTile extends StatelessWidget {
   const _InvoiceTile({required this.invoice, required this.student});
   final Invoice invoice;
@@ -125,7 +172,8 @@ class _InvoiceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final sem = AppSemanticColors.of(context);
     final tone = _tone(invoice.status);
     final (fg, bg) = switch (tone) {
@@ -135,6 +183,13 @@ class _InvoiceTile extends StatelessWidget {
       AppBadgeTone.info => (sem.info, sem.infoContainer),
       _ => (scheme.onSurfaceVariant, scheme.surfaceContainerHighest),
     };
+
+    final isOverdue = invoice.status == InvoiceStatus.overdue;
+    // The student and the due date are the two facts that matter on the row;
+    // overdue invoices get a danger-toned due-date so the aging is scannable
+    // without opening the detail page.
+    final dueLabel = 'Due ${_dateFmt.format(invoice.dueDate)}';
+
     return AppListTile(
       wrapLeading: false,
       leading: CircleAvatar(
@@ -142,16 +197,30 @@ class _InvoiceTile extends StatelessWidget {
         child: Icon(_statusIcon(invoice.status), color: fg, size: 18),
       ),
       title: Text(invoice.invoiceNumber),
-      subtitle: Text(
-        '${student?.fullName ?? 'unknown student'} · '
-        'due ${_dateFmt.format(invoice.dueDate)}',
+      subtitle: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: student?.fullName ?? 'Unknown student'),
+            const TextSpan(text: ' · '),
+            TextSpan(
+              text: dueLabel,
+              style: isOverdue
+                  ? TextStyle(color: sem.danger, fontWeight: AppType.semibold)
+                  : null,
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text('₹${invoice.amount.toStringAsFixed(0)}',
-              style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            '₹${invoice.amount.toStringAsFixed(0)}',
+            style: theme.textTheme.titleMedium,
+          ),
           const SizedBox(height: AppSpacing.xs),
           AppBadge(text: invoice.status.label, tone: tone),
         ],

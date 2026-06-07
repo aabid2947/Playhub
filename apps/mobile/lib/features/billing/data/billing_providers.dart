@@ -271,6 +271,25 @@ final invoicesProvider = FutureProvider<List<Invoice>>((ref) async {
       .toList();
 });
 
+/// Academy-wide invoices, NOT scoped by [invoiceFilterProvider]. The financial
+/// report derives its figures from this so that pivoting the invoice-list
+/// filter (e.g. via the report's by-status tap-through) never re-scopes or
+/// corrupts the report's academy-wide totals.
+final allInvoicesProvider = FutureProvider<List<Invoice>>((ref) async {
+  final profile = await ref.watch(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return [];
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('invoices')
+      .select()
+      .eq('academy_id', academyId)
+      .order('issued_at', ascending: false);
+  return (rows as List)
+      .map((r) => Invoice.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
 final invoiceLineItemsProvider = FutureProvider.family<
     List<InvoiceLineItem>, String>((ref, invoiceId) async {
   final client = ref.read(supabaseClientProvider);

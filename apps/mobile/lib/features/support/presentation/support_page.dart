@@ -8,6 +8,48 @@ import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
 import 'package:playhub/features/support/data/support_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Maps a ticket priority to a badge tone. One mapping helper for the domain,
+/// reused by the list and the thread header (no hand-coloured indicators).
+/// Mirrors the super-tickets reference so both surfaces read identically.
+AppBadgeTone _priorityTone(String priority) {
+  switch (priority) {
+    case 'urgent':
+      return AppBadgeTone.danger;
+    case 'high':
+      return AppBadgeTone.warning;
+    case 'low':
+      return AppBadgeTone.neutral;
+    case 'normal':
+    default:
+      return AppBadgeTone.info;
+  }
+}
+
+/// Maps a ticket status to a badge tone.
+AppBadgeTone _statusTone(String status) {
+  switch (status) {
+    case 'open':
+      return AppBadgeTone.info;
+    case 'in_progress':
+      return AppBadgeTone.brand;
+    case 'waiting_on_user':
+      return AppBadgeTone.warning;
+    case 'resolved':
+      return AppBadgeTone.success;
+    case 'closed':
+    default:
+      return AppBadgeTone.neutral;
+  }
+}
+
+/// Human label for an enum-ish status/priority token (`in_progress` → `In
+/// progress`). Display only — the underlying value is never mutated.
+String _humanize(String token) {
+  if (token.isEmpty) return token;
+  final spaced = token.replaceAll('_', ' ');
+  return spaced[0].toUpperCase() + spaced.substring(1);
+}
+
 class SupportPage extends ConsumerWidget {
   const SupportPage({super.key});
 
@@ -20,6 +62,7 @@ class SupportPage extends ConsumerWidget {
         title: const Text('Support'),
         actions: [
           IconButton(
+            tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(myAcademyTicketsProvider),
           ),
@@ -35,7 +78,7 @@ class SupportPage extends ConsumerWidget {
         ),
       ),
       body: async.when(
-        loading: () => const AppLoading(),
+        loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
           message: friendlyError(e),
           onRetry: () => ref.invalidate(myAcademyTicketsProvider),
@@ -48,25 +91,48 @@ class SupportPage extends ConsumerWidget {
               subtitle: "Tap 'New ticket' to reach out.",
             );
           }
-          return ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final t = rows[i];
-              return AppListTile(
-                title: Text(
-                  t.subject,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text('${t.status} · ${df.format(t.createdAt)}'),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _TicketThreadPage(ticket: t),
+          return RefreshIndicator(
+            onRefresh: () async => ref.invalidate(myAcademyTicketsProvider),
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              itemCount: rows.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final t = rows[i];
+                return AppListTile(
+                  leading: const Icon(Icons.confirmation_number_outlined),
+                  title: Text(
+                    t.subject,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              );
-            },
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.xs),
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        AppBadge(
+                          text: _humanize(t.priority),
+                          tone: _priorityTone(t.priority),
+                        ),
+                        Text(df.format(t.createdAt)),
+                      ],
+                    ),
+                  ),
+                  trailing: AppBadge(
+                    text: _humanize(t.status),
+                    tone: _statusTone(t.status),
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _TicketThreadPage(ticket: t),
+                    ),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
@@ -120,75 +186,118 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'New support ticket',
-            style: Theme.of(context).textTheme.titleLarge,
+    final theme = Theme.of(context);
+    // Title row + scrollable body + keyboard insets so the sheet never clips
+    // behind the keyboard (the previous Column-min layout did). Height bounded
+    // so a long description stays scrollable rather than pushing the sheet off.
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          AppFormField(controller: _subject, label: 'Subject'),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _body,
-            label: 'Describe the issue',
-            maxLines: 10,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: AppDropdownField<String?>(
-                  label: 'Category',
-                  value: _category,
-                  items: const [
-                    DropdownMenuItem<String?>(child: Text('— None —')),
-                    DropdownMenuItem(value: 'billing', child: Text('Billing')),
-                    DropdownMenuItem(value: 'bug', child: Text('Bug')),
-                    DropdownMenuItem(value: 'feature', child: Text('Feature')),
-                    DropdownMenuItem(value: 'other', child: Text('Other')),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'New support ticket',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ],
-                  onChanged: (v) => setState(() => _category = v),
                 ),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppDropdownField<String>(
-                  label: 'Priority',
-                  value: _priority,
-                  items: const [
-                    DropdownMenuItem(value: 'low', child: Text('Low')),
-                    DropdownMenuItem(value: 'normal', child: Text('Normal')),
-                    DropdownMenuItem(value: 'high', child: Text('High')),
-                    DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  children: [
+                    AppFormField(controller: _subject, label: 'Subject'),
+                    const SizedBox(height: AppSpacing.md),
+                    AppFormField(
+                      controller: _body,
+                      label: 'Describe the issue',
+                      maxLines: 6,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    AppDropdownField<String?>(
+                      label: 'Category',
+                      value: _category,
+                      items: const [
+                        DropdownMenuItem<String?>(child: Text('— None —')),
+                        DropdownMenuItem(
+                          value: 'billing',
+                          child: Text('Billing'),
+                        ),
+                        DropdownMenuItem(value: 'bug', child: Text('Bug')),
+                        DropdownMenuItem(
+                          value: 'feature',
+                          child: Text('Feature'),
+                        ),
+                        DropdownMenuItem(value: 'other', child: Text('Other')),
+                      ],
+                      onChanged: (v) => setState(() => _category = v),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    AppDropdownField<String>(
+                      label: 'Priority',
+                      value: _priority,
+                      items: const [
+                        DropdownMenuItem(value: 'low', child: Text('Low')),
+                        DropdownMenuItem(
+                          value: 'normal',
+                          child: Text('Normal'),
+                        ),
+                        DropdownMenuItem(value: 'high', child: Text('High')),
+                        DropdownMenuItem(
+                          value: 'urgent',
+                          child: Text('Urgent'),
+                        ),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _priority = v ?? 'normal'),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Submit'),
+                    ),
                   ],
-                  onChanged: (v) => setState(() => _priority = v ?? 'normal'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Submit'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -231,6 +340,8 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final df = DateFormat('dd MMM yyyy · HH:mm');
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
     return Scaffold(
       appBar: AppBar(
@@ -246,54 +357,82 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
+                const AppSectionHeader(title: 'Original ticket'),
                 AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Status: ${widget.ticket.status} · '
-                        'Priority: ${widget.ticket.priority}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color:
-                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xs,
+                        children: [
+                          AppBadge(
+                            text: _humanize(widget.ticket.status),
+                            tone: _statusTone(widget.ticket.status),
+                          ),
+                          AppBadge(
+                            text: _humanize(widget.ticket.priority),
+                            tone: _priorityTone(widget.ticket.priority),
+                          ),
+                          if (widget.ticket.category != null)
+                            AppBadge(
+                              text: _humanize(widget.ticket.category!),
                             ),
+                        ],
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(widget.ticket.body),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        widget.ticket.body,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Raised ${df.format(widget.ticket.createdAt)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.md),
+                const AppSectionHeader(title: 'Replies'),
                 msgsAsync.when(
-                  loading: () => const LinearProgressIndicator(),
-                  error: (e, _) => Text(
-                    friendlyError(e),
-                    style: TextStyle(
-                      color: AppSemanticColors.of(context).danger,
+                  loading: () => const Padding(
+                    padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                    child: AppLoading(),
+                  ),
+                  error: (e, _) => AppErrorView(
+                    message: friendlyError(e),
+                    onRetry: () => ref.invalidate(
+                      ticketMessagesProvider(widget.ticket.id),
                     ),
                   ),
-                  data: (msgs) => Column(
-                    children: [
-                      for (final m in msgs)
-                        Align(
-                          alignment: m.isStaff
-                              ? Alignment.centerLeft
-                              : Alignment.centerRight,
-                          child: Card(
-                            color: m.isStaff
-                                ? null
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.primaryContainer,
-                            child: Padding(
-                              padding: const EdgeInsets.all(AppSpacing.md),
-                              child: Text(m.body),
-                            ),
+                  data: (msgs) {
+                    if (msgs.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.md,
+                        ),
+                        child: Text(
+                          'No replies yet.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
-                    ],
-                  ),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final m in msgs)
+                          _ReplyBubble(
+                            body: m.body,
+                            isStaff: m.isStaff,
+                            timestamp: df.format(m.createdAt),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -314,7 +453,14 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.send),
+                    tooltip: 'Send reply',
+                    icon: _busy
+                        ? const SizedBox(
+                            height: 18,
+                            width: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send),
                     onPressed: _busy ? null : _send,
                   ),
                 ],
@@ -322,6 +468,83 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A single reply in the thread, matching the super-tickets `_ReplyBubble`.
+/// Support staff sit on the left (neutral); the academy's own replies sit on
+/// the right with a brand tint. Each shows an author label + timestamp so the
+/// conversation is unambiguous.
+class _ReplyBubble extends StatelessWidget {
+  const _ReplyBubble({
+    required this.body,
+    required this.isStaff,
+    required this.timestamp,
+  });
+
+  final String body;
+  final bool isStaff;
+  final String timestamp;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // From the academy's side, "us" is the academy (non-staff) reply, so it
+    // takes the brand tint on the right; staff replies are neutral on the left.
+    final isOwn = !isStaff;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Align(
+        alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.82,
+          ),
+          child: AppCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            color: isOwn ? theme.colorScheme.primaryContainer : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isStaff ? 'Support staff' : 'You',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: AppType.semibold,
+                        color: isOwn
+                            ? theme.colorScheme.onPrimaryContainer
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      timestamp,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: isOwn
+                            ? theme.colorScheme.onPrimaryContainer
+                                .withValues(alpha: 0.7)
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  body,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: isOwn
+                        ? theme.colorScheme.onPrimaryContainer
+                        : theme.colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -17,10 +17,8 @@ class FeeStructureFormPage extends ConsumerStatefulWidget {
       _FeeStructureFormPageState();
 }
 
-class _FeeStructureFormPageState
-    extends ConsumerState<FeeStructureFormPage> {
-  late final _name =
-      TextEditingController(text: widget.existing?.name ?? '');
+class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
+  late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late final _description =
       TextEditingController(text: widget.existing?.description ?? '');
   late final _base = TextEditingController(
@@ -44,8 +42,20 @@ class _FeeStructureFormPageState
 
   bool get isEdit => widget.existing != null;
 
+  /// Fields that feed the live invoice preview — rebuild it on every keystroke.
+  @override
+  void initState() {
+    super.initState();
+    _base.addListener(_onPreviewInput);
+    _tax.addListener(_onPreviewInput);
+  }
+
+  void _onPreviewInput() => setState(() {});
+
   @override
   void dispose() {
+    _base.removeListener(_onPreviewInput);
+    _tax.removeListener(_onPreviewInput);
     _name.dispose();
     _description.dispose();
     _base.dispose();
@@ -75,8 +85,7 @@ class _FeeStructureFormPageState
         'late_fee_pct': _latePct.text.trim().isEmpty
             ? null
             : double.tryParse(_latePct.text.trim()),
-        'late_fee_grace_days':
-            int.tryParse(_grace.text.trim()) ?? 5,
+        'late_fee_grace_days': int.tryParse(_grace.text.trim()) ?? 5,
         'late_fee_policy': _latePolicy,
         'is_active': _isActive,
       };
@@ -104,111 +113,153 @@ class _FeeStructureFormPageState
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            const AppSectionHeader(title: 'Fee details'),
-            const SizedBox(height: AppSpacing.sm),
-            AppFormField(
-              controller: _name,
-              label: 'Name *',
-              hint: 'e.g. Monthly coaching fee',
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppDropdownField<FeeType>(
-              label: 'Frequency',
-              value: _type,
-              items: FeeType.values
-                  .map((t) =>
-                      DropdownMenuItem(value: t, child: Text(t.label)))
-                  .toList(),
-              onChanged: (v) => setState(() => _type = v ?? FeeType.monthly),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            SportPicker(
-              value: _sportId,
-              onChanged: (v) => setState(() => _sportId = v),
-              label: 'Sport (optional)',
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: AppFormField(
-                    controller: _base,
-                    label: 'Base amount (₹) *',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    validator: (v) {
-                      final n = double.tryParse(v?.trim() ?? '');
-                      if (n == null || n < 0) return 'Required';
-                      return null;
-                    },
+            // ---- Fee --------------------------------------------------------
+            const AppSectionHeader(title: 'Fee'),
+            const SizedBox(height: AppSpacing.xs),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppFormField(
+                    controller: _name,
+                    label: 'Name *',
+                    hint: 'e.g. Monthly coaching fee',
+                    enabled: !_busy,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppFormField(
-                    controller: _tax,
-                    label: 'Tax %',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _description,
+                    label: 'Description (optional)',
+                    hint: 'Shown on the invoice line item',
+                    enabled: !_busy,
+                    maxLines: 2,
                   ),
-                ),
-              ],
+                  const SizedBox(height: AppSpacing.md),
+                  AppDropdownField<FeeType>(
+                    label: 'Frequency',
+                    value: _type,
+                    items: FeeType.values
+                        .map((t) =>
+                            DropdownMenuItem(value: t, child: Text(t.label)))
+                        .toList(),
+                    onChanged: _busy
+                        ? null
+                        : (v) =>
+                            setState(() => _type = v ?? FeeType.monthly),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  SportPicker(
+                    value: _sportId,
+                    onChanged: (v) => setState(() => _sportId = v),
+                    label: 'Sport (optional)',
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _PairedFields(
+                    first: AppFormField(
+                      controller: _base,
+                      label: 'Base amount (₹) *',
+                      hint: '0.00',
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      validator: (v) {
+                        final n = double.tryParse(v?.trim() ?? '');
+                        if (n == null || n < 0) return 'Required';
+                        return null;
+                      },
+                    ),
+                    second: AppFormField(
+                      controller: _tax,
+                      label: 'Tax %',
+                      hint: '0',
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            // ---- Invoice preview -------------------------------------------
+            const AppSectionHeader(title: 'Invoice preview'),
+            const SizedBox(height: AppSpacing.xs),
+            _InvoicePreviewCard(
+              name: _name.text.trim(),
+              baseText: _base.text.trim(),
+              taxText: _tax.text.trim(),
             ),
             const SizedBox(height: AppSpacing.xl),
+            // ---- Late fee ---------------------------------------------------
             const AppSectionHeader(title: 'Late fee'),
-            const SizedBox(height: AppSpacing.sm),
-            AppDropdownField<String>(
-              label: 'Policy',
-              value: _latePolicy,
-              items: const [
-                DropdownMenuItem(value: 'none', child: Text('No late fee')),
-                DropdownMenuItem(
-                    value: 'one_time', child: Text('One-time fee')),
-                DropdownMenuItem(
-                    value: 'daily', child: Text('Per-day after grace')),
-              ],
-              onChanged: (v) => setState(() => _latePolicy = v ?? 'one_time'),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: AppFormField(
-                    controller: _lateFlat,
-                    label: 'Flat ₹ / period',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
+            const SizedBox(height: AppSpacing.xs),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppDropdownField<String>(
+                    label: 'Policy',
+                    value: _latePolicy,
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'none', child: Text('No late fee')),
+                      DropdownMenuItem(
+                          value: 'one_time', child: Text('One-time fee')),
+                      DropdownMenuItem(
+                          value: 'daily', child: Text('Per-day after grace')),
+                    ],
+                    onChanged: _busy
+                        ? null
+                        : (v) =>
+                            setState(() => _latePolicy = v ?? 'one_time'),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppFormField(
-                    controller: _latePct,
-                    label: 'Or % of base',
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppFormField(
-              controller: _grace,
-              label: 'Grace days',
-              hint: 'Days after due date before fee applies',
-              keyboardType: TextInputType.number,
+                  const SizedBox(height: AppSpacing.sm),
+                  _PolicyHelp(policy: _latePolicy),
+                  if (_latePolicy != 'none') ...[
+                    const SizedBox(height: AppSpacing.md),
+                    _PairedFields(
+                      first: AppFormField(
+                        controller: _lateFlat,
+                        label: 'Flat ₹ / period',
+                        hint: '0.00',
+                        enabled: !_busy,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                      ),
+                      second: AppFormField(
+                        controller: _latePct,
+                        label: 'Or % of base',
+                        hint: '0',
+                        enabled: !_busy,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    AppFormField(
+                      controller: _grace,
+                      label: 'Grace days',
+                      hint: 'Days after due date before the fee applies',
+                      enabled: !_busy,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
+            // ---- Status -----------------------------------------------------
             const AppSectionHeader(title: 'Status'),
             const SizedBox(height: AppSpacing.xs),
             AppCard(
               padding: EdgeInsets.zero,
               child: SwitchListTile(
                 value: _isActive,
-                onChanged: (v) => setState(() => _isActive = v),
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _isActive = v),
                 title: const Text('Active'),
                 subtitle: const Text(
                   'When off, recurring invoices stop generating.',
@@ -222,12 +273,208 @@ class _FeeStructureFormPageState
                   ? const SizedBox(
                       height: 18,
                       width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : Text(isEdit ? 'Save changes' : 'Create fee'),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Lays out two fields side-by-side on roomy widths and stacks them on narrow
+/// ones, so numeric inputs (base+tax, flat+%) never crush to unusable widths.
+class _PairedFields extends StatelessWidget {
+  const _PairedFields({required this.first, required this.second});
+
+  final Widget first;
+  final Widget second;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < AppBreakpoints.phone / 2) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              first,
+              const SizedBox(height: AppSpacing.md),
+              second,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Short inline explainer for the selected late-fee policy.
+class _PolicyHelp extends StatelessWidget {
+  const _PolicyHelp({required this.policy});
+
+  final String policy;
+
+  String get _text {
+    switch (policy) {
+      case 'one_time':
+        return 'Charged once when an invoice stays unpaid past the grace '
+            'period.';
+      case 'daily':
+        return 'Accrues for each day the invoice remains unpaid after the '
+            'grace period.';
+      case 'none':
+      default:
+        return 'No late fee is added — invoices never accrue a penalty.';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.info_outline,
+          size: 16,
+          color: scheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            _text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A live worked example of how this fee renders on an invoice — a base line,
+/// an optional tax line, and the total the student is billed (INR-marked).
+class _InvoicePreviewCard extends StatelessWidget {
+  const _InvoicePreviewCard({
+    required this.name,
+    required this.baseText,
+    required this.taxText,
+  });
+
+  final String name;
+  final String baseText;
+  final String taxText;
+
+  String _money(double v) => '₹${v.toStringAsFixed(2)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final base = double.tryParse(baseText);
+    if (base == null || base < 0) {
+      return AppCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                'Enter a base amount to preview the invoice line.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final taxPct = double.tryParse(taxText) ?? 0;
+    final taxAmount = base * taxPct / 100;
+    final total = base + taxAmount;
+    final lineLabel = name.isEmpty ? 'Fee' : name;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _PreviewRow(label: lineLabel, value: _money(base)),
+          if (taxPct > 0) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _PreviewRow(
+              label: 'Tax (${taxPct.toStringAsFixed(taxPct % 1 == 0 ? 0 : 2)}%)',
+              value: _money(taxAmount),
+            ),
+          ],
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            child: Divider(height: 1),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total billed',
+                style: theme.textTheme.titleMedium,
+              ),
+              Text(
+                _money(total),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: scheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewRow extends StatelessWidget {
+  const _PreviewRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Text(value, style: theme.textTheme.bodyMedium),
+      ],
     );
   }
 }

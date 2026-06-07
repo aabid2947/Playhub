@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/announcements/data/announcement_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Admin-only composer. Pick targets (roles / batches / centers), channels,
 /// then send. Defaults: empty targets = everyone in the academy.
@@ -38,6 +40,10 @@ class _AnnouncementComposerPageState
 
   Future<void> _send() async {
     if (!_form.currentState!.validate()) return;
+    if (!_viaPush && !_viaInApp && !_viaEmail) {
+      setState(() => _error = 'Pick at least one channel to send through.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -58,13 +64,11 @@ class _AnnouncementComposerPageState
       await repo.sendNow(ann.id);
       ref.invalidate(announcementsListProvider);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Announcement sent')),
-        );
+        AppSnackbar.success(context, 'Announcement sent');
         Navigator.of(context).pop();
       }
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -76,78 +80,130 @@ class _AnnouncementComposerPageState
     return Scaffold(
       appBar: AppBar(title: const Text('New announcement')),
       body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () => ref.invalidate(currentProfileProvider),
+        ),
         data: (profile) {
           final academyId = profile?.academyId;
           if (academyId == null) {
-            return const Center(child: Text('No academy'));
+            return const AppEmptyState(
+              icon: Icons.apartment_outlined,
+              title: 'No academy',
+              subtitle: 'You are not linked to an academy yet.',
+            );
           }
           return Form(
             key: _form,
             child: ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xxxl,
+              ),
               children: [
-                TextFormField(
+                const AppSectionHeader(title: 'Message'),
+                AppFormField(
                   controller: _subject,
-                  decoration: const InputDecoration(labelText: 'Subject *'),
+                  label: 'Subject *',
+                  hint: 'Short, scannable headline',
+                  enabled: !_busy,
+                  textInputAction: TextInputAction.next,
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
+                const SizedBox(height: AppSpacing.md),
+                AppFormField(
                   controller: _body,
+                  label: 'Body *',
+                  hint: 'What do you want everyone to know?',
                   maxLines: 5,
-                  decoration: const InputDecoration(labelText: 'Body *'),
+                  enabled: !_busy,
                   validator: (v) =>
                       (v == null || v.trim().isEmpty) ? 'Required' : null,
                 ),
-                const SizedBox(height: 24),
-                Text('Audience',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                const Text(
-                    'Leave all empty to target everyone in the academy.'),
-                const SizedBox(height: 12),
-                _RoleChips(selected: _selectedRoles),
-                const SizedBox(height: 12),
-                _BatchPicker(
-                    academyId: academyId, selected: _selectedBatches),
-                const SizedBox(height: 12),
-                _CenterPicker(
-                    academyId: academyId, selected: _selectedCenters),
-                const Divider(height: 32),
-                Text('Channels',
-                    style: Theme.of(context).textTheme.titleMedium),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Push notification (FCM)'),
-                  value: _viaPush,
-                  onChanged: (v) => setState(() => _viaPush = v),
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Audience'),
+                const _AudienceHint(),
+                const SizedBox(height: AppSpacing.md),
+                _AudienceGroup(
+                  label: 'Roles',
+                  child: _RoleChips(
+                    selected: _selectedRoles,
+                    enabled: !_busy,
+                  ),
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('In-app feed'),
-                  value: _viaInApp,
-                  onChanged: (v) => setState(() => _viaInApp = v),
+                const SizedBox(height: AppSpacing.md),
+                _AudienceGroup(
+                  label: 'Batches',
+                  child: _BatchPicker(
+                    academyId: academyId,
+                    selected: _selectedBatches,
+                    enabled: !_busy,
+                  ),
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Email'),
-                  value: _viaEmail,
-                  onChanged: (v) => setState(() => _viaEmail = v),
+                const SizedBox(height: AppSpacing.md),
+                _AudienceGroup(
+                  label: 'Centers',
+                  child: _CenterPicker(
+                    academyId: academyId,
+                    selected: _selectedCenters,
+                    enabled: !_busy,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Channels'),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        title: const Text('Push notification'),
+                        subtitle: const Text('Device alert via FCM'),
+                        value: _viaPush,
+                        onChanged:
+                            _busy ? null : (v) => setState(() => _viaPush = v),
+                      ),
+                      SwitchListTile(
+                        title: const Text('In-app feed'),
+                        subtitle: const Text('Shows in the announcements feed'),
+                        value: _viaInApp,
+                        onChanged:
+                            _busy ? null : (v) => setState(() => _viaInApp = v),
+                      ),
+                      SwitchListTile(
+                        title: const Text('Email'),
+                        subtitle: const Text('Sent to recipients with an email'),
+                        value: _viaEmail,
+                        onChanged:
+                            _busy ? null : (v) => setState(() => _viaEmail = v),
+                      ),
+                    ],
+                  ),
                 ),
                 if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error)),
+                  const SizedBox(height: AppSpacing.md),
+                  _ErrorBanner(message: _error!),
                 ],
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  icon: const Icon(Icons.send),
-                  label: Text(_busy ? 'Sending…' : 'Send announcement'),
-                  onPressed: _busy ? null : _send,
+                const SizedBox(height: AppSpacing.xl),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.send_outlined),
+                    label: Text(_busy ? 'Sending…' : 'Send announcement'),
+                    onPressed: _busy ? null : _send,
+                  ),
                 ),
               ],
             ),
@@ -158,9 +214,106 @@ class _AnnouncementComposerPageState
   }
 }
 
+/// Soft info banner explaining the "empty = everyone" targeting model.
+class _AudienceHint extends StatelessWidget {
+  const _AudienceHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantics = AppSemanticColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: semantics.infoContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.groups_outlined, size: 20, color: semantics.info),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Leave everything empty to reach everyone in the academy. '
+              'Picking roles, batches or centers narrows who receives this.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A labeled wrapper for one audience selector (roles / batches / centers).
+class _AudienceGroup extends StatelessWidget {
+  const _AudienceGroup({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        child,
+      ],
+    );
+  }
+}
+
+/// Inline, dismissable-looking validation/error region (matches form error
+/// styling without surfacing raw exceptions).
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantics = AppSemanticColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: semantics.dangerContainer,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 20, color: semantics.danger),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RoleChips extends StatefulWidget {
-  const _RoleChips({required this.selected});
+  const _RoleChips({required this.selected, this.enabled = true});
   final Set<String> selected;
+  final bool enabled;
 
   @override
   State<_RoleChips> createState() => _RoleChipsState();
@@ -187,20 +340,22 @@ class _RoleChipsState extends State<_RoleChips> {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
         for (final r in _roles)
           FilterChip(
             label: Text(_labels[r] ?? r),
             selected: widget.selected.contains(r),
-            onSelected: (sel) => setState(() {
-              if (sel) {
-                widget.selected.add(r);
-              } else {
-                widget.selected.remove(r);
-              }
-            }),
+            onSelected: widget.enabled
+                ? (sel) => setState(() {
+                      if (sel) {
+                        widget.selected.add(r);
+                      } else {
+                        widget.selected.remove(r);
+                      }
+                    })
+                : null,
           ),
       ],
     );
@@ -208,9 +363,14 @@ class _RoleChipsState extends State<_RoleChips> {
 }
 
 class _BatchPicker extends ConsumerWidget {
-  const _BatchPicker({required this.academyId, required this.selected});
+  const _BatchPicker({
+    required this.academyId,
+    required this.selected,
+    this.enabled = true,
+  });
   final String academyId;
   final Set<String> selected;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -228,14 +388,20 @@ class _BatchPicker extends ConsumerWidget {
             (id: (r as Map)['id'] as String, name: r['name'] as String),
         ];
       }(),
-      builder: (_, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const _PickerLoading();
+        }
+        final options = snap.data ?? const [];
+        if (options.isEmpty) {
+          return const _PickerEmpty(message: 'No active batches.');
+        }
         return _MultiSelect(
-          label: 'Batches',
           options: [
-            for (final b in snap.data!) (id: b.id, label: b.name),
+            for (final b in options) (id: b.id, label: b.name),
           ],
           selected: selected,
+          enabled: enabled,
         );
       },
     );
@@ -243,9 +409,14 @@ class _BatchPicker extends ConsumerWidget {
 }
 
 class _CenterPicker extends ConsumerWidget {
-  const _CenterPicker({required this.academyId, required this.selected});
+  const _CenterPicker({
+    required this.academyId,
+    required this.selected,
+    this.enabled = true,
+  });
   final String academyId;
   final Set<String> selected;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -263,29 +434,76 @@ class _CenterPicker extends ConsumerWidget {
             (id: (r as Map)['id'] as String, name: r['name'] as String),
         ];
       }(),
-      builder: (_, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const _PickerLoading();
+        }
+        final options = snap.data ?? const [];
+        if (options.isEmpty) {
+          return const _PickerEmpty(message: 'No active centers.');
+        }
         return _MultiSelect(
-          label: 'Centers',
           options: [
-            for (final c in snap.data!) (id: c.id, label: c.name),
+            for (final c in options) (id: c.id, label: c.name),
           ],
           selected: selected,
+          enabled: enabled,
         );
       },
     );
   }
 }
 
+/// Compact loading row for a picker that is still fetching its options.
+class _PickerLoading extends StatelessWidget {
+  const _PickerLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: AppSpacing.sm),
+          Text('Loading…'),
+        ],
+      ),
+    );
+  }
+}
+
+/// Muted note shown when a picker has no options to choose from.
+class _PickerEmpty extends StatelessWidget {
+  const _PickerEmpty({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      message,
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
 class _MultiSelect extends StatefulWidget {
   const _MultiSelect({
-    required this.label,
     required this.options,
     required this.selected,
+    this.enabled = true,
   });
-  final String label;
   final List<({String id, String label})> options;
   final Set<String> selected;
+  final bool enabled;
 
   @override
   State<_MultiSelect> createState() => _MultiSelectState();
@@ -294,30 +512,24 @@ class _MultiSelect extends StatefulWidget {
 class _MultiSelectState extends State<_MultiSelect> {
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
-        Text(widget.label,
-            style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final o in widget.options)
-              FilterChip(
-                label: Text(o.label),
-                selected: widget.selected.contains(o.id),
-                onSelected: (sel) => setState(() {
-                  if (sel) {
-                    widget.selected.add(o.id);
-                  } else {
-                    widget.selected.remove(o.id);
-                  }
-                }),
-              ),
-          ],
-        ),
+        for (final o in widget.options)
+          FilterChip(
+            label: Text(o.label),
+            selected: widget.selected.contains(o.id),
+            onSelected: widget.enabled
+                ? (sel) => setState(() {
+                      if (sel) {
+                        widget.selected.add(o.id);
+                      } else {
+                        widget.selected.remove(o.id);
+                      }
+                    })
+                : null,
+          ),
       ],
     );
   }
