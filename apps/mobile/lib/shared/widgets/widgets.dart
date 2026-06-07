@@ -11,5 +11,6 @@ export 'app_loading.dart';
 export 'app_section_header.dart';
 export 'app_snackbar.dart';
 export 'app_stat_tile.dart';
+export 'app_user_avatar.dart';
 export 'brand_wordmark.dart';
 export 'count_badge_icon.dart';

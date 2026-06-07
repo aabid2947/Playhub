@@ -142,24 +142,33 @@ class _GreetingHero extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            'Hello, $name',
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: theme.colorScheme.onPrimary,
+          const AppUserAvatar(size: 48, onGradient: true),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Hello, $name',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                ),
+                if (role.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    role.replaceAll('_', ' '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color:
+                          theme.colorScheme.onPrimary.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (role.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              role.replaceAll('_', ' '),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onPrimary.withValues(alpha: 0.85),
-              ),
-            ),
-          ],
         ],
       ),
     );

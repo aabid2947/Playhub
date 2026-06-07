@@ -228,19 +228,32 @@ class _HeroCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Hello, $greeting',
-            style: theme.textTheme.titleLarge,
-          ),
-          if (role.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              role,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+          Row(
+            children: [
+              const AppUserAvatar(size: 48),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hello, $greeting',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    if (role.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        role,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
           if (academyName != null) ...[
             const SizedBox(height: AppSpacing.md),
             const Divider(height: 1),

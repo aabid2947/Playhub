@@ -168,16 +168,29 @@ class _GreetingCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Hello, $name',
-            style: theme.textTheme.titleLarge,
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Center admin',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+          Row(
+            children: [
+              const AppUserAvatar(size: 48),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hello, $name',
+                      style: theme.textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Center admin',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.md),
           Row(
