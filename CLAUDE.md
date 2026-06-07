@@ -231,9 +231,65 @@ Building an explicit creation/delegation hierarchy on top of role+center scoping
 create whom" (use these, not bare `has_admin_or_higher()`, for user provisioning).
 `public.users` writes are now gated by `can_provision_role` (insert/update/delete
 split; update blocks upward/lateral promotion + cross-center poaching).
-invite-user enforces it server-side. Phases 2–5 (head_coach→sport, trainer→student
-via `batch_staff`, center-scoped fees, full read isolation) are tracked but **not
-yet built** — don't assume head_coach is sport-scoped or fees are center-scoped yet.
+invite-user enforces it server-side.
+
+**Phase 2 done** ([20260607000200](supabase/migrations/20260607000200_head_coach_sport_scope.sql)):
+head_coach is now scoped to its CENTER **and** its SPORT(s) (= the `coach_sports`
+of the `coaches` row it's linked to). Batch/enrollment writes go through the new
+`can_manage_batch_fields(center_id, sport_id)`; attendance/perf add `batch_in_my_sport`.
+A **NULL `batches.sport_id` is NOT head_coach-manageable** — keep `sport_id` set.
+`can_manage_batches(center_id)` is kept (events, not sport-bound). `center_sports`
+writes moved from admin-only to `can_admin_center_scope` (center_admin enables
+sports for their own center; UI mirror = `capabilities.manageSports`).
+
+**Phase 3 done** ([20260607000300](supabase/migrations/20260607000300_batch_staff_trainer_scope.sql)):
+new `batch_staff(batch_id, user_id, role)` table = trainers/assistants assigned to
+a batch (primary coach still on `batches.coach_id`). `staff_on_batch(b)` = coach
+or assigned staffer; `student_assigned_to_me(s)` = enrolled in a batch I staff.
+Trainers now record performance **but only against a batch they staff** (a NULL
+`batch_id` free-standing assessment stays denied — no scope to check); attendance
++ perf "coach"/"trainer" branches use `staff_on_batch`. Coaches can now **enrol**
+into their own batch (`can_manage_enrollment` += `coach_owns_batch`). `ai-insights`
+now gates coach/trainer on `student_assigned_to_me` (the students read is
+academy-wide, so RLS alone didn't scope it). `capabilities.recordPerformance` now
+includes trainer. **UI not yet wired:** coach enrolment screen + a batch_staff
+(assign-trainer) management screen — backend supports both; add when building UI.
+
+**Phase 4 done** ([20260607000400](supabase/migrations/20260607000400_center_scoped_finance.sql)):
+finance is now center-scoped. center_admin manages + reads ONLY their own
+center's per-student money (fees/invoices/payments/discount + fee assignments);
+parents/students see only their own student's invoices/payments; coaches/head_coaches
+see no finance. Center is **derived from the row's `student_id`/`batch_id`** via
+`can_manage_finance` / `can_view_student_finance` (+ `can_manage_invoice`,
+`can_manage_batch_finance`, `can_view_refund`) — **no `center_id` was added to
+invoices/payments**, so the recur-invoice cron / razorpay-webhook / process-refund
+(service-role, RLS-bypass) are untouched and money stays idempotent+verified.
+`fee_structures`/`discount_structures` gained a nullable `center_id` (NULL =
+academy-wide template). **Refunds stay academy_admin+** (new
+`capabilities.manageRefunds` gates the refund button; RLS write unchanged).
+`capabilities.manageFinance` now includes center_admin.
+
+**Phase 5 done** ([20260607000500](supabase/migrations/20260607000500_center_read_isolation.sql)):
+finished center_admin READ isolation on the secondary lists — coaches, leads,
+inventory_items, events, batch_staff now center-narrowed for center_admin (reuse
+`center_admin_sees_center`/`center_admin_sees_batch`, which short-circuit for
+every other role). Announcements read is now delivery-scoped (non-admins see only
+announcements with a recipient row for them, or that they created; admins keep the
+full view). **Messaging needed no change** — it's participant-scoped, and only
+owner/academy_admin (`has_admin_or_higher`, NOT center_admin) see all threads.
+**Staff reassignment needs no new code** — admin/center_admin already reassign
+`batches.coach_id` (batches_update) and `users.center_id` (users_admin_update).
+
+**Two deliberate DEFERRALS (need sign-off, NOT built):**
+1. **NULL-`center_id` = visible/manageable by every center_admin** (the
+   `can_admin_center_scope(null)=true` / `center_admin_sees_*(null)=true`
+   convention). Tightening to "unassigned = admin-only" touches every
+   center-scoped write+read policy and could lock center_admins out of rows they
+   just created with no center — verify how forms populate `center_id` first.
+2. **Materialized KPI/analytics views bypass RLS** (they're snapshots refreshed
+   by cron), so a center_admin's dashboards may still show academy-wide
+   aggregates. Row-level reads are isolated; aggregate views need a separate
+   center-aware wrapper or app-side center filter.
 
 ### 2026-06-07 — SECURITY: auth trigger no longer trusts client `user_metadata`
 [`handle_new_auth_user`](supabase/migrations/20260607000100_harden_auth_trigger.sql)

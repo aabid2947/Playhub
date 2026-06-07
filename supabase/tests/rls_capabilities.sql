@@ -34,7 +34,10 @@ declare
   v_c2 uuid;
   v_coach_co1 uuid;
   v_coach_tr1 uuid;
+  v_coach_hc1 uuid;
   v_coach_other uuid;
+  v_sport_cricket uuid;
+  v_sport_football uuid;
   v_b1 uuid;  -- C1, owned by co1
   v_b2 uuid;  -- C1, owned by tr1
   v_b3 uuid;  -- C2, owned by neither
@@ -83,6 +86,15 @@ begin
   insert into public.coaches (academy_id, center_id, first_name, last_name)
   values (v_academy, v_c2, 'Other', 'Coach') returning id into v_coach_other;
 
+  -- head_coach hc1 has a coaches row + is qualified for cricket only (C1).
+  -- Phase 2 (20260607000200) scopes a head_coach to their center AND sport.
+  insert into public.coaches (academy_id, center_id, user_id, first_name, last_name)
+  values (v_academy, v_c1, v_hc1, 'Head', 'Coach1') returning id into v_coach_hc1;
+  select id into v_sport_cricket  from public.sports where code = 'cricket';
+  select id into v_sport_football from public.sports where code = 'football';
+  insert into public.coach_sports (academy_id, coach_id, sport_id)
+  values (v_academy, v_coach_hc1, v_sport_cricket);
+
   insert into public.batches (academy_id, center_id, coach_id, name)
   values (v_academy, v_c1, v_coach_co1, 'B1') returning id into v_b1;
   insert into public.batches (academy_id, center_id, coach_id, name)
@@ -103,11 +115,16 @@ begin
   perform set_config('cap.b3', v_b3::text, true);
   perform set_config('cap.s1', v_s1::text, true);
   perform set_config('cap.s2', v_s2::text, true);
+  perform set_config('cap.sport_cricket', v_sport_cricket::text, true);
+  perform set_config('cap.sport_football', v_sport_football::text, true);
 
   raise notice '[cap setup] academy %, centers % %', v_academy, v_c1, v_c2;
 end $$;
 
--- ---------- C1: trainer — attendance on own batch yes, performance no -------
+-- ---------- C1: trainer — attendance + performance on own batch; other no ---
+-- Phase 3 (20260607000300) grants trainers performance, scoped to batches they
+-- staff (here tr1 is the coach_id of b2). A batch they don't staff (b1) stays
+-- denied for both.
 
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000006';  -- tr1
@@ -115,31 +132,49 @@ set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000006';  -- tr
 do $$
 declare
   v_academy uuid := current_setting('cap.academy')::uuid;
+  v_b1 uuid := current_setting('cap.b1')::uuid;
   v_b2 uuid := current_setting('cap.b2')::uuid;
   v_s1 uuid := current_setting('cap.s1')::uuid;
   v_caught boolean := false;
 begin
-  -- Own batch attendance → allowed.
+  -- Own batch (b2): attendance + performance allowed.
   begin
     insert into public.attendance_records
       (academy_id, batch_id, student_id, date, status, method)
     values (v_academy, v_b2, v_s1, current_date, 'present', 'manual');
-  exception when others then
-    raise exception 'FAIL: trainer could not mark attendance on own batch: %', SQLERRM;
-  end;
-
-  -- Performance → denied (trainer excluded).
-  begin
     insert into public.performance_assessments
       (academy_id, student_id, batch_id, assessment_date, overall_score)
     values (v_academy, v_s1, v_b2, current_date, 7.0);
   exception when others then
+    raise exception 'FAIL: trainer blocked on own batch (attendance/performance): %', SQLERRM;
+  end;
+
+  -- A batch they do NOT staff (b1, owned by co1): attendance denied.
+  v_caught := false;
+  begin
+    insert into public.attendance_records
+      (academy_id, batch_id, student_id, date, status, method)
+    values (v_academy, v_b1, v_s1, current_date + 1, 'present', 'manual');
+  exception when others then
     v_caught := true;
   end;
   if not v_caught then
-    raise exception 'FAIL: trainer was able to record a performance assessment';
+    raise exception 'FAIL: trainer marked attendance on a batch they do not staff';
   end if;
-  raise notice 'PASS: trainer — attendance allowed, performance blocked';
+
+  -- A batch they do NOT staff (b1): performance denied.
+  v_caught := false;
+  begin
+    insert into public.performance_assessments
+      (academy_id, student_id, batch_id, assessment_date, overall_score)
+    values (v_academy, v_s1, v_b1, current_date, 6.0);
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: trainer recorded performance on a batch they do not staff';
+  end if;
+  raise notice 'PASS: trainer — own-batch attendance + performance, other batch blocked';
 end $$;
 
 -- ---------- C2: coach — own batch ok, other batch blocked -------------------
@@ -212,34 +247,61 @@ begin
   raise notice 'PASS: center_admin — student writes scoped to own center';
 end $$;
 
--- ---------- C4: head_coach — batches in own center; no student management ---
+-- ---------- C4: head_coach — batches in own center + OWN SPORT; no students --
 
-set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000004';  -- hc1 (C1)
+set local request.jwt.claim.sub = '00000000-0e00-0000-0000-000000000004';  -- hc1 (C1, cricket)
 
 do $$
 declare
   v_academy uuid := current_setting('cap.academy')::uuid;
   v_c1 uuid := current_setting('cap.c1')::uuid;
   v_c2 uuid := current_setting('cap.c2')::uuid;
+  v_cricket uuid := current_setting('cap.sport_cricket')::uuid;
+  v_football uuid := current_setting('cap.sport_football')::uuid;
   v_caught boolean := false;
 begin
-  -- Batch in own center → allowed.
+  -- Batch in own center AND own sport (cricket) → allowed.
   begin
-    insert into public.batches (academy_id, center_id, name)
-    values (v_academy, v_c1, 'HC new batch C1');
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c1, v_cricket, 'HC cricket C1');
   exception when others then
-    raise exception 'FAIL: head_coach could not create a batch in own center: %', SQLERRM;
+    raise exception 'FAIL: head_coach could not create a batch in own center+sport: %', SQLERRM;
   end;
 
-  -- Batch in other center → denied.
+  -- Batch in own center but a sport they do NOT coach (football) → denied.
+  v_caught := false;
   begin
-    insert into public.batches (academy_id, center_id, name)
-    values (v_academy, v_c2, 'HC sneaky batch C2');
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c1, v_football, 'HC football C1');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: head_coach created a batch in a sport they do not coach';
+  end if;
+
+  -- Batch in their sport but another center → denied.
+  v_caught := false;
+  begin
+    insert into public.batches (academy_id, center_id, sport_id, name)
+    values (v_academy, v_c2, v_cricket, 'HC cricket C2');
   exception when others then
     v_caught := true;
   end;
   if not v_caught then
     raise exception 'FAIL: head_coach created a batch in a center they do not manage';
+  end if;
+
+  -- A sport-less batch is NOT head_coach-manageable (they own specific sports).
+  v_caught := false;
+  begin
+    insert into public.batches (academy_id, center_id, name)
+    values (v_academy, v_c1, 'HC no-sport C1');
+  exception when others then
+    v_caught := true;
+  end;
+  if not v_caught then
+    raise exception 'FAIL: head_coach created a sport-less batch';
   end if;
 
   -- Students are NOT a head_coach capability.
@@ -253,7 +315,7 @@ begin
   if not v_caught then
     raise exception 'FAIL: head_coach created a student (should be admin/center_admin only)';
   end if;
-  raise notice 'PASS: head_coach — batch writes scoped to center, no student management';
+  raise notice 'PASS: head_coach — batches scoped to own center+sport, no student management';
 end $$;
 
 -- ---------- C5: coach — cannot manage students or batches -------------------

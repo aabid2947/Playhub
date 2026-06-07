@@ -77,9 +77,22 @@ class Capabilities {
   bool get manageEvents =>
       _isAdmin || role == 'center_admin' || role == 'head_coach';
 
-  // Finance: admin writes; center_admin is view-only (no write flag).
-  bool get manageFinance => _isAdmin;
+  // Sports enablement per center (center_sports). Admin tier writes any center;
+  // center_admin writes their OWN center. Mirrors can_admin_center_scope, which
+  // now gates center_sports (20260607000200_head_coach_sport_scope.sql). The UI
+  // must scope a center_admin to their own center (RLS rejects others).
+  bool get manageSports => _isAdmin || role == 'center_admin';
+
+  // Finance: admin tier (any center) + center_admin (their OWN center's
+  // students/batches — scoped by RLS via can_manage_finance,
+  // 20260607000400_center_scoped_finance.sql).
+  bool get manageFinance => _isAdmin || role == 'center_admin';
   bool get viewRevenue => _isAdmin || role == 'center_admin';
+
+  // Refunds are money-OUT — kept at academy_admin+ for separation of duties.
+  // center_admin manages fees/payments but cannot refund (RLS rejects it too),
+  // so the refund entry point must use this, not manageFinance.
+  bool get manageRefunds => _isAdmin;
 
   // Attendance: everyone down to trainer (own batches enforced by RLS).
   bool get markAttendance =>
@@ -89,12 +102,15 @@ class Capabilities {
       role == 'coach' ||
       role == 'trainer';
 
-  // Performance: same ladder MINUS trainer.
+  // Performance: full attendance ladder INCLUDING trainer. Trainers record
+  // performance for students in batches they staff (scoped by RLS via
+  // staff_on_batch — 20260607000300_batch_staff_trainer_scope.sql).
   bool get recordPerformance =>
       _isAdmin ||
       role == 'center_admin' ||
       role == 'head_coach' ||
-      role == 'coach';
+      role == 'coach' ||
+      role == 'trainer';
 
   // Media: trainers + coaches (and center/admin tiers) can attach standalone
   // photos/videos to a student — no scored assessment. Mirrors the DB helper

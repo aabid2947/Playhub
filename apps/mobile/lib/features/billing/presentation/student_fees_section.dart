@@ -11,8 +11,9 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// "Assign fee" + "Deactivate" actions. Caller renders this from the
 /// student edit form (existing student only).
 ///
-/// Write actions are gated on `manageFinance` (admin tier) — a center_admin
-/// who can view but not write finance sees the list read-only.
+/// Write actions are gated on `manageFinance` (admin tier + center_admin for
+/// their own center's students; RLS scopes it via can_manage_finance). Roles
+/// without it (coach/trainer/parent) don't reach this section.
 class StudentFeesSection extends ConsumerWidget {
   const StudentFeesSection({required this.studentId, super.key});
 

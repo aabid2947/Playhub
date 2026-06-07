@@ -64,6 +64,7 @@ export type FullAcademy = {
   coachBId: string;
   batchA: string;
   batchB: string;
+  sportA: string;       // sport of batchA; head_coach is qualified for it
   studentA1: string;
   studentB1: string;
   emails: Record<Role, string>;
@@ -83,7 +84,10 @@ export class Fixture {
       email,
       password: PASSWORD,
       email_confirm: true,
-      user_metadata: meta,
+      // Privileged fields go in app_metadata: handle_new_auth_user only trusts
+      // role/academy/center/links from app_metadata (service-role) or invited
+      // users (20260607000100_harden_auth_trigger).
+      app_metadata: meta,
     });
     if (error || !data.user) throw error ?? new Error("createUser failed");
     this.userIds.push(data.user.id);
@@ -97,7 +101,7 @@ export class Fixture {
       email,
       password: PASSWORD,
       email_confirm: true,
-      user_metadata: { role: "super_admin" },
+      app_metadata: { role: "super_admin" },
     });
     if (error || !data.user) throw error ?? new Error("createUser failed");
     this.userIds.push(data.user.id);
@@ -120,7 +124,7 @@ export class Fixture {
       email,
       password: PASSWORD,
       email_confirm: true,
-      user_metadata: { role: "academy_owner" },
+      app_metadata: { role: "academy_owner" },
     });
     if (e2 || !u.user) throw e2 ?? new Error("owner createUser failed");
     this.userIds.push(u.user.id);
@@ -150,7 +154,15 @@ export class Fixture {
     const coachB = await this.#insert("coaches", { academy_id: acad.id, center_id: cB.id, first_name: "CoachB", last_name: "Y" });
     const coachHead = await this.#insert("coaches", { academy_id: acad.id, center_id: cA.id, first_name: "Head", last_name: "Z" });
 
-    const batchA = await this.#insert("batches", { academy_id: acad.id, center_id: cA.id, coach_id: coachA.id, name: "Batch A" });
+    // head_coach is now scoped to its SPORT (Phase 2). Give batchA a sport and
+    // qualify the head_coach (coachHead) for it, so head_coach can manage batchA.
+    const { data: sportRow, error: sErr } = await admin
+      .from("sports").select("id").eq("code", "cricket").single();
+    if (sErr || !sportRow) throw sErr ?? new Error("cricket sport not seeded");
+    const sportA = (sportRow as { id: string }).id;
+    await this.#insert("coach_sports", { academy_id: acad.id, coach_id: coachHead.id, sport_id: sportA });
+
+    const batchA = await this.#insert("batches", { academy_id: acad.id, center_id: cA.id, coach_id: coachA.id, sport_id: sportA, name: "Batch A" });
     const batchB = await this.#insert("batches", { academy_id: acad.id, center_id: cB.id, coach_id: coachB.id, name: "Batch B" });
 
     const sA1 = await this.#insert("students", { academy_id: acad.id, center_id: cA.id, first_name: "StuA1", last_name: "S", parent_name: "P" });
@@ -162,7 +174,9 @@ export class Fixture {
         email,
         password: PASSWORD,
         email_confirm: true,
-        user_metadata: { role, ...meta },
+        // Privileged fields (role + academy/center/links) via app_metadata so
+        // the hardened auth trigger honours them (20260607000100).
+        app_metadata: { role, ...meta },
       });
       if (error || !data.user) throw error ?? new Error(`${role} createUser failed`);
       this.userIds.push(data.user.id);
@@ -193,6 +207,7 @@ export class Fixture {
       coachBId: coachB.id,
       batchA: batchA.id,
       batchB: batchB.id,
+      sportA,
       studentA1: sA1.id,
       studentB1: sB1.id,
       emails,

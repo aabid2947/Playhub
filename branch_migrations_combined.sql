@@ -1,32 +1,23 @@
--- ============================================================================
--- COMBINED branch migrations (ui-revamo) — run ONCE against a DB already at
--- `main`'s schema. Contains every migration unique to this branch, in
--- timestamp order, inside a single transaction (all-or-nothing).
+-- COMBINED branch migrations (ui-revamo) — run ONCE against a DB already at main.
+-- Every migration unique to this branch, in timestamp order, in one transaction.
+-- All DROPs are guarded (if exists) and functions use create-or-replace, so it
+-- is safe to re-run / safe if some parts were already applied.
 --
+-- Order:
 --   1. 20260605000000_perf_media_parent_scope
 --   2. 20260606000000_trainer_student_media
---   3. 20260606000100_batch_thread_admin_participant   (batch-chat send)
---   4. 20260606000200_center_admin_vendors_items       (vendors + items create)
---   5. 20260606000300_center_admin_coach_sports         (coach save / sports)
+--   3. 20260606000100_batch_thread_admin_participant
+--   4. 20260606000200_center_admin_vendors_items
+--   5. 20260606000300_center_admin_coach_sports
 --
--- All DROPs are guarded with `if exists` and functions use `create or replace`,
--- so the script is safe to re-run / safe if some parts were already applied.
---
--- Prereq: the DB has `main` (incl. 20260527* role capabilities — provides
--- can_admin_center_scope / can_manage_enrollment / can_manage_batches, etc.).
---
--- NOTE: if you use the Supabase CLI, prefer `supabase db push` (it tracks which
--- migrations are applied). This script is for running the SQL directly (e.g. in
--- the Supabase SQL editor) in one go.
--- ============================================================================
+-- Prereq: the DB has main (incl. 20260527* role capabilities providing
+-- can_admin_center_scope / can_manage_enrollment / can_manage_batches).
 
 begin;
 
--- ============================================================================
--- 1) 20260605000000_perf_media_parent_scope
+-- 1) perf_media_parent_scope
 --    Narrow the performance_media STORAGE read policy to mirror table-level
 --    parent/student scoping. Staff keep academy-wide read.
--- ============================================================================
 create index if not exists idx_perf_media_file_path
   on public.performance_media (file_path);
 
@@ -50,11 +41,9 @@ create policy "perf_media_member_select"
     )
   );
 
--- ============================================================================
--- 2) 20260606000000_trainer_student_media
+-- 2) trainer_student_media
 --    Standalone student media (null assessment_id) gated by
 --    can_upload_student_media; trainers/coaches qualify for their own students.
--- ============================================================================
 alter table public.performance_media
   alter column assessment_id drop not null;
 
@@ -185,11 +174,9 @@ create policy "perf_media_staff_insert"
     )
   );
 
--- ============================================================================
--- 3) 20260606000100_batch_thread_admin_participant
+-- 3) batch_thread_admin_participant
 --    ensure_batch_thread() also adds the calling manager as a participant so
 --    admins / center_admin / head_coach can read AND post in batch chats.
--- ============================================================================
 create or replace function public.ensure_batch_thread(p_batch_id uuid)
 returns uuid
 language plpgsql
@@ -241,8 +228,6 @@ begin
      and s.user_id is not null
   on conflict do nothing;
 
-  -- The calling manager (admin tier + center_admin/head_coach scoped to the
-  -- batch's center) joins as a participant so they can read AND post.
   if public.can_manage_enrollment(p_batch_id) then
     insert into public.thread_participants (thread_id, user_id, academy_id)
     values (v_thread_id, auth.uid(), v_academy_id)
@@ -255,11 +240,10 @@ $$;
 
 grant execute on function public.ensure_batch_thread(uuid) to authenticated;
 
--- ============================================================================
--- 4) 20260606000200_center_admin_vendors_items
---    vendors + inventory_items write → can_admin_center_scope (center_admin
---    can write its own center; null center_id allowed).
--- ============================================================================
+-- 4) center_admin_vendors_items
+--    inventory_items is center-scoped (has center_id). vendors are
+--    ACADEMY-level (no center_id), so they're gated on
+--    can_admin_center_scope(null) → owner/admin + center_admin (academy-wide).
 drop policy if exists vendors_admin_insert  on public.vendors;
 drop policy if exists vendors_admin_update  on public.vendors;
 drop policy if exists vendors_admin_delete  on public.vendors;
@@ -271,25 +255,25 @@ create policy vendors_write_insert on public.vendors
   for insert with check (
     public.is_super_admin()
     or (academy_id = public.current_user_academy_id()
-        and public.can_admin_center_scope(center_id))
+        and public.can_admin_center_scope(null::uuid))
   );
 
 create policy vendors_write_update on public.vendors
   for update using (
     public.is_super_admin()
     or (academy_id = public.current_user_academy_id()
-        and public.can_admin_center_scope(center_id))
+        and public.can_admin_center_scope(null::uuid))
   ) with check (
     public.is_super_admin()
     or (academy_id = public.current_user_academy_id()
-        and public.can_admin_center_scope(center_id))
+        and public.can_admin_center_scope(null::uuid))
   );
 
 create policy vendors_write_delete on public.vendors
   for delete using (
     public.is_super_admin()
     or (academy_id = public.current_user_academy_id()
-        and public.can_admin_center_scope(center_id))
+        and public.can_admin_center_scope(null::uuid))
   );
 
 drop policy if exists inv_items_admin_insert  on public.inventory_items;
@@ -324,10 +308,8 @@ create policy inv_items_write_delete on public.inventory_items
         and public.can_admin_center_scope(center_id))
   );
 
--- ============================================================================
--- 5) 20260606000300_center_admin_coach_sports
+-- 5) center_admin_coach_sports
 --    coach_sports write scoped to the coach's center (matches coaches).
--- ============================================================================
 create or replace function public.can_manage_coach(p_coach_id uuid)
 returns boolean
 language sql

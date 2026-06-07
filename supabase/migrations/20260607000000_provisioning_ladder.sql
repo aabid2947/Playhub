@@ -103,8 +103,14 @@ grant execute on function public.can_provision_role(public.user_role, uuid)
 -- promote a coach upward, nor move a user to another center. users_self_update
 -- (self edits, role frozen) and users_self_read / users_same_academy_read are
 -- left in place.
+--
+-- NOTE: 20260502000000_tighten_users_rls already split the old `users_admin_write`
+-- into users_admin_insert/update/delete (gated on has_admin_or_higher()); we
+-- replace all three with the provisioning-ladder versions.
 -- ============================================================================
-drop policy users_admin_write on public.users;
+drop policy users_admin_insert on public.users;
+drop policy users_admin_update on public.users;
+drop policy users_admin_delete on public.users;
 
 create policy users_admin_insert on public.users
   for insert with check (

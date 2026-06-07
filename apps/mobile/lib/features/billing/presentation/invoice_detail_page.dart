@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/features/billing/data/payment.dart';
@@ -396,14 +397,17 @@ class _LineItemTile extends StatelessWidget {
   }
 }
 
-class _PaymentTile extends StatelessWidget {
+class _PaymentTile extends ConsumerWidget {
   const _PaymentTile({required this.payment});
   final Payment payment;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final canRefund = payment.status == 'completed';
+    // Refunds are admin-only (manageRefunds). A center_admin can record payments
+    // but not refund them, so don't surface the action RLS would reject.
+    final canRefund = payment.status == 'completed' &&
+        ref.watch(capabilitiesProvider).manageRefunds;
     return AppListTile(
       leading: Icon(_methodIcon(payment.method)),
       title: Text('${_inr(payment.amount)} · ${payment.method.label}'),

@@ -101,20 +101,33 @@ describe.skipIf(!HAS_ENV)("role × capability matrix", () => {
     }
   });
 
-  describe("batches.insert @ center A (head_coach gains this)", () => {
+  describe("batches.insert @ center A + head_coach's sport (head_coach gains this)", () => {
     const exp: Expect = {
       super_admin: true, academy_owner: true, academy_admin: true, center_admin: true,
       head_coach: true, coach: false, trainer: false, parent: false, student: false,
     };
     for (const r of ALL_ROLES) {
       it(`${r} → ${exp[r] ? "allowed" : "denied"}`, async () => {
+        // sportA is the head_coach's qualified sport — Phase 2 scopes head_coach
+        // to their sport, so the batch must carry it for head_coach to pass.
         const { error } = await c[r]!
           .from("batches")
-          .insert({ academy_id: A.academyId, center_id: A.centerA, name: `B ${r}` })
+          .insert({ academy_id: A.academyId, center_id: A.centerA, sport_id: A.sportA, name: `B ${r}` })
           .select("id");
         expectInsert(exp[r], error, `batches/${r}`);
       });
     }
+  });
+
+  describe("batches.insert @ center A, a sport the head_coach does NOT coach", () => {
+    it("head_coach → denied (own-sport scope)", async () => {
+      // No sport_id → not one of the head_coach's sports → denied (Phase 2).
+      const { error } = await c.head_coach!
+        .from("batches")
+        .insert({ academy_id: A.academyId, center_id: A.centerA, name: "B no-sport" })
+        .select("id");
+      expect(error, "head_coach must not create a batch outside their sport").not.toBeNull();
+    });
   });
 
   describe("attendance.insert @ batchA / centerA (coach owns batchA; trainer does NOT)", () => {
@@ -164,7 +177,9 @@ describe.skipIf(!HAS_ENV)("role × capability matrix", () => {
     });
   });
 
-  describe("performance.insert @ batchA (same as attendance MINUS trainer)", () => {
+  describe("performance.insert @ batchA (staff-on-batch; trainer is not on batchA)", () => {
+    // Since Phase 3 trainers CAN record performance, but only on batches they
+    // staff — they don't staff batchA, so trainer is still denied here.
     const exp: Expect = {
       super_admin: true, academy_owner: true, academy_admin: true, center_admin: true,
       head_coach: true, coach: true, trainer: false, parent: false, student: false,
@@ -178,6 +193,16 @@ describe.skipIf(!HAS_ENV)("role × capability matrix", () => {
         expectInsert(exp[r], error, `performance/${r}`);
       });
     }
+  });
+
+  describe("performance.insert @ batchB (trainer staffs batchB — Phase 3)", () => {
+    it("trainer (owns batchB) → allowed", async () => {
+      const { error } = await c.trainer!
+        .from("performance_assessments")
+        .insert({ academy_id: A.academyId, student_id: A.studentB1, batch_id: A.batchB, assessment_date: "2030-03-10" })
+        .select("id");
+      expect(error, "trainer should record performance on their own batch").toBeNull();
+    });
   });
 
   describe("leads.insert (admin tier + center_admin only)", () => {

@@ -75,6 +75,20 @@ Deno.serve(async (req) => {
     return j({ ok: false, error: 'Student not found or not visible to you.' }, 403);
   }
 
+  // The students read is academy-wide, so RLS alone lets any staffer see any
+  // student. A coach/trainer should only get insights for students in THEIR
+  // OWN batches — gate explicitly (student_assigned_to_me, 20260607000300).
+  // Management tiers (center_admin/head_coach/admin) keep their broader view.
+  if (role === 'coach' || role === 'trainer') {
+    const { data: mine, error: gErr } = await db.rpc('student_assigned_to_me', {
+      p_student_id: studentId,
+    });
+    if (gErr) return j({ ok: false, error: gErr.message }, 400);
+    if (mine !== true) {
+      return j({ ok: false, error: 'This student is not in one of your batches.' }, 403);
+    }
+  }
+
   // Attendance — last 90 days.
   const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
   const { data: att } = await db

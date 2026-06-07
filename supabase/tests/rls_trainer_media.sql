@@ -128,7 +128,10 @@ begin
   end if;
   raise notice 'PASS: trainer blocked from non-batch student media';
 
-  -- Denied: trainer still cannot create a scored assessment.
+  -- Denied: a FREE-STANDING (no-batch) scored assessment. Since Phase 3
+  -- (20260607000300) trainers CAN record performance, but only against a batch
+  -- they staff — a null batch_id has no scope to check, so it stays denied.
+  -- (The allowed batch-scoped case is covered by rls_batch_staff.sql.)
   v_caught := false;
   begin
     insert into public.performance_assessments
@@ -137,9 +140,9 @@ begin
   exception when others then v_caught := true;
   end;
   if not v_caught then
-    raise exception 'FAIL: trainer created a performance assessment';
+    raise exception 'FAIL: trainer created a free-standing (no-batch) assessment';
   end if;
-  raise notice 'PASS: trainer still cannot record a scored assessment';
+  raise notice 'PASS: trainer cannot record a free-standing (no-batch) assessment';
 end $$;
 
 -- ---------- As the PARENT — cannot upload at all ----------------------------

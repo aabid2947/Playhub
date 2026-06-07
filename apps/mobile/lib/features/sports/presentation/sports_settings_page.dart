@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
@@ -26,10 +27,12 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final centersAsync = ref.watch(centersProvider);
-    // Enabling/renaming/removing sports writes center_sports, which RLS gates
-    // to the admin tier (has_admin_or_higher) — center_admin is read-only here.
-    // This only hides the controls; RLS is the real gate.
-    final canManage = ref.watch(capabilitiesProvider).manageTeam;
+    final caps = ref.watch(capabilitiesProvider);
+    final myCenterId = ref.watch(currentProfileProvider).valueOrNull?.centerId;
+    // Enabling/renaming/removing sports writes center_sports: admin tier writes
+    // any center, center_admin their OWN (can_admin_center_scope). This only
+    // hides the controls; RLS is the real gate.
+    final canManage = caps.manageSports;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sports'),
@@ -52,7 +55,15 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
           message: friendlyError(e),
           onRetry: () => ref.invalidate(centersProvider),
         ),
-        data: (centers) {
+        data: (allCenters) {
+          // center_admin manages only their own center; admin tier sees all.
+          // Filtering the scope picker keeps the UI from offering a center
+          // whose center_sports writes RLS would reject.
+          final centers = caps.isCenterScoped && myCenterId != null
+              ? allCenters
+                    .where((c) => c.id == myCenterId)
+                    .toList(growable: false)
+              : allCenters;
           if (centers.isEmpty) {
             return const AppEmptyState(
               icon: Icons.location_city_outlined,
@@ -232,9 +243,9 @@ class _SportRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isRenamed =
         row.customName != null && row.customName!.trim().isNotEmpty;
-    // Rename/remove write center_sports (admin-tier RLS). Read-only roles
-    // (e.g. center_admin) see the sport without management actions.
-    final canManage = ref.watch(capabilitiesProvider).manageTeam;
+    // Rename/remove write center_sports (can_admin_center_scope): admin tier +
+    // center_admin (own center, enforced by the scope filter above + RLS).
+    final canManage = ref.watch(capabilitiesProvider).manageSports;
     return AppListTile(
       wrapLeading: false,
       leading: const CircleAvatar(child: Icon(Icons.sports_outlined)),

@@ -12,8 +12,8 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// consistent active/inactive [AppBadge], a titled assign sheet, and a
 /// confirmation before deactivation.
 ///
-/// Write actions are gated on `manageFinance` (admin tier); a center_admin who
-/// can view but not write finance sees the list read-only.
+/// Write actions are gated on `manageFinance` (admin tier + center_admin for
+/// their own center's students; RLS scopes it via can_manage_finance).
 class StudentDiscountsSection extends ConsumerWidget {
   const StudentDiscountsSection({required this.studentId, super.key});
 
