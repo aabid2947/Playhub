@@ -22,7 +22,7 @@ interface Body {
   student_id?: string;
 }
 
-const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
+const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash';
 
 Deno.serve(async (req) => {
   const pre = preflight(req);

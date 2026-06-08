@@ -1,13 +1,17 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/announcements/data/announcement.dart';
 import 'package:playhub/features/announcements/data/announcement_providers.dart';
 import 'package:playhub/features/announcements/presentation/announcement_composer_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
+import 'package:url_launcher/url_launcher.dart' as launcher;
 
 final _absoluteFmt = DateFormat('dd MMM yyyy · HH:mm');
 
@@ -32,13 +36,15 @@ class AnnouncementsPage extends ConsumerWidget {
         ),
       ),
       data: (profile) {
-        final isAdmin = profile?.role == 'academy_owner' ||
-            profile?.role == 'academy_admin';
+        // Composers (admin tier + center_admin + head_coach + coach) get the
+        // compose FAB and a history/compose list (RLS scopes it to rows they
+        // created + were delivered). Pure recipients get the read-receipt feed.
+        final canCompose = ref.watch(capabilitiesProvider).composeAnnouncements;
         return Scaffold(
           appBar: embedded
               ? null
               : AppBar(title: const Text('Announcements')),
-          floatingActionButton: isAdmin
+          floatingActionButton: canCompose
               ? FloatingActionButton.extended(
                   icon: const Icon(Icons.add),
                   label: const Text('New'),
@@ -49,7 +55,7 @@ class AnnouncementsPage extends ConsumerWidget {
                   ),
                 )
               : null,
-          body: isAdmin ? const _AdminList() : const _Feed(),
+          body: canCompose ? const _AdminList() : const _Feed(),
         );
       },
     );
@@ -220,14 +226,15 @@ class _Feed extends ConsumerWidget {
 }
 
 /// Full-page detail surface for an announcement (§3.2): a header card with the
-/// subject + status/timestamp, then the message body in its own section.
-class _AnnouncementDetailPage extends StatelessWidget {
+/// subject + status/timestamp, then the message body in its own section, then
+/// any attached photos/videos.
+class _AnnouncementDetailPage extends ConsumerWidget {
   const _AnnouncementDetailPage({required this.announcement});
 
   final Announcement announcement;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final a = announcement;
@@ -236,32 +243,33 @@ class _AnnouncementDetailPage extends StatelessWidget {
         ? const AppBadge(text: 'Draft', tone: AppBadgeTone.warning)
         : const AppBadge(text: 'Sent', tone: AppBadgeTone.success);
     return Scaffold(
-      appBar: AppBar(title: Text(a.subject)),
+      // Generic title — the subject is the prominent heading in the body now.
+      appBar: AppBar(title: const Text('Announcement')),
       body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        // No outer padding — the hero image runs edge-to-edge at the top; the
+        // text content below is padded. Reads as one cohesive post.
+        padding: EdgeInsets.zero,
         children: [
-          AppCard(
+          if (a.media.isNotEmpty) _HeroMedia(media: a.media.first),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        a.subject,
-                        style: theme.textTheme.titleLarge,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    statusBadge,
-                  ],
+                Text(
+                  a.subject,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: AppType.bold,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
+                    statusBadge,
+                    const SizedBox(width: AppSpacing.sm),
                     Icon(
                       Icons.schedule_outlined,
-                      size: 16,
+                      size: 14,
                       color: scheme.onSurfaceVariant,
                     ),
                     const SizedBox(width: AppSpacing.xs),
@@ -273,18 +281,162 @@ class _AnnouncementDetailPage extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  a.body,
+                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+                ),
+                // Extra images (beyond the hero) shown as a strip below the body.
+                if (a.media.length > 1) ...[
+                  const SizedBox(height: AppSpacing.xl),
+                  const AppSectionHeader(title: 'More photos'),
+                  const SizedBox(height: AppSpacing.sm),
+                  SizedBox(
+                    height: 96,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: a.media.length - 1,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(width: AppSpacing.sm),
+                      itemBuilder: (_, i) =>
+                          _DetailMediaThumb(media: a.media[i + 1]),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const AppSectionHeader(title: 'Message'),
-          AppCard(
-            child: Text(
-              a.body,
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
         ],
+      ),
+    );
+  }
+}
+
+/// Full-width hero for the first attachment, at the top of the detail post.
+/// Tapping opens the file externally via a fresh signed URL (private bucket).
+class _HeroMedia extends ConsumerWidget {
+  const _HeroMedia({required this.media});
+  final AnnouncementMedia media;
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final storage = ref.read(storageServiceProvider);
+    try {
+      final url = await storage.signedAnnouncementMediaUrl(media.path);
+      final ok = await launcher.launchUrl(
+        Uri.parse(url),
+        mode: launcher.LaunchMode.externalApplication,
+      );
+      if (!ok && context.mounted) {
+        AppSnackbar.error(context, 'Could not open file.');
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fill = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final Widget inner;
+    if (media.isVideo) {
+      inner = ColoredBox(
+        color: fill,
+        child: const Center(child: Icon(Icons.play_circle_outline, size: 56)),
+      );
+    } else {
+      inner = FutureBuilder<String>(
+        future: ref
+            .read(storageServiceProvider)
+            .signedAnnouncementMediaUrl(media.path),
+        builder: (_, snap) {
+          if (snap.data == null) {
+            return ColoredBox(
+              color: fill,
+              child: const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            );
+          }
+          return CachedNetworkImage(
+            imageUrl: snap.data!,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => ColoredBox(color: fill),
+            errorWidget: (_, __, ___) => ColoredBox(
+              color: fill,
+              child: const Icon(Icons.broken_image_outlined),
+            ),
+          );
+        },
+      );
+    }
+    return GestureDetector(
+      onTap: () => _open(context, ref),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: SizedBox.expand(child: inner),
+      ),
+    );
+  }
+}
+
+/// A tappable thumbnail in the detail view — opens the file externally via a
+/// fresh signed URL (the bucket is private).
+class _DetailMediaThumb extends ConsumerWidget {
+  const _DetailMediaThumb({required this.media});
+  final AnnouncementMedia media;
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final storage = ref.read(storageServiceProvider);
+    try {
+      final url = await storage.signedAnnouncementMediaUrl(media.path);
+      final ok = await launcher.launchUrl(
+        Uri.parse(url),
+        mode: launcher.LaunchMode.externalApplication,
+      );
+      if (!ok && context.mounted) {
+        AppSnackbar.error(context, 'Could not open file.');
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fill = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final Widget inner;
+    if (media.isVideo) {
+      inner = ColoredBox(
+        color: fill,
+        child: const Center(child: Icon(Icons.play_circle_outline, size: 30)),
+      );
+    } else {
+      inner = FutureBuilder<String>(
+        future:
+            ref.read(storageServiceProvider).signedAnnouncementMediaUrl(media.path),
+        builder: (_, snap) {
+          if (snap.data == null) return ColoredBox(color: fill);
+          return CachedNetworkImage(
+            imageUrl: snap.data!,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => ColoredBox(color: fill),
+            errorWidget: (_, __, ___) => ColoredBox(
+              color: fill,
+              child: const Icon(Icons.broken_image_outlined),
+            ),
+          );
+        },
+      );
+    }
+    return GestureDetector(
+      onTap: () => _open(context, ref),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: SizedBox(width: 96, height: 96, child: inner),
       ),
     );
   }

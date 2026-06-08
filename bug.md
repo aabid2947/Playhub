@@ -1,13 +1,9 @@
-enrolled student is not working
-batch fee not working
-assing discound not wrokign
-editing batch gives error
-annoucemnetn text is overflowing
-document upload fail in edit coach
-editing coach gives error
-add a sport is not working
-cant create event
-cant create new item 
-cant add new vendor
-cant load message in admin dashbaord
-kpi dashboard not loaded
+student role match  upcoming session
+head coach ui view problem : viewing all coach 
+head coach can have multiple
+coach ko can view only 
+csv to pdf invoice download
+pending to student not paid (inactive if  not paid)
+photos & videos
+
+devine

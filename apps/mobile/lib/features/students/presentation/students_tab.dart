@@ -50,11 +50,16 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
           _FilterBar(
             controller: _search,
             onSearch: _applySearch,
-            onImport: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => const StudentBulkImportPage(),
-              ),
-            ),
+            // Bulk import creates NEW students — onboarding, so hide it for
+            // roles that can't create (e.g. coaches, who only edit their own
+            // batch students). RLS rejects it regardless.
+            onImport: caps.createStudents
+                ? () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => const StudentBulkImportPage(),
+                      ),
+                    )
+                : null,
           ),
           Expanded(
             child: studentsAsync.when(
@@ -89,7 +94,7 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
           ),
         ],
       ),
-      floatingActionButton: caps.manageStudents
+      floatingActionButton: caps.createStudents
           ? FloatingActionButton.extended(
               heroTag: 'fab-students',
               onPressed: _openForm,
@@ -113,7 +118,8 @@ class _FilterBar extends ConsumerWidget {
 
   final TextEditingController controller;
   final VoidCallback onSearch;
-  final VoidCallback onImport;
+  // Null hides the CSV-import action (roles that can't create students).
+  final VoidCallback? onImport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -178,11 +184,12 @@ class _FilterBar extends ConsumerWidget {
                     PopupMenuItem(value: 'graduated', child: Text('Graduated')),
                   ],
                 ),
-                IconButton(
-                  tooltip: 'Import CSV',
-                  icon: const Icon(Icons.upload_file_outlined),
-                  onPressed: onImport,
-                ),
+                if (onImport != null)
+                  IconButton(
+                    tooltip: 'Import CSV',
+                    icon: const Icon(Icons.upload_file_outlined),
+                    onPressed: onImport,
+                  ),
               ],
             ),
           ),
@@ -253,7 +260,16 @@ class _StudentTile extends ConsumerWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: _StatusBadge(status: student.status),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (student.feeOverdue) ...[
+            const AppBadge(text: 'Unpaid', tone: AppBadgeTone.danger),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+          _StatusBadge(status: student.status),
+        ],
+      ),
       onTap: onTap,
     );
   }

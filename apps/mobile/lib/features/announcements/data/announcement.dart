@@ -1,3 +1,31 @@
+/// One photo/video attached to an announcement. `path` is the storage path in
+/// the private `announcement_media` bucket; the UI resolves it to a signed URL.
+class AnnouncementMedia {
+  const AnnouncementMedia({
+    required this.path,
+    required this.type, // 'image' | 'video'
+    this.mime,
+  });
+
+  factory AnnouncementMedia.fromMap(Map<String, dynamic> m) => AnnouncementMedia(
+        path: m['path'] as String,
+        type: (m['type'] as String?) ?? 'image',
+        mime: m['mime'] as String?,
+      );
+
+  final String path;
+  final String type;
+  final String? mime;
+
+  bool get isVideo => type == 'video';
+
+  Map<String, dynamic> toMap() => {
+        'path': path,
+        'type': type,
+        if (mime != null) 'mime': mime,
+      };
+}
+
 class Announcement {
   const Announcement({
     required this.id,
@@ -9,6 +37,8 @@ class Announcement {
     this.targetRoles = const [],
     this.targetBatches = const [],
     this.targetCenters = const [],
+    this.targetSports = const [],
+    this.media = const [],
     this.viaPush = true,
     this.viaEmail = false,
     this.viaInApp = true,
@@ -31,6 +61,11 @@ class Announcement {
       targetRoles: arr(m['target_roles']),
       targetBatches: arr(m['target_batches']),
       targetCenters: arr(m['target_centers']),
+      targetSports: arr(m['target_sports']),
+      media: ((m['media'] as List?) ?? const [])
+          .map((e) => AnnouncementMedia.fromMap(
+              (e as Map).cast<String, dynamic>()))
+          .toList(growable: false),
       viaPush: m['via_push'] as bool? ?? true,
       viaEmail: m['via_email'] as bool? ?? false,
       viaInApp: m['via_in_app'] as bool? ?? true,
@@ -54,6 +89,8 @@ class Announcement {
   final List<String> targetRoles;
   final List<String> targetBatches;
   final List<String> targetCenters;
+  final List<String> targetSports;
+  final List<AnnouncementMedia> media;
   final bool viaPush;
   final bool viaEmail;
   final bool viaInApp;

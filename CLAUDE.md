@@ -223,6 +223,93 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-08 — announcement_media size limits (video uploads)
+Announcement video uploads 413'd because the bucket inherited the project-wide
+storage limit (local default 50 MiB). Fixes: bumped local `config.toml [storage]
+file_size_limit` → 100 MiB (**hosted must raise it in Dashboard → Storage
+settings — a bucket limit can't exceed the project limit**); set the
+`announcement_media` bucket to 100 MiB + image/video `allowed_mime_types`
+([20260608000400](supabase/migrations/20260608000400_announcement_media_limits.sql));
+capped announcement video capture at **2 min** and added a client-side size
+pre-check (`StorageService._ensureUnderAnnouncementLimit`) so an oversized file
+fails instantly instead of uploading then 413-ing. The composer's media pick is
+also now guarded (`_pickingMedia`) + try/caught — a second pick while one is open
+no longer throws `already_active` as an uncaught zone error.
+
+### 2026-06-08 — students.fee_overdue flag (unpaid indicator) + parent invoice download
+**(1) Unpaid indicator.** New `students.fee_overdue boolean`
+([20260608000300](supabase/migrations/20260608000300_student_fee_overdue_flag.sql)),
+kept in sync by an `AFTER INSERT/UPDATE/DELETE` trigger on `invoices`
+(`refresh_student_fee_overdue`, SECURITY DEFINER) — true when the student has
+≥1 **overdue** invoice, false otherwise. This exists because coaching roles see
+**no finance** (Phase 4) yet need to know who hasn't paid; they read this boolean
+off `students` (no amounts). **It does NOT touch `students.status`** (lifecycle).
+Mobile: `Student.feeOverdue`; an "Unpaid" (danger) badge shows in the batch roster
+([batch_detail_page](apps/mobile/lib/features/batches/presentation/batch_detail_page.dart)),
+`CoachStudentPage` header, and the shared `_StudentTile`. Decided against flipping
+`status` to inactive (would clobber paused/graduated + drop students from "active"
+lists). **(2) Invoice PDF download** is now offered to parents/students on the
+dues rows ([parent_dashboard_tab](apps/mobile/lib/features/parent/presentation/parent_dashboard_tab.dart))
+— no backend change: `generate-invoice-pdf` already runs under the caller's JWT +
+RLS, and parents can read their own student's invoice.
+
+### 2026-06-08 — coach student access scoped to their own batches (reversal)
+**Reverses 20260607000700 FOR COACHES ONLY.** A coach now reads + edits only
+students enrolled in batches they staff (`student_assigned_to_me`), not the whole
+center, and can **no longer create** students
+([20260608000200](supabase/migrations/20260608000200_coach_batch_scoped_students.sql)).
+New `coach_sees_student(student_id)` helper folds into `students_academy_read`
+(coach/trainer → assigned-only; other roles unchanged); `can_manage_student` drops
+its coach branch (so coach INSERT is denied); `students_update` gains a coach
+clause for assigned students. **head_coach + center_admin keep center-wide student
+create/edit** — that part of 20260607000700 stands; only the coach rung was
+tightened. Mobile mirror: new `capabilities.createStudents` (excludes coach) gates
+the New-student FAB + CSV import in [students_tab.dart](apps/mobile/lib/features/students/presentation/students_tab.dart);
+`manageStudents` keeps coach (their list is RLS-scoped to batch students);
+`studentsProvider` no longer center-filters coach (RLS scopes by batch, and an
+enrolled student may sit in another center).
+
+### 2026-06-08 — head_coach coaches READ scoped to own center + own sport
+Fixed: a head_coach could read **every** coach in the academy. `coaches_academy_read`
+only narrowed for center_admin (`center_admin_sees_center` short-circuits true for
+head_coach), so the coaches list / coach pickers showed all academy coaches to a
+head_coach
+([20260608000100](supabase/migrations/20260608000100_head_coach_coaches_read_scope.sql)).
+New `head_coach_sees_coach(coach_id)` helper folds into the read policy: a head_coach
+now sees only coaches in their own center (or null center) under one of their sports
+(via `head_coach_owns_sport`), with untagged/no-`coach_sports` coaches falling back
+to center scope (same NULL-sport relaxation as batches). **Read is now tighter than
+write** — `can_manage_coach_record` stays center-scoped, so a head_coach can still
+edit a same-center coach in another sport but can't see one (intended; reached only
+via the now-scoped list). No Dart change needed — RLS narrows every read path
+automatically (unlike the students case, which was client-scoped because its read
+RLS was academy-wide).
+
+### 2026-06-08 — announcements: scoped compose for coaches + photos/videos
+The compose ladder opened up beyond admins
+([20260608000000](supabase/migrations/20260608000000_announcement_compose_and_media.sql)):
+center_admin / head_coach / coach can now post announcements, gated by the new
+`can_target_announcement(roles,batches,centers,sports)` SECURITY DEFINER helper
+used in the announcements insert/update `WITH CHECK` — **targeting is validated
+against the composer's scope by RLS, not app code** (a coach can only name their
+own batches; head_coach own-center+own-sport; center_admin own center/its
+sports/its batches; non-admins may NOT target by role or leave targets empty).
+New `target_sports uuid[]` + `media jsonb` columns on `announcements`; new
+private `announcement_media` Storage bucket (signed URLs, `has_coach_or_higher`
+to write). **Recipient model changed:** batch/sport/center targeting now resolves
+to FAMILIES = enrolled students' own logins + their parents (previously batch
+targeting hit the coach+parents and skipped student logins); role targeting
+(admin-only) is the way to reach staff — see
+[send-announcement](supabase/functions/send-announcement/index.ts), which
+scopes sport resolution to the creator's center. UI: `capabilities.composeAnnouncements`
+(+ `announcementEmailChannel` — coach/head_coach get push+in-app only, no email),
+the composer's audience pickers adapt per role via `composerAudienceProvider`, and
+the announcements page shows the compose FAB + history list to any composer.
+**Web-admin `npm run gen:types` still owed** (announcements columns changed; needs
+a local DB — not run here). Composer uploads media to a client-generated
+announcement id BEFORE insert, so an abandoned compose can orphan bucket objects
+(best-effort, same as performance_media).
+
 ### 2026-06-07 — student list scoped to own center for center_admin/head_coach
 [`studentsProvider`](apps/mobile/lib/features/students/data/student_providers.dart)
 now center-filters for center_admin/head_coach (own center + null-center,

@@ -65,15 +65,23 @@ class Capabilities {
   bool get inviteScopedToOwnCenter =>
       role == 'center_admin' || role == 'head_coach' || role == 'coach';
 
-  // Admin tier + center_admin (their own center). manageStudents also includes
-  // head_coach AND coach (own center) — the people running training onboard
-  // athletes directly (can_manage_student, 20260607000700). Leads/inventory
-  // stay center_admin+.
+  // Whether to surface a students LIST/management surface at all. Admin tier +
+  // center_admin + head_coach (own center), and coach — but a coach's list is
+  // RLS-scoped to students in their own batches (student_assigned_to_me,
+  // 20260608000200), so they view/edit only their batch students, not the
+  // center. Leads/inventory stay center_admin+.
   bool get manageStudents =>
       _isAdmin ||
       role == 'center_admin' ||
       role == 'head_coach' ||
       role == 'coach';
+
+  // Onboarding (create / bulk-import a NEW student record) is an admin-tier /
+  // center_admin / head_coach task. Coaches were dropped (20260608000200): they
+  // can view + edit students in their own batches but no longer create. RLS
+  // (can_manage_student) is the real gate; this hides the create/import entry.
+  bool get createStudents =>
+      _isAdmin || role == 'center_admin' || role == 'head_coach';
   // head_coach can also create/edit coach RECORDS in their own center
   // (can_manage_coach_record, 20260607000800) so they can build a coach and
   // assign them to a batch — completing create-coach -> assign-to-batch.
@@ -133,6 +141,27 @@ class Capabilities {
       role == 'head_coach' ||
       role == 'coach' ||
       role == 'trainer';
+
+  // Announcements: the compose ladder. Admin tier + center_admin + head_coach +
+  // coach (NOT trainer). Mirrors can_target_announcement / has_coach_or_higher
+  // (20260608000000_announcement_compose_and_media.sql). The *scope* of who
+  // they may target (own center / sport / batch) is enforced by RLS; this only
+  // shows the compose entry point + history view.
+  bool get composeAnnouncements =>
+      _isAdmin ||
+      role == 'center_admin' ||
+      role == 'head_coach' ||
+      role == 'coach';
+
+  // Email is heavier/spammier, so only the admin tier + center_admin may
+  // broadcast via email. coach/head_coach are limited to push + in-app (the
+  // composer hides the email channel for them).
+  bool get announcementEmailChannel => _isAdmin || role == 'center_admin';
+
+  // Admin tier + center_admin compose by role/center/sport/batch; head_coach +
+  // coach compose only against batches/sports they own — the composer adapts
+  // its audience pickers to this.
+  bool get announcementTargetsByRole => _isAdmin;
 
   bool get isCenterScoped => role == 'center_admin';
 }

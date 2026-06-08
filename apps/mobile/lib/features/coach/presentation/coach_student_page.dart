@@ -116,6 +116,10 @@ class _ProfileHeader extends ConsumerWidget {
       if (sportLabel != '—') AppBadge(text: sportLabel),
       if (student.skillLevel != null)
         AppBadge(text: student.skillLevel!, tone: AppBadgeTone.info),
+      // Unpaid (overdue fees) — coaches can't see finance, but this derived
+      // flag lets them know the student isn't in good standing.
+      if (student.feeOverdue)
+        const AppBadge(text: 'Unpaid', tone: AppBadgeTone.danger),
     ];
 
     final contacts = <Widget>[

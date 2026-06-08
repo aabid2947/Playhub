@@ -566,7 +566,17 @@ class _EnrollmentSection extends StatelessWidget {
                   ),
                   subtitle: Align(
                     alignment: Alignment.centerLeft,
-                    child: AppBadge(text: title, tone: tone),
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      children: [
+                        AppBadge(text: title, tone: tone),
+                        if (byStudent[e.studentId]?.feeOverdue ?? false)
+                          const AppBadge(
+                            text: 'Unpaid',
+                            tone: AppBadgeTone.danger,
+                          ),
+                      ],
+                    ),
                   ),
                   onTap: () {
                     final s = byStudent[e.studentId];

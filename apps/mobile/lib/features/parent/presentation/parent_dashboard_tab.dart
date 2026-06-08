@@ -7,6 +7,7 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/insights/presentation/student_insights_page.dart';
@@ -954,6 +955,28 @@ class _OutstandingCard extends ConsumerWidget {
     return confirmed ?? false;
   }
 
+  /// Render the invoice as a PDF (generate-invoice-pdf runs under the parent's
+  /// JWT + RLS — they can read their own student's invoice) and open it.
+  Future<void> _downloadInvoice(
+    BuildContext context,
+    WidgetRef ref,
+    String invoiceId,
+  ) async {
+    try {
+      final url = await generateInvoiceReceipt(ref, invoiceId);
+      if (!context.mounted) return;
+      final ok = await launcher.launchUrl(
+        Uri.parse(url),
+        mode: launcher.LaunchMode.externalApplication,
+      );
+      if (!ok && context.mounted) {
+        AppSnackbar.error(context, 'Could not open the invoice.');
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
   Future<void> _payInvoice(
     BuildContext context,
     WidgetRef ref,
@@ -1046,6 +1069,8 @@ class _OutstandingCard extends ConsumerWidget {
                       row: rows[i],
                       tone: _toneFor(rows[i].status),
                       onPay: () => _payInvoice(context, ref, rows[i]),
+                      onDownload: () =>
+                          _downloadInvoice(context, ref, rows[i].invoiceId),
                     ),
                   ],
                 ],
@@ -1063,11 +1088,13 @@ class _DuesRow extends StatelessWidget {
     required this.row,
     required this.tone,
     required this.onPay,
+    required this.onDownload,
   });
 
   final OutstandingDues row;
   final AppBadgeTone tone;
   final VoidCallback onPay;
+  final VoidCallback onDownload;
 
   @override
   Widget build(BuildContext context) {
@@ -1114,12 +1141,21 @@ class _DuesRow extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonal(
-            onPressed: onPay,
-            child: const Text('Pay'),
-          ),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: onDownload,
+              icon: const Icon(Icons.file_download_outlined, size: 18),
+              label: const Text('Invoice'),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: onPay,
+                child: const Text('Pay'),
+              ),
+            ),
+          ],
         ),
       ],
     );
