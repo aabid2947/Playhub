@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -55,6 +56,9 @@ const _statusOptions = <String>[
   'resolved',
   'closed',
 ];
+
+/// Selectable priorities (low → urgent).
+const _priorityOptions = <String>['low', 'normal', 'high', 'urgent'];
 
 class SuperTicketsPage extends ConsumerWidget {
   const SuperTicketsPage({super.key});
@@ -137,9 +141,12 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
   final _reply = TextEditingController();
   bool _busy = false;
 
-  // Tracks the status locally so the AppBar control reflects a just-applied
-  // transition without popping the page (the list still re-reads on invalidate).
+  // Tracks status/priority/assignee locally so the controls reflect a
+  // just-applied change without popping the page (the list still re-reads on
+  // invalidate).
   late String _status = widget.ticket.status;
+  late String _priority = widget.ticket.priority;
+  late String? _assignedTo = widget.ticket.assignedTo;
 
   @override
   void dispose() {
@@ -183,11 +190,46 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
     }
   }
 
+  Future<void> _setPriority(String priority) async {
+    if (priority == _priority) return;
+    try {
+      await ref
+          .read(superAdminRepoProvider)
+          .updateTicket(widget.ticket.id, priority: priority);
+      ref.invalidate(allTicketsProvider);
+      if (!mounted) return;
+      setState(() => _priority = priority);
+      AppSnackbar.success(context, 'Priority set to ${_humanize(priority)}.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
+  Future<void> _toggleAssign() async {
+    final myId = ref.read(currentUserIdProvider);
+    if (myId == null) return;
+    final mineNow = _assignedTo == myId;
+    final next = mineNow ? null : myId;
+    try {
+      await ref
+          .read(superAdminRepoProvider)
+          .setTicketAssignee(widget.ticket.id, next);
+      ref.invalidate(allTicketsProvider);
+      if (!mounted) return;
+      setState(() => _assignedTo = next);
+      AppSnackbar.success(context, mineNow ? 'Unassigned.' : 'Assigned to you.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final df = DateFormat('dd MMM yyyy · HH:mm');
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
+    final myId = ref.watch(currentUserIdProvider);
+    final assignedToMe = _assignedTo != null && _assignedTo == myId;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -279,6 +321,90 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                const AppSectionHeader(title: 'Manage'),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Priority',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            tooltip: 'Change priority',
+                            onSelected: _setPriority,
+                            itemBuilder: (_) => [
+                              for (final p in _priorityOptions)
+                                PopupMenuItem<String>(
+                                  value: p,
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        p == _priority
+                                            ? Icons.radio_button_checked
+                                            : Icons.radio_button_unchecked,
+                                        size: 18,
+                                        color: p == _priority
+                                            ? theme.colorScheme.primary
+                                            : theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Text(_humanize(p)),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AppBadge(
+                                  text: _humanize(_priority),
+                                  tone: _priorityTone(_priority),
+                                ),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      const Divider(height: 1),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.assignment_ind_outlined,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              assignedToMe
+                                  ? 'Assigned to you'
+                                  : (_assignedTo == null
+                                      ? 'Unassigned'
+                                      : 'Assigned to another staffer'),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          OutlinedButton(
+                            onPressed: myId == null ? null : _toggleAssign,
+                            child: Text(assignedToMe ? 'Unassign' : 'Assign to me'),
+                          ),
+                        ],
                       ),
                     ],
                   ),

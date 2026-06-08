@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
+import 'package:playhub/features/super_admin/presentation/academy_detail_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class AcademiesPage extends ConsumerStatefulWidget {
@@ -147,6 +148,14 @@ class _AcademiesPageState extends ConsumerState<AcademiesPage> {
                               isTrial && a.trialEndsAt != null
                                   ? 'Trial ends ${df.format(a.trialEndsAt!)}'
                                   : 'Created ${df.format(a.createdAt)}',
+                            ),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => AcademyDetailPage(
+                                  academyId: a.id,
+                                  initialName: a.name,
+                                ),
+                              ),
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,

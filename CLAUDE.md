@@ -223,6 +223,22 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-08 — super-admin module completed in the app (per PLAN.md v1)
+PLAN.md scopes the super-admin module to the **mobile app** (v1, line 374); the
+web-admin is the **v2.0 desktop power-tool**. Completed the app's
+[super_admin](apps/mobile/lib/features/super_admin/) module to match the web's
+**RLS-gated** features: academy **detail** drill-down + SaaS **invoices** +
+**record-payment** ([academy_detail_page.dart](apps/mobile/lib/features/super_admin/presentation/academy_detail_page.dart)),
+12-month **revenue + signups charts** + open-ticket KPI on health, and ticket
+**priority + assign-to-me**. New providers: `academyDetailProvider`,
+`academyInvoicesProvider`, `revenueByMonthProvider`, `signupsByMonthProvider`,
+`SuperAdminRepo.recordSaasPayment` / `.setTicketAssignee`; `GlobalKpi.openTickets`.
+**Deliberately NOT moved (kept on web v2.0):** the **report builder/CSV export**
+and the two **service-role Ops** (refresh-analytics, find-user) — the latter
+can't live in the app per invariant #4 (would each need an `is_super_admin()`-gated
+edge function). If asked to bring those to mobile, treat it as pulling v2.0 work
+forward + building the edge functions.
+
 ### 2026-06-08 — announcement_media size limits (video uploads)
 Announcement video uploads 413'd because the bucket inherited the project-wide
 storage limit (local default 50 MiB). Fixes: bumped local `config.toml [storage]
