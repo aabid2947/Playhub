@@ -285,6 +285,20 @@ the New-student FAB + CSV import in [students_tab.dart](apps/mobile/lib/features
 `studentsProvider` no longer center-filters coach (RLS scopes by batch, and an
 enrolled student may sit in another center).
 
+### 2026-06-08 — head_coach STUDENT read scoped to their sport's batches
+Narrows a head_coach's student visibility to "their sport → batch → students":
+new `head_coach_sees_student(student_id)` ([20260608000500](supabase/migrations/20260608000500_head_coach_sport_scoped_students.sql))
+returns true only when the student is actively enrolled in a batch that passes
+`batch_in_my_center` AND `batch_in_my_sport` — folded into `students_academy_read`.
+**Partially supersedes the 2026-06-07 "head_coach sees center-wide students"
+behavior** (that was UI-only center filtering; read is now RLS-narrowed by sport).
+WRITE (`can_manage_student`) stays center-scoped for head_coach — read is tighter
+than write (same documented asymmetry as the head_coach coaches read). A student
+not enrolled in any of the head_coach's batches is now invisible to them.
+`studentsProvider` no longer center-filters head_coach (RLS scopes it, and an
+enrolled student can carry a different `center_id` than the batch). Coach is
+unchanged (own-batch students, 20260608000200).
+
 ### 2026-06-08 — head_coach coaches READ scoped to own center + own sport
 Fixed: a head_coach could read **every** coach in the academy. `coaches_academy_read`
 only narrowed for center_admin (`center_admin_sees_center` short-circuits true for

@@ -62,18 +62,18 @@ final studentsProvider = FutureProvider<List<Student>>((ref) async {
 
   var query = client.from('students').select().eq('academy_id', academyId);
 
-  // center_admin / head_coach manage students in their own center
-  // (can_manage_student), but the students read policy is academy-wide — so
-  // without this they'd see (and could open the editor for) students they can't
-  // save, then hit a 42501. Scope the list to their own center (plus null-center
-  // students, which can_manage_student also allows) to match RLS.
+  // center_admin manages students in their own center (can_manage_student), but
+  // its students read policy is center-narrowed already — this client filter
+  // just keeps the list tidy (own center + null-center).
   //
-  // coach is NOT center-filtered here: their students read is already narrowed
-  // by RLS to students in their own batches (student_assigned_to_me,
-  // 20260608000200), and an enrolled student could sit in a different center —
-  // so a center filter would wrongly drop them. Let RLS do the scoping.
+  // coach and head_coach are NOT center-filtered here: RLS already narrows them
+  // — coach to students in batches they staff (student_assigned_to_me,
+  // 20260608000200), head_coach to students enrolled in their sport's batches
+  // (head_coach_sees_student, 20260608000500). Those students can carry a
+  // different center_id than the batch, so a center filter would wrongly drop
+  // them — let RLS do the scoping.
   final role = profile!.role;
-  if (role == 'center_admin' || role == 'head_coach') {
+  if (role == 'center_admin') {
     final myCenter = profile.centerId;
     query = myCenter == null
         ? query.isFilter('center_id', null)
