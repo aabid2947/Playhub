@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
-import 'package:playhub/core/storage_service.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/chat/data/attachment.dart';
@@ -16,9 +15,13 @@ import 'package:url_launcher/url_launcher.dart';
 final _timeFmt = DateFormat('HH:mm');
 final _dayFmt = DateFormat('EEE, dd MMM yyyy');
 
-/// Realtime chat view. Subscribes to messages stream for this thread,
-/// renders day-grouped bubbles (text + attachments + timestamp), and posts
-/// new ones via `chatRepo.send()`. Marks the thread read on entry.
+/// Realtime chat view — v1 "Sports-Light" (archetype C, chat).
+///
+/// A gradient hero (back + thread avatar + name + kind chip) caps a day-grouped
+/// transcript that auto-pins to the latest message, over a composer whose
+/// pending-attachment tray is height-bounded so it never crowds the text field.
+/// New messages post via `chatRepo.send()`; the thread is marked read on entry.
+/// Realtime + signed-URL attachment flow is unchanged — this is presentation.
 class ThreadDetailPage extends ConsumerStatefulWidget {
   const ThreadDetailPage({required this.threadId, super.key});
   final String threadId;
@@ -211,9 +214,10 @@ class _ThreadDetailPageState extends ConsumerState<ThreadDetailPage> {
     final me = ref.watch(supabaseClientProvider).auth.currentUser?.id ?? '';
     final messagesAsync = ref.watch(threadMessagesProvider(widget.threadId));
     return Scaffold(
-      appBar: AppBar(title: const Text('Chat')),
+      // App-bar-less: the gradient hero carries the back affordance + title.
       body: Column(
         children: [
+          _ChatHero(threadId: widget.threadId, me: me),
           Expanded(
             child: messagesAsync.when(
               loading: () => const AppLoading(),
@@ -275,6 +279,115 @@ String _dayLabel(DateTime when) {
   return _dayFmt.format(when);
 }
 
+/// The gradient hero band that caps the chat. Resolves the thread's display
+/// name + kind off the already-cached [myThreadsProvider] (and, for direct
+/// threads, the counterpart's name via [userDisplayNameProvider]) so the header
+/// shows who you're talking to — no new query, falls back gracefully.
+class _ChatHero extends ConsumerWidget {
+  const _ChatHero({required this.threadId, required this.me});
+
+  final String threadId;
+  final String me;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final thread = ref
+        .watch(myThreadsProvider)
+        .valueOrNull
+        ?.where((t) => t.id == threadId)
+        .firstOrNull;
+
+    final isBatch = thread?.kind == ThreadKind.batch;
+    final otherId = isBatch ? null : thread?.otherUserId(me);
+
+    String name;
+    if (thread == null) {
+      name = 'Chat';
+    } else if (isBatch) {
+      name = thread.title ?? 'Batch chat';
+    } else if (otherId == null) {
+      name = 'Conversation';
+    } else {
+      name = ref.watch(userDisplayNameProvider(otherId)).valueOrNull ?? 'Chat';
+    }
+
+    final kindLabel = isBatch ? 'Group chat' : 'Direct message';
+    final kindIcon = isBatch ? Icons.groups_outlined : Icons.person_outline;
+    // Tie the avatar to the conversation so the same thread reads consistently.
+    final accent = isBatch ? null : colorFromName(name);
+
+    return AppGradientHeader(
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        MediaQuery.of(context).padding.top + AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.lg,
+      ),
+      child: Row(
+        children: [
+          AppCircleIconButton(
+            icon: Icons.arrow_back,
+            tooltip: 'Back',
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          if (isBatch)
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.groups_rounded, color: Colors.white),
+            )
+          else
+            AppAvatar(name, color: accent),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: Colors.white,
+                    fontWeight: AppType.heavy,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      kindIcon,
+                      size: 13,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      kindLabel,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: AppType.semibold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The scrolling message area: day-grouped bubbles plus a floating
 /// "jump to latest" affordance when the user has scrolled up.
 class _MessageList extends StatelessWidget {
@@ -299,28 +412,32 @@ class _MessageList extends StatelessWidget {
         ListView.builder(
           controller: controller,
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.md,
           ),
           itemCount: messages.length,
           itemBuilder: (_, i) {
             final m = messages[i];
             final prev = i == 0 ? null : messages[i - 1];
-            final showDay = prev == null ||
-                !_sameDay(prev.createdAt, m.createdAt);
+            final showDay =
+                prev == null || !_sameDay(prev.createdAt, m.createdAt);
             final mine = m.senderId == me;
+            // Group consecutive bubbles from the same sender within a day for a
+            // tighter, conversation-like rhythm.
+            final grouped =
+                prev != null && !showDay && prev.senderId == m.senderId;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (showDay) _DayDivider(label: _dayLabel(m.createdAt)),
-                _MessageBubble(message: m, mine: mine),
+                _MessageBubble(message: m, mine: mine, grouped: grouped),
               ],
             );
           },
         ),
         if (showJumpToLatest)
           Positioned(
-            right: AppSpacing.md,
+            right: AppSpacing.lg,
             bottom: AppSpacing.md,
             child: FloatingActionButton.small(
               heroTag: 'chatJumpToLatest',
@@ -346,7 +463,7 @@ class _DayDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(
@@ -361,6 +478,7 @@ class _DayDivider extends StatelessWidget {
             label,
             style: theme.textTheme.labelSmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: AppType.semibold,
             ),
           ),
         ),
@@ -370,9 +488,17 @@ class _DayDivider extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.mine});
+  const _MessageBubble({
+    required this.message,
+    required this.mine,
+    required this.grouped,
+  });
   final Message message;
   final bool mine;
+
+  /// True when this bubble follows another from the same sender on the same day
+  /// — tightens the top margin and squares the "tail" corner for a grouped feel.
+  final bool grouped;
 
   @override
   Widget build(BuildContext context) {
@@ -381,12 +507,19 @@ class _MessageBubble extends StatelessWidget {
     final hasText = message.content.isNotEmpty;
     final edited = message.editedAt != null;
     final time = _timeFmt.format(message.createdAt);
-    final metaColor = (mine ? scheme.onPrimaryContainer : scheme.onSurface)
-        .withValues(alpha: 0.6);
+    // My bubbles are brand orange (onPrimary white); theirs are a white card.
+    final bg = mine ? scheme.primary : scheme.surface;
+    final fg = mine ? scheme.onPrimary : scheme.onSurface;
+    final metaColor = fg.withValues(alpha: 0.7);
+    const tail = Radius.circular(AppRadius.sm);
+    const round = Radius.circular(AppRadius.lg);
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        margin: EdgeInsets.only(
+          top: grouped ? AppSpacing.xs : AppSpacing.sm,
+          bottom: AppSpacing.xs,
+        ),
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
           vertical: AppSpacing.sm,
@@ -395,23 +528,30 @@ class _MessageBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.78,
         ),
         decoration: BoxDecoration(
-          color: mine ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          color: bg,
+          borderRadius: BorderRadius.only(
+            topLeft: round,
+            topRight: round,
+            bottomLeft: mine ? round : tail,
+            bottomRight: mine ? tail : round,
+          ),
+          border: mine
+              ? null
+              : Border.all(color: scheme.outlineVariant),
+          boxShadow: AppShadows.card,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final a in message.attachments) ...[
-              _AttachmentPreview(attachment: a),
+              _AttachmentPreview(attachment: a, mine: mine),
               if (a != message.attachments.last || hasText)
                 const SizedBox(height: AppSpacing.sm),
             ],
             if (hasText)
               Text(
                 message.content,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: mine ? scheme.onPrimaryContainer : scheme.onSurface,
-                ),
+                style: theme.textTheme.bodyMedium?.copyWith(color: fg),
               ),
             const SizedBox(height: AppSpacing.xs),
             Row(
@@ -428,9 +568,7 @@ class _MessageBubble extends StatelessWidget {
                 ],
                 Text(
                   time,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: metaColor,
-                  ),
+                  style: theme.textTheme.labelSmall?.copyWith(color: metaColor),
                 ),
               ],
             ),
@@ -464,66 +602,78 @@ class _Composer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (pending.isNotEmpty)
-              _PendingTray(
-                pending: pending,
-                enabled: !sending,
-                onRemove: onRemovePending,
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.sm,
-                AppSpacing.sm,
-                AppSpacing.sm,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.attach_file),
-                    tooltip: 'Attach',
-                    onPressed: sending ? null : onPick,
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: 'Message…',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md,
-                          vertical: AppSpacing.sm,
+    final scheme = theme.colorScheme;
+    return DecoratedBox(
+      // A floating lift visually detaches the composer from the transcript.
+      decoration: const BoxDecoration(boxShadow: AppShadows.floating),
+      child: Material(
+        color: scheme.surface,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (pending.isNotEmpty)
+                _PendingTray(
+                  pending: pending,
+                  enabled: !sending,
+                  onRemove: onRemovePending,
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                  AppSpacing.sm,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.attach_file),
+                      tooltip: 'Attach',
+                      onPressed: sending ? null : onPick,
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.newline,
+                        decoration: InputDecoration(
+                          hintText: 'Message…',
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest,
+                          border: OutlineInputBorder(
+                            borderRadius:
+                                BorderRadius.circular(AppRadius.xl),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                            vertical: AppSpacing.sm,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  IconButton.filled(
-                    tooltip: 'Send',
-                    icon: sending
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                    onPressed: sending ? null : onSend,
-                  ),
-                ],
+                    const SizedBox(width: AppSpacing.xs),
+                    IconButton.filled(
+                      tooltip: 'Send',
+                      icon: sending
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                      onPressed: sending ? null : onSend,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -574,8 +724,12 @@ class _PendingTray extends StatelessWidget {
 }
 
 class _AttachmentPreview extends ConsumerWidget {
-  const _AttachmentPreview({required this.attachment});
+  const _AttachmentPreview({required this.attachment, required this.mine});
   final ChatAttachment attachment;
+
+  /// Whether this preview sits inside the sender's (orange) bubble — flips the
+  /// chip surface/foreground so it stays legible on either bubble color.
+  final bool mine;
 
   Future<void> _open(WidgetRef ref) async {
     final storage = ref.read(storageServiceProvider);
@@ -589,35 +743,47 @@ class _AttachmentPreview extends ConsumerWidget {
       return _ImagePreview(attachment: attachment, onTap: () => _open(ref));
     }
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final icon = attachment.isVideo
         ? Icons.play_circle_outline
         : Icons.insert_drive_file_outlined;
     final label = attachment.isVideo ? 'Video' : 'Document';
+    final fg = mine ? scheme.onPrimary : scheme.onSurface;
+    final box = mine
+        ? Colors.white.withValues(alpha: 0.18)
+        : scheme.surfaceContainerHighest;
     return InkWell(
       onTap: () => _open(ref),
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface.withValues(alpha: 0.6),
+          color: box,
           borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon),
+            Icon(icon, color: fg),
             const SizedBox(width: AppSpacing.sm),
             Flexible(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: theme.textTheme.labelMedium),
+                  Text(
+                    label,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: fg,
+                      fontWeight: AppType.semibold,
+                    ),
+                  ),
                   Text(
                     attachment.name,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: fg.withValues(alpha: 0.8),
+                    ),
                   ),
                 ],
               ),
@@ -670,7 +836,7 @@ class _ImagePreviewState extends ConsumerState<_ImagePreview> {
         return GestureDetector(
           onTap: widget.onTap,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             child: CachedNetworkImage(
               imageUrl: snap.data!,
               fit: BoxFit.cover,

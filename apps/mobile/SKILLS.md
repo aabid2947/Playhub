@@ -7,16 +7,21 @@
 > **Companions:** [design-system reference](lib/shared/widgets/README.md) ·
 > [project rules](../../CLAUDE.md) · [file map](../../repo_structure.md).
 
-PlayHub is a multi-tenant sports-academy SaaS (India-first). The look is
-**calm, dense, trustworthy** — an operations tool people use all day, not a
-flashy consumer app. **Vivid violet** on neutral surfaces: violet leads, a
-violet→magenta gradient is reserved for brand moments, generous rhythm, no
-gratuitous motion. **Both light + dark ship** (the theme follows the device).
+PlayHub is a multi-tenant sports-academy SaaS (India-first). As of 2026-06-09 the
+look is the **"Sports-Light" v1 concept the client approved** — energetic and
+sporty, not flat-corporate: an **energetic orange** (`#FF6A2C`) leads every
+call-to-action, a **deep navy** (`#0F2540`) is the ink, a broadcast **blue**
+(`#1763E0`) accents sparingly, on clean near-white surfaces. Gradient hero bands,
+colorful feature cards, soft-shadowed cards. **Light theme only** (no dark).
 
-> **Color/type are locked.** The brand is violet (`#9933FF`) + magenta accent
-> (`#E95FE9`); green (`#22C55E`) is now only the semantic *success* color. The
-> source of truth is `colors.ts` / `typography.ts` / `design_tokens.dart` /
-> `theme.dart` — don't restyle colors or fonts, only layout/structure.
+> **⚠️ Skin reversed 2026-06-09 — see [UI_REVAMP_V1.md](../../UI_REVAMP_V1.md)
+> (authoritative).** The brand recolored **violet → orange + navy**, and the app
+> is now **light-only**. Color/type are still driven solely from `colors.ts` /
+> `design_tokens.dart` / `theme.dart` (the v1 palette) — don't hard-code; consume
+> tokens. Wherever this doc still says "violet" / "both themes ship", read
+> "orange + navy" / "light only". New v1 widgets: `AppGradientHeader`,
+> `AppFeatureCard`, `AppPillTabs`, `AppAvatar`, `AppLabeledProgress`,
+> `AppMiniBarChart` (barrel `shared/widgets/widgets.dart`).
 
 ---
 
@@ -43,9 +48,10 @@ These are load-bearing. Violating one turns a polish task into a bug.
 5. **Keep `flutter analyze` clean** (`very_good_analysis`, strict). No
    `withOpacity` (use `.withValues(alpha:)`), trailing commas, `const` where
    possible.
-6. **Light + dark both ship.** Never use `Colors.black/white` for
-   text/surfaces — use `colorScheme.*` and `AppSemanticColors` so dark mode
-   stays correct.
+6. **Light only ships** (v1). Still never hard-code `Colors.black/white` for
+   text/surfaces — use `colorScheme.*` / `AppSemanticColors` / tokens so the
+   navy-on-near-white reads correctly and a future dark re-enable stays sane.
+   (`Colors.white` text *is* correct on a gradient hero band.)
 
 ---
 

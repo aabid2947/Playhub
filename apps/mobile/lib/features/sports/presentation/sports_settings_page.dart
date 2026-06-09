@@ -8,11 +8,18 @@ import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Settings → Sports. The center selector is the scope control: pick a center,
 /// manage which sports it offers. Defaults to the user's center_id when set;
 /// falls back to the first center in the academy.
+///
+/// v1 "Sports-Light" — archetype H (settings) over B (list): a navy hero frames
+/// the page as "Sports at <center>" with the center picker as the scope control,
+/// then a sport-colored card list of enabled sports below, with an orange
+/// "Add sport" FAB. Writes stay gated by `caps.manageSports` (center_admin =
+/// own center; RLS is the real gate).
 class SportsSettingsPage extends ConsumerStatefulWidget {
   const SportsSettingsPage({super.key});
 
@@ -23,6 +30,14 @@ class SportsSettingsPage extends ConsumerStatefulWidget {
 
 class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
   String? _centerId;
+  String? _sportFilterId;
+
+  void _refresh() {
+    if (_centerId != null) {
+      ref.invalidate(centerSportsProvider(_centerId!));
+    }
+    ref.invalidate(academyCenterSportsProvider);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,21 +49,6 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
     // hides the controls; RLS is the real gate.
     final canManage = caps.manageSports;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sports'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              if (_centerId != null) {
-                ref.invalidate(centerSportsProvider(_centerId!));
-              }
-              ref.invalidate(academyCenterSportsProvider);
-            },
-          ),
-        ],
-      ),
       body: centersAsync.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
@@ -65,12 +65,25 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
                     .toList(growable: false)
               : allCenters;
           if (centers.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.location_city_outlined,
-              title: 'No centers yet',
-              subtitle:
-                  'Add a center in Settings → Centers first, then come back '
-                  'here to enable its sports.',
+            return Column(
+              children: [
+                _ScopeHeader(
+                  centers: const [],
+                  centerId: null,
+                  scopeName: 'this academy',
+                  onChanged: (_) {},
+                  onRefresh: _refresh,
+                ),
+                const Expanded(
+                  child: AppEmptyState(
+                    icon: Icons.location_city_outlined,
+                    title: 'No centers yet',
+                    subtitle:
+                        'Add a center in Settings → Centers first, then come '
+                        'back here to enable its sports.',
+                  ),
+                ),
+              ],
             );
           }
           _centerId ??= centers.first.id;
@@ -88,12 +101,20 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
                 centers: activeCenters,
                 centerId: _centerId,
                 scopeName: scopeName,
-                onChanged: (v) => setState(() => _centerId = v),
+                onChanged: (v) => setState(() {
+                  _centerId = v;
+                  _sportFilterId = null;
+                }),
+                onRefresh: _refresh,
               ),
               Expanded(
                 child: _centerId == null
                     ? const SizedBox.shrink()
-                    : _CenterSportsList(centerId: _centerId!),
+                    : _CenterSportsList(
+                        centerId: _centerId!,
+                        filterId: _sportFilterId,
+                        onFilter: (v) => setState(() => _sportFilterId = v),
+                      ),
               ),
             ],
           );
@@ -114,83 +135,166 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
   }
 }
 
-/// Sticky scope strip — frames the list below as "Sports at <center>" and
-/// exposes the center picker as the control that drives that scope.
+/// Navy hero (archetype H) — frames the page as "Sports at <center>" and
+/// exposes the center picker as the scope control that drives the list below.
+/// Back + refresh circle buttons sit on the gradient.
 class _ScopeHeader extends StatelessWidget {
   const _ScopeHeader({
     required this.centers,
     required this.centerId,
     required this.scopeName,
     required this.onChanged,
+    required this.onRefresh,
   });
 
   final List<Centre> centers;
   final String? centerId;
   final String scopeName;
   final ValueChanged<String?> onChanged;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Material(
-      color: scheme.surface,
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.md,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.place_outlined,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        'Sports at $scopeName',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: AppType.semibold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                AppDropdownField<String>(
-                  label: 'Center scope',
-                  value: centerId,
-                  items: [
-                    for (final c in centers)
-                      DropdownMenuItem(
-                        value: c.id,
-                        child: Text(c.name),
-                      ),
-                  ],
-                  onChanged: onChanged,
-                ),
-              ],
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+              const Spacer(),
+              AppCircleIconButton(
+                icon: Icons.refresh,
+                tooltip: 'Refresh',
+                onTap: onRefresh,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Sports',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
             ),
           ),
-          Divider(height: 1, color: scheme.outlineVariant),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Icon(
+                Icons.place_outlined,
+                size: 15,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  'Sports at $scopeName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (centers.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            _CenterScopePicker(
+              centers: centers,
+              centerId: centerId,
+              onChanged: onChanged,
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
+/// White-on-navy center dropdown used inside the hero as the scope control.
+/// A bespoke frosted pill (the form-styled [AppDropdownField] is built for
+/// light surfaces, not a gradient hero), but it stays a real [DropdownButton].
+class _CenterScopePicker extends StatelessWidget {
+  const _CenterScopePicker({
+    required this.centers,
+    required this.centerId,
+    required this.onChanged,
+  });
+
+  final List<Centre> centers;
+  final String? centerId;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: centerId,
+          isExpanded: true,
+          dropdownColor: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          icon: Icon(
+            Icons.expand_more,
+            color: Colors.white.withValues(alpha: 0.85),
+          ),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+          selectedItemBuilder: (_) => [
+            for (final c in centers)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  c.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: AppType.semibold,
+                  ),
+                ),
+              ),
+          ],
+          items: [
+            for (final c in centers)
+              DropdownMenuItem(
+                value: c.id,
+                child: Text(c.name),
+              ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 class _CenterSportsList extends ConsumerWidget {
-  const _CenterSportsList({required this.centerId});
+  const _CenterSportsList({
+    required this.centerId,
+    required this.filterId,
+    required this.onFilter,
+  });
+
   final String centerId;
+  final String? filterId;
+  final ValueChanged<String?> onFilter;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -206,27 +310,82 @@ class _CenterSportsList extends ConsumerWidget {
           return const AppEmptyState(
             icon: Icons.sports_outlined,
             title: 'No sports here yet',
-            subtitle:
-                'Tap "Add sport" to enable one for this center.',
+            subtitle: 'Tap "Add sport" to enable one for this center.',
           );
         }
+        final visible = filterId == null
+            ? rows
+            : rows.where((r) => r.sport.id == filterId).toList(growable: false);
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(centerSportsProvider(centerId)),
           child: ListView(
+            // Pull the body up so the cards overlap the navy hero, v1-style.
             padding: const EdgeInsets.only(bottom: AppSpacing.xxxl),
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: AppSectionHeader(
-                  title: '${rows.length} '
-                      'sport${rows.length == 1 ? '' : 's'}',
+              Transform.translate(
+                offset: const Offset(0, -AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Sport filter chips (scoped to this center) — visual filter
+                    // only; an "All" pill clears it.
+                    SportFilterChipBar(
+                      centerId: centerId,
+                      selectedId: filterId,
+                      onSelected: onFilter,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.lg,
+                      ),
+                      child: AppSectionHeader(
+                        title: 'Enabled sports',
+                        icon: Icons.sports_outlined,
+                        trailing: AppBadge(
+                          text: '${visible.length}',
+                          tone: AppBadgeTone.brand,
+                        ),
+                      ),
+                    ),
+                    if (visible.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          0,
+                        ),
+                        child: Text(
+                          'No sports match this filter.',
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                        ),
+                        child: Column(
+                          children: [
+                            for (final row in visible)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppSpacing.sm,
+                                ),
+                                child: _SportRow(row: row),
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              for (var i = 0; i < rows.length; i++) ...[
-                _SportRow(row: rows[i]),
-                if (i < rows.length - 1)
-                  const Divider(height: 1, indent: AppSpacing.lg),
-              ],
             ],
           ),
         );
@@ -241,73 +400,131 @@ class _SportRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final isRenamed =
         row.customName != null && row.customName!.trim().isNotEmpty;
+    final tint = colorFromName(row.displayName);
     // Rename/remove write center_sports (can_admin_center_scope): admin tier +
     // center_admin (own center, enforced by the scope filter above + RLS).
     final canManage = ref.watch(capabilitiesProvider).manageSports;
-    return AppListTile(
-      wrapLeading: false,
-      leading: const CircleAvatar(child: Icon(Icons.sports_outlined)),
-      title: Text(row.displayName),
-      subtitle: isRenamed
-          ? Text('Renamed from ${row.sport.name}')
-          : (row.sport.category != null && row.sport.category!.isNotEmpty
-              ? Text(row.sport.category!)
-              : null),
-      trailing: !canManage
-          ? null
-          : Row(
-        mainAxisSize: MainAxisSize.min,
+
+    final subtitle = isRenamed
+        ? 'Renamed from ${row.sport.name}'
+        : (row.sport.category != null && row.sport.category!.isNotEmpty
+            ? row.sport.category!
+            : null);
+
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      onTap: canManage ? () => _renameDialog(context, ref, row) : null,
+      child: Row(
         children: [
-          IconButton(
-            tooltip: 'Rename',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _renameDialog(context, ref, row),
+          // Sport-colored icon disc — ties the row to the sport accent.
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(sportIcon(row.displayName), color: tint, size: 22),
           ),
-          PopupMenuButton<String>(
-            tooltip: 'More',
-            onSelected: (v) async {
-              final repo = await ref.read(sportsRepoProvider.future);
-              if (repo == null) return;
-              if (v == 'rename') {
-                if (!context.mounted) return;
-                await _renameDialog(context, ref, row);
-              } else if (v == 'remove') {
-                if (!context.mounted) return;
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text('Remove ${row.displayName}?'),
-                    content: const Text(
-                      'Existing students / batches keep their sport '
-                      'assignment until you change them. You can re-add '
-                      'this sport later.',
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        row.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: AppType.semibold,
+                        ),
+                      ),
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Remove'),
-                      ),
+                    if (isRenamed) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      const AppBadge(text: 'Renamed', tone: AppBadgeTone.info),
                     ],
+                  ],
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                );
-                if (confirm ?? false) {
-                  await repo.disableCenterSport(row.id);
-                  ref.invalidate(centerSportsProvider(row.centerId));
-                  ref.invalidate(academyCenterSportsProvider);
-                }
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'remove', child: Text('Remove')),
-            ],
+                ],
+              ],
+            ),
           ),
+          if (canManage)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Rename',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _renameDialog(context, ref, row),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'More',
+                  onSelected: (v) async {
+                    final repo = await ref.read(sportsRepoProvider.future);
+                    if (repo == null) return;
+                    if (v == 'rename') {
+                      if (!context.mounted) return;
+                      await _renameDialog(context, ref, row);
+                    } else if (v == 'remove') {
+                      if (!context.mounted) return;
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text('Remove ${row.displayName}?'),
+                          content: const Text(
+                            'Existing students / batches keep their sport '
+                            'assignment until you change them. You can re-add '
+                            'this sport later.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Remove'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm ?? false) {
+                        await repo.disableCenterSport(row.id);
+                        ref.invalidate(centerSportsProvider(row.centerId));
+                        ref.invalidate(academyCenterSportsProvider);
+                      }
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    PopupMenuItem(value: 'remove', child: Text('Remove')),
+                  ],
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -396,9 +613,23 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Grab handle.
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+              ),
+            ),
             Text(
               'Add a sport',
-              style: theme.textTheme.titleLarge,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: AppType.bold,
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
             AppFormField(
@@ -457,8 +688,19 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) {
                       final s = candidates[i];
+                      final tint = colorFromName(s.name);
                       return AppListTile(
-                        leading: const Icon(Icons.sports_outlined),
+                        wrapLeading: false,
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: tint.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                          ),
+                          child: Icon(sportIcon(s.name), color: tint, size: 20),
+                        ),
                         title: Text(s.name),
                         subtitle:
                             s.category != null ? Text(s.category!) : null,

@@ -29,18 +29,24 @@ class MessageParentButton extends ConsumerWidget {
           tooltip: list.length == 1
               ? 'Message ${list.first.displayName}'
               : 'Message a parent',
-          icon: const Icon(Icons.chat_outlined),
+          // No explicit color: inherits IconTheme so it reads correctly in an
+          // app bar or on a colored hero.
+          icon: const Icon(Icons.chat_rounded),
           onPressed: () => _start(context, ref, list),
         );
       },
-      // While the lookup resolves, show a disabled busy spinner in the
-      // button's footprint so the app bar layout doesn't jump.
-      loading: () => const IconButton(
+      // While the lookup resolves, show a disabled busy spinner in the button's
+      // footprint so the app-bar layout doesn't jump. The spinner adopts the
+      // ambient IconTheme color so it stays visible on a colored hero.
+      loading: () => IconButton(
         tooltip: 'Loading…',
         icon: SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: IconTheme.of(context).color,
+          ),
         ),
         onPressed: null,
       ),
@@ -61,6 +67,7 @@ class MessageParentButton extends ConsumerWidget {
       chosen = await showModalBottomSheet<_LinkedParent>(
         context: context,
         isScrollControlled: true,
+        showDragHandle: true,
         builder: (_) => _ParentPickerSheet(studentId: studentId),
       );
     }
@@ -87,10 +94,10 @@ class _ParentPickerSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final parents = ref.watch(_studentParentsProvider(studentId));
 
     return SafeArea(
+      top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.6,
@@ -99,36 +106,19 @@ class _ParentPickerSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: AppSpacing.md),
-            // Drag handle — anchors the sheet and signals it's dismissible.
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
+            // Title row — mixed-case navy heading, v1-style.
+            const Padding(
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                AppSpacing.md,
+              ),
+              child: AppSectionHeader(
+                title: 'Message which parent?',
+                icon: Icons.chat_rounded,
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            // Title row.
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-              child: Row(
-                children: [
-                  Icon(Icons.chat_outlined, color: scheme.primary),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Text(
-                      'Message which parent?',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
             Flexible(
               child: parents.when(
                 data: (list) {
@@ -149,9 +139,13 @@ class _ParentPickerSheet extends ConsumerWidget {
                     children: [
                       for (final p in list)
                         AppListTile(
-                          leading: const Icon(Icons.person_outline),
+                          wrapLeading: false,
+                          leading: AppAvatar(p.displayName, size: 40),
                           title: Text(p.displayName),
-                          subtitle: Text(p.relationship),
+                          subtitle: Text(
+                            p.relationship,
+                            style: theme.textTheme.bodySmall,
+                          ),
                           onTap: () => Navigator.of(context).pop(p),
                         ),
                     ],

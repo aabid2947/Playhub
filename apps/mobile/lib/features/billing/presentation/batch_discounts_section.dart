@@ -49,10 +49,14 @@ class BatchDiscountsSection extends ConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpacing.sm),
-            child: LinearProgressIndicator(minHeight: 2),
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: AppLoading(),
           ),
-          error: (e, _) => Text(friendlyError(e)),
+          error: (e, _) => AppErrorView(
+            message: friendlyError(e),
+            onRetry: () =>
+                ref.invalidate(batchDiscountAssignmentsProvider(batchId)),
+          ),
           data: (rows) {
             if (rows.isEmpty) {
               return const AppCard(
@@ -69,25 +73,27 @@ class BatchDiscountsSection extends ConsumerWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  for (final a in rows)
+                  for (var i = 0; i < rows.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
                     _Tile(
-                      assignment: a,
-                      structure: byId[a.discountStructureId],
+                      assignment: rows[i],
+                      structure: byId[rows[i].discountStructureId],
                       onDeactivate: canManage
                           ? () async {
                               final ok = await _confirmDeactivate(
                                 context,
-                                byId[a.discountStructureId],
+                                byId[rows[i].discountStructureId],
                               );
                               if (!ok) return;
                               await deactivateBatchDiscount(
                                 ref,
-                                assignmentId: a.id,
+                                assignmentId: rows[i].id,
                                 batchId: batchId,
                               );
                             }
                           : null,
                     ),
+                  ],
                 ],
               ),
             );
@@ -110,6 +116,7 @@ class BatchDiscountsSection extends ConsumerWidget {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (ctx) => _Sheet(
         batchId: batchId,
         structures: active,
@@ -166,13 +173,60 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = assignment.isActive;
+    return _AssignmentRow(
+      icon: Icons.local_offer_outlined,
+      tint: colorFromName(structure?.name ?? 'discount'),
+      title: structure?.name ?? '(unknown discount)',
+      subtitle: [
+        structure?.summary,
+        'starts ${assignment.startDate.toIso8601String().substring(0, 10)}',
+        if (assignment.endDate != null)
+          'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
+      ].whereType<String>().join(' · '),
+      isActive: assignment.isActive,
+      stopTooltip: 'Stop discount for this batch',
+      onDeactivate: onDeactivate,
+    );
+  }
+}
+
+/// Shared v1 assignment-row layout used by all four billing-assignment
+/// sections (student/batch × fees/discounts): a category-tinted leading glyph
+/// box, a title, one tight subtitle line, an always-present active/inactive
+/// [AppBadge], and the gated stop control (hidden when [onDeactivate] is null
+/// or the assignment is already inactive). Renders a real [AppListTile].
+class _AssignmentRow extends StatelessWidget {
+  const _AssignmentRow({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
+    required this.isActive,
+    required this.stopTooltip,
+    required this.onDeactivate,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String subtitle;
+  final bool isActive;
+  final String stopTooltip;
+  final Future<void> Function()? onDeactivate;
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final glyph = isActive ? tint : scheme.outline;
     final badge = isActive
-        ? const AppBadge(text: 'Active', tone: AppBadgeTone.success)
-        : const AppBadge(text: 'Inactive');
+        ? const AppBadge(
+            text: 'Active',
+            tone: AppBadgeTone.success,
+            icon: Icons.check_circle_outline,
+          )
+        : const AppBadge(text: 'Inactive', icon: Icons.pause_circle_outline);
     // The status badge is always present so active/inactive reads consistently;
-    // the deactivate control is appended only when active and manageable.
+    // the stop control is appended only when active and manageable.
     final trailing = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -180,8 +234,8 @@ class _Tile extends StatelessWidget {
         if (isActive && onDeactivate != null) ...[
           const SizedBox(width: AppSpacing.xs),
           IconButton(
-            tooltip: 'Stop discount for this batch',
-            icon: const Icon(Icons.stop_circle_outlined),
+            tooltip: stopTooltip,
+            icon: Icon(Icons.stop_circle_outlined, color: scheme.error),
             onPressed: onDeactivate,
           ),
         ],
@@ -189,19 +243,18 @@ class _Tile extends StatelessWidget {
     );
     return AppListTile(
       wrapLeading: false,
-      leading: Icon(
-        Icons.local_offer_outlined,
-        color: isActive ? scheme.onSurfaceVariant : scheme.outline,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: glyph.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(icon, color: glyph, size: 20),
       ),
-      title: Text(structure?.name ?? '(unknown discount)'),
-      subtitle: Text(
-        [
-          structure?.summary,
-          'starts ${assignment.startDate.toIso8601String().substring(0, 10)}',
-          if (assignment.endDate != null)
-            'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
-        ].whereType<String>().join(' · '),
-      ),
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(subtitle),
       trailing: trailing,
     );
   }
@@ -268,7 +321,7 @@ class _SheetState extends State<_Sheet> {
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
         right: AppSpacing.lg,
-        top: AppSpacing.lg,
+        top: AppSpacing.xs,
         bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
       ),
       child: Column(
@@ -277,7 +330,9 @@ class _SheetState extends State<_Sheet> {
         children: [
           Text(
             'Assign discount to batch',
-            style: theme.textTheme.titleLarge,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: AppType.bold,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(

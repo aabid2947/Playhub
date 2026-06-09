@@ -124,7 +124,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             // ── Details ──────────────────────────────────────────────
-            const AppSectionHeader(title: 'Details'),
+            const AppSectionHeader(
+              title: 'Details',
+              icon: Icons.event_note_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _title,
@@ -155,7 +158,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             const SizedBox(height: AppSpacing.xl),
 
             // ── Schedule ─────────────────────────────────────────────
-            const AppSectionHeader(title: 'Schedule'),
+            const AppSectionHeader(
+              title: 'Schedule',
+              icon: Icons.calendar_month_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             _DateTimeField(
               label: 'Starts at *',
@@ -224,7 +230,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             const SizedBox(height: AppSpacing.xl),
 
             // ── Location & capacity ──────────────────────────────────
-            const AppSectionHeader(title: 'Location & capacity'),
+            const AppSectionHeader(
+              title: 'Location & capacity',
+              icon: Icons.place_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _location,
@@ -263,7 +272,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             const SizedBox(height: AppSpacing.xl),
 
             // ── Description ──────────────────────────────────────────
-            const AppSectionHeader(title: 'Description'),
+            const AppSectionHeader(
+              title: 'Description',
+              icon: Icons.notes_rounded,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _desc,
@@ -274,7 +286,10 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             const SizedBox(height: AppSpacing.xl),
 
             // ── Publish ──────────────────────────────────────────────
-            const AppSectionHeader(title: 'Publish'),
+            const AppSectionHeader(
+              title: 'Publish',
+              icon: Icons.campaign_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             _PublishChoice(
               publish: _publish,

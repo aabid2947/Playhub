@@ -52,21 +52,19 @@ class PerformanceHistoryPage extends ConsumerWidget {
             onRefresh: () async =>
                 ref.invalidate(assessmentsForStudentProvider(student.id)),
             child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xxxl,
+              ),
               children: [
-                if (trend != null) ...[
-                  _TrendCard(trend: trend),
-                  const SizedBox(height: AppSpacing.xl),
-                ],
+                _TrendSummary(student: student, trend: trend, count: list.length),
+                const SizedBox(height: AppSpacing.xl),
                 AppSectionHeader(
                   title: 'Assessments',
-                  trailing: Text(
-                    '${list.length}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                  ),
+                  icon: Icons.history_rounded,
+                  trailing: AppBadge(text: '${list.length}'),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 AppCard(
@@ -101,66 +99,105 @@ class PerformanceHistoryPage extends ConsumerWidget {
   }
 }
 
-/// Header callout: the recent average is the prominent headline metric, with
-/// the supporting facts (window size, latest sport, last assessed) laid out
-/// as labeled rows beside it.
-class _TrendCard extends StatelessWidget {
-  const _TrendCard({required this.trend});
-  final Map<String, dynamic> trend;
+/// Archetype-G summary: a navy ranking-style card headlining the recent average
+/// with the score out of 10 drawn as a progress meter, plus the supporting
+/// facts (window size, latest sport, last assessed) as glass chips. Stays
+/// present (reading "No score yet") when the trend view has no average so the
+/// page always opens on a consistent header.
+class _TrendSummary extends StatelessWidget {
+  const _TrendSummary({
+    required this.student,
+    required this.trend,
+    required this.count,
+  });
+
+  final Student student;
+  final Map<String, dynamic>? trend;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
-    final avg = (trend['avg_recent_score'] as num?)?.toDouble();
-    final n = (trend['recent_assessments'] as num?)?.toInt() ?? 0;
-    final lastDate = trend['last_assessed_date'] as String?;
-    final sport = trend['latest_sport'] as String?;
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final mutedSmall = theme.textTheme.bodySmall?.copyWith(
-      color: scheme.onSurfaceVariant,
-    );
+    final avg = (trend?['avg_recent_score'] as num?)?.toDouble();
+    final n = (trend?['recent_assessments'] as num?)?.toInt() ?? count;
+    final lastDate = trend?['last_assessed_date'] as String?;
+    final sport = trend?['latest_sport'] as String?;
+    final scored = avg != null;
 
-    return AppCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Prominent recent-average metric.
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        boxShadow: AppShadows.floating,
+      ),
+      child: AppCard(
+        shadow: false,
+        color: AppPalette.ink,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Text(
-                  'Recent average',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
+                AppAvatar(student.fullName, size: 40, color: Colors.white),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recent average',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.75),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        scored ? avg.toStringAsFixed(2) : 'No score yet',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: AppType.heavy,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  avg == null ? 'No score' : avg.toStringAsFixed(2),
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    color: avg == null ? scheme.onSurfaceVariant : null,
+                if (scored)
+                  Text(
+                    '/ 10',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text('Across last $n assessments', style: mutedSmall),
               ],
             ),
-          ),
-          const SizedBox(width: AppSpacing.lg),
-          // Supporting context: latest sport + last assessed date.
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (sport != null && sport.isNotEmpty)
-                AppBadge(text: sport, tone: AppBadgeTone.brand),
-              if (lastDate != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text('Last $lastDate', style: mutedSmall),
-              ],
+            if (scored) ...[
+              const SizedBox(height: AppSpacing.md),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                child: LinearProgressIndicator(
+                  value: (avg / 10).clamp(0, 1),
+                  minHeight: 8,
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppPalette.brandPrimary,
+                  ),
+                ),
+              ),
             ],
-          ),
-        ],
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                AppGlassChip('Last $n assessments', icon: Icons.bar_chart),
+                if (sport != null && sport.isNotEmpty)
+                  AppGlassChip(sport, icon: Icons.sports),
+                if (lastDate != null)
+                  AppGlassChip(lastDate, icon: Icons.event_outlined),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

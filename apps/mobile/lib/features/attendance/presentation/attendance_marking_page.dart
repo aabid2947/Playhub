@@ -10,9 +10,14 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Per-batch attendance marking screen. Shows enrolled students for the given
-/// batch, lets the coach toggle each student's status, bulk mark all-present,
-/// and add notes. Saves are upsert-on-(batch, student, date).
+/// Per-batch attendance marking screen — v1 "Sports-Light" roster archetype.
+///
+/// Shows enrolled students for the given batch under an entity-colored hero
+/// (present / absent / left summary + human date), lets the coach toggle each
+/// student's status with present/absent squares, bulk mark all-present, and add
+/// notes in a reserved (non-jittering) area. Saves are upsert-on-(batch,
+/// student, date) via [upsertAttendance]; the pinned bottom bar shows the
+/// marked count.
 class AttendanceMarkingPage extends ConsumerStatefulWidget {
   const AttendanceMarkingPage({
     required this.batch,
@@ -35,6 +40,37 @@ class _AttendanceMarkingPageState extends ConsumerState<AttendanceMarkingPage> {
   final Map<String, TextEditingController> _notes = {};
   bool _seeded = false;
   bool _saving = false;
+
+  static const _weekdays = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  static const _months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  String get _humanDate {
+    final d = widget.date;
+    final weekday = _weekdays[d.weekday - 1];
+    final month = _months[d.month - 1];
+    return '$weekday, ${d.day} $month ${d.year}';
+  }
 
   @override
   void dispose() {
@@ -108,78 +144,204 @@ class _AttendanceMarkingPageState extends ConsumerState<AttendanceMarkingPage> {
       AttendanceKey(batchId: widget.batch.id, date: widget.date),
     ));
 
+    // Entity-colored hero: a deterministic sport-style pair derived from the
+    // batch name, per the v1 entity-detail hero convention.
+    final heroColor = colorFromName(widget.batch.name);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Mark attendance · ${widget.batch.name}'),
-      ),
       body: enrollmentsAsync.when(
-        loading: () => const AppSkeletonList(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () =>
-              ref.invalidate(batchEnrollmentsProvider(widget.batch.id)),
+        loading: () => _Shell(
+          hero: _hero(present: 0, absent: 0, left: 0, heroColor: heroColor),
+          body: const AppSkeletonList(),
+        ),
+        error: (e, _) => _Shell(
+          hero: _hero(present: 0, absent: 0, left: 0, heroColor: heroColor),
+          body: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () =>
+                ref.invalidate(batchEnrollmentsProvider(widget.batch.id)),
+          ),
         ),
         data: (enrollments) {
           final allStudents = studentsAsync.valueOrNull ?? const <Student>[];
           final roster = _rosterFromState(enrollments, allStudents);
           if (roster.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.group_off_outlined,
-              title: 'No students enrolled',
-              subtitle:
-                  'There are no active students in this batch yet. Enrol '
-                  'students before marking attendance.',
+            return _Shell(
+              hero: _hero(present: 0, absent: 0, left: 0, heroColor: heroColor),
+              body: const AppEmptyState(
+                icon: Icons.group_off_outlined,
+                title: 'No students enrolled',
+                subtitle:
+                    'There are no active students in this batch yet. Enrol '
+                    'students before marking attendance.',
+              ),
             );
           }
           final attendance = attendanceAsync.valueOrNull;
           if (attendance == null) {
-            return const AppSkeletonList();
+            return _Shell(
+              hero: _hero(present: 0, absent: 0, left: 0, heroColor: heroColor),
+              body: const AppSkeletonList(),
+            );
           }
           _seed(roster, attendance);
 
-          final presentCount = roster
+          final present = roster
               .where((s) => _statuses[s.id] == AttendanceStatus.present)
               .length;
+          final absent = roster
+              .where((s) => _statuses[s.id] == AttendanceStatus.absent)
+              .length;
+          // "Left" = neither plainly present nor plainly absent (late/excused).
+          final left = roster.length - present - absent;
 
           return Column(
             children: [
-              _DateHeader(date: widget.date),
-              _ActionBar(
-                presentCount: presentCount,
-                total: roster.length,
-                onMarkAllPresent:
-                    _saving ? null : () => _markAllPresent(roster),
-              ),
               Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                  ),
-                  itemCount: roster.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(height: AppSpacing.md),
-                  itemBuilder: (context, i) {
-                    final s = roster[i];
-                    return _StudentCard(
-                      student: s,
-                      status: _statuses[s.id]!,
-                      notesCtrl: _notes[s.id]!,
-                      onStatus: (v) => setState(() => _statuses[s.id] = v),
-                    );
-                  },
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _hero(
+                      present: present,
+                      absent: absent,
+                      left: left,
+                      heroColor: heroColor,
+                    ),
+                    // Roster header sits just under the hero band.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.sm,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: AppSectionHeader(
+                              title: 'Roster · ${roster.length}',
+                              icon: Icons.groups_outlined,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () => _markAllPresent(roster),
+                            icon: const Icon(Icons.done_all_rounded, size: 18),
+                            label: const Text('All present'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...List.generate(roster.length, (i) {
+                      final s = roster[i];
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          0,
+                          AppSpacing.lg,
+                          AppSpacing.md,
+                        ),
+                        child: _RosterRow(
+                          student: s,
+                          status: _statuses[s.id]!,
+                          notesCtrl: _notes[s.id]!,
+                          onStatus: (v) =>
+                              setState(() => _statuses[s.id] = v),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
                 ),
               ),
               _SaveFooter(
-                statuses: roster.map((s) => _statuses[s.id]!).toList(),
+                present: present,
+                total: roster.length,
                 saving: _saving,
                 onSave: _save,
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// Entity-colored hero band: back button, batch name + schedule chip, and a
+  /// translucent present / absent / left summary strip.
+  Widget _hero({
+    required int present,
+    required int absent,
+    required int left,
+    required Color heroColor,
+  }) {
+    final theme = Theme.of(context);
+    final schedule = widget.batch.schedule.summary;
+    return AppGradientHeader(
+      colors: [heroColor.withValues(alpha: 0.92), heroColor],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.batch.name,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: AppType.heavy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today_rounded,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            _humanDate,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (schedule != 'No schedule') ...[
+            const SizedBox(height: AppSpacing.md),
+            AppGlassChip(schedule, icon: Icons.schedule_rounded),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          AppHeroStatRow(
+            stats: [
+              ('$present', 'Present'),
+              ('$absent', 'Absent'),
+              ('$left', 'Left'),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -201,119 +363,30 @@ class _AttendanceMarkingPageState extends ConsumerState<AttendanceMarkingPage> {
   }
 }
 
-/// Tinted band showing the session date in a human-readable form.
-class _DateHeader extends StatelessWidget {
-  const _DateHeader({required this.date});
-  final DateTime date;
+/// Hero band + a body region below it (used for loading / error / empty so the
+/// hero always renders and the back button stays reachable).
+class _Shell extends StatelessWidget {
+  const _Shell({required this.hero, required this.body});
 
-  static const _weekdays = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
-  static const _months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  String _humanDate() {
-    final weekday = _weekdays[date.weekday - 1];
-    final month = _months[date.month - 1];
-    return '$weekday, ${date.day} $month ${date.year}';
-  }
+  final Widget hero;
+  final Widget body;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          Icon(
-            Icons.calendar_today_outlined,
-            size: 18,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              _humanDate(),
-              style: theme.textTheme.titleMedium,
-            ),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        hero,
+        Expanded(child: body),
+      ],
     );
   }
 }
 
-/// Row sitting directly above the list: a marked-present count cue on the left
-/// and a visible "Mark all present" action on the right.
-class _ActionBar extends StatelessWidget {
-  const _ActionBar({
-    required this.presentCount,
-    required this.total,
-    required this.onMarkAllPresent,
-  });
-
-  final int presentCount;
-  final int total;
-  final VoidCallback? onMarkAllPresent;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        0,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              '$presentCount of $total marked present',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          TextButton.icon(
-            onPressed: onMarkAllPresent,
-            icon: const Icon(Icons.done_all, size: 18),
-            label: const Text('Mark all present'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One student's attendance card: name, a readable status selector, and a
-/// reserved (always-present, non-jittering) note field.
-class _StudentCard extends StatelessWidget {
-  const _StudentCard({
+/// One student's roster row: gradient avatar, name + a one-line meta, an
+/// absent/present toggle pair, and a reserved (always-present, non-jittering)
+/// note field that expands for the nuanced late/excused states.
+class _RosterRow extends StatelessWidget {
+  const _RosterRow({
     required this.student,
     required this.status,
     required this.notesCtrl,
@@ -328,61 +401,86 @@ class _StudentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sem = AppSemanticColors.of(context);
     return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            student.fullName,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: AppType.semibold,
-            ),
+          Row(
+            children: [
+              AppAvatar(student.fullName, size: 42),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.fullName,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: AppType.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    _MetaLine(student: student),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _Toggle(
+                icon: Icons.close_rounded,
+                active: status == AttendanceStatus.absent,
+                color: sem.danger,
+                tooltip: 'Absent',
+                onTap: () => onStatus(AttendanceStatus.absent),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _Toggle(
+                icon: Icons.check_rounded,
+                active: status == AttendanceStatus.present,
+                color: sem.success,
+                tooltip: 'Present',
+                onTap: () => onStatus(AttendanceStatus.present),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          // Readable status selector — labels, not icon-only. Scrolls if a
-          // narrow screen can't fit all four segments.
+          // Nuanced states (late / excused) for the cases the two squares can't
+          // express — kept compact so the common present/absent flow stays fast.
+          const SizedBox(height: AppSpacing.sm),
           Align(
             alignment: Alignment.centerLeft,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: SegmentedButton<AttendanceStatus>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: AttendanceStatus.present,
-                    icon: Icon(Icons.check, size: 18),
-                    label: Text('Present'),
+              child: Row(
+                children: [
+                  _StatusChip(
+                    label: 'Late',
+                    icon: Icons.access_time_rounded,
+                    tone: AppBadgeTone.warning,
+                    selected: status == AttendanceStatus.late,
+                    onTap: () => onStatus(AttendanceStatus.late),
                   ),
-                  ButtonSegment(
-                    value: AttendanceStatus.late,
-                    icon: Icon(Icons.access_time, size: 18),
-                    label: Text('Late'),
-                  ),
-                  ButtonSegment(
-                    value: AttendanceStatus.excused,
-                    icon: Icon(Icons.event_busy, size: 18),
-                    label: Text('Excused'),
-                  ),
-                  ButtonSegment(
-                    value: AttendanceStatus.absent,
-                    icon: Icon(Icons.close, size: 18),
-                    label: Text('Absent'),
+                  const SizedBox(width: AppSpacing.sm),
+                  _StatusChip(
+                    label: 'Excused',
+                    icon: Icons.event_busy_rounded,
+                    tone: AppBadgeTone.info,
+                    selected: status == AttendanceStatus.excused,
+                    onTap: () => onStatus(AttendanceStatus.excused),
                   ),
                 ],
-                selected: {status},
-                onSelectionChanged: (v) => onStatus(v.first),
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           // Reserved note area — always rendered so the card height never
           // jitters as the status changes.
           TextField(
             controller: notesCtrl,
+            style: theme.textTheme.bodyMedium,
             decoration: const InputDecoration(
               labelText: 'Note (optional)',
               isDense: true,
-              border: OutlineInputBorder(),
             ),
           ),
         ],
@@ -391,26 +489,176 @@ class _StudentCard extends StatelessWidget {
   }
 }
 
-/// Footer: a per-status completion breakdown above a full-width save button.
-class _SaveFooter extends StatelessWidget {
-  const _SaveFooter({
-    required this.statuses,
-    required this.saving,
-    required this.onSave,
+/// One-line muted meta under a roster name: an "Unpaid" flag takes precedence,
+/// else the skill level if present.
+class _MetaLine extends StatelessWidget {
+  const _MetaLine({required this.student});
+
+  final Student student;
+
+  @override
+  Widget build(BuildContext context) {
+    if (student.feeOverdue) {
+      return const AppBadge(
+        text: 'Unpaid',
+        tone: AppBadgeTone.danger,
+        icon: Icons.error_outline_rounded,
+      );
+    }
+    final theme = Theme.of(context);
+    final meta = student.skillLevel ?? 'Active';
+    return Text(
+      meta,
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// A square present/absent toggle: filled in its color when active, a soft tint
+/// otherwise. Animates the fill so taps feel responsive.
+class _Toggle extends StatelessWidget {
+  const _Toggle({
+    required this.icon,
+    required this.active,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
   });
 
-  final List<AttendanceStatus> statuses;
-  final bool saving;
-  final Future<void> Function() onSave;
+  final IconData icon;
+  final bool active;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
 
-  int _count(AttendanceStatus s) => statuses.where((v) => v == s).length;
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? color : color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Icon(
+              icon,
+              color: active ? Colors.white : color,
+              size: 22,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact selectable status chip for the nuanced late / excused states.
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({
+    required this.label,
+    required this.icon,
+    required this.tone,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final AppBadgeTone tone;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sem = AppSemanticColors.of(context);
+    final color = switch (tone) {
+      AppBadgeTone.warning => sem.warning,
+      AppBadgeTone.info => sem.info,
+      AppBadgeTone.success => sem.success,
+      AppBadgeTone.danger => sem.danger,
+      _ => theme.colorScheme.primary,
+    };
     return Material(
-      elevation: AppElevation.low,
-      color: theme.colorScheme.surface,
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withValues(alpha: 0.14)
+                : theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: selected ? color : theme.colorScheme.outlineVariant,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? color : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color:
+                      selected ? color : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: AppType.semibold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pinned bottom save bar with a floating-shadow lift and a present count.
+class _SaveFooter extends StatelessWidget {
+  const _SaveFooter({
+    required this.present,
+    required this.total,
+    required this.saving,
+    required this.onSave,
+  });
+
+  final int present;
+  final int total;
+  final bool saving;
+  final Future<void> Function() onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        boxShadow: AppShadows.floating,
+      ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -420,49 +668,22 @@ class _SaveFooter extends StatelessWidget {
             AppSpacing.lg,
             AppSpacing.md,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.xs,
-                children: [
-                  AppBadge(
-                    text: 'Present ${_count(AttendanceStatus.present)}',
-                    tone: AppBadgeTone.success,
-                  ),
-                  AppBadge(
-                    text: 'Late ${_count(AttendanceStatus.late)}',
-                    tone: AppBadgeTone.warning,
-                  ),
-                  AppBadge(
-                    text: 'Excused ${_count(AttendanceStatus.excused)}',
-                    tone: AppBadgeTone.info,
-                  ),
-                  AppBadge(
-                    text: 'Absent ${_count(AttendanceStatus.absent)}',
-                    tone: AppBadgeTone.danger,
-                  ),
-                ],
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: FilledButton.icon(
+              icon: saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: Text(
+                saving ? 'Saving…' : 'Save · $present/$total present',
               ),
-              const SizedBox(height: AppSpacing.md),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton.icon(
-                  icon: saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check),
-                  label: Text(saving ? 'Saving…' : 'Save attendance'),
-                  onPressed: saving ? null : onSave,
-                ),
-              ),
-            ],
+              onPressed: saving ? null : onSave,
+            ),
           ),
         ),
       ),

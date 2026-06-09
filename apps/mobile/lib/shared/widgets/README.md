@@ -17,10 +17,13 @@ Import: `package:playhub/core/design_tokens.dart`
   (`trackingTight -0.5` … `trackingWider 0.8`). The type scale itself lives on
   `Theme.of(context).textTheme`; reach for `AppType` only for a one-off
   weight/tracking tweak.
-- `AppPalette` — `brandPrimary` (vivid violet `#9933FF`) · `brandSecondary`
-  (magenta `#E95FE9`) · `success warning danger info` (+ `*Dark` variants;
-  `success` is green `#22C55E`) · `gray50..gray900` (light surfaces) ·
-  `ink950..ink100` (dark near-black surfaces) · `brandGradient` (violet→magenta sweep)
+- `AppPalette` — **v1 "Sports-Light" (light-only): `brandPrimary` orange
+  `#FF6A2C`** (+ `brandPrimaryDark/Soft/Muted`) · `brandSecondary`/`accent` blue
+  `#1763E0` · `ink` navy `#0F2540` + `inkSoft` · `textPrimary/Secondary/Muted` ·
+  `pageBackground #F4F7FB` / `surface #FFFFFF` / `surfaceAlt` / `borderLight` ·
+  `success warning danger info` · `brandGradient` (orange) · `navyGradient` ·
+  `categorySwatch` (sport accents). `ink950..ink100` dark neutrals are dormant.
+- `AppShadows` — `card` (default soft lift) · `raised` · `floating` (pinned bars).
 - `AppSemanticColors` — **theme-aware** success/warning/danger/info. Read via
   `AppSemanticColors.of(context)`; each tone exposes `<tone>` (fg color),
   `<tone>Container` (bg tint), and `on<Tone>` (text on a filled swatch).

@@ -40,6 +40,7 @@ class PerformanceDetailPage extends ConsumerWidget {
           const SizedBox(height: AppSpacing.xl),
           AppSectionHeader(
             title: 'Skills',
+            icon: Icons.insights_outlined,
             trailing: skillsAsync.maybeWhen(
               data: (skills) => _CountLabel(count: skills.length),
               orElse: () => null,
@@ -57,12 +58,13 @@ class PerformanceDetailPage extends ConsumerWidget {
               if (skills.isEmpty) {
                 return const _InfoCard(text: 'No skills were scored.');
               }
+              // Each skill renders as a labeled 0..10 meter so the spread of
+              // strengths/weaknesses reads at a glance; notes hang below.
               return AppCard(
-                padding: EdgeInsets.zero,
                 child: Column(
                   children: [
                     for (var i = 0; i < skills.length; i++) ...[
-                      if (i > 0) const Divider(height: 1),
+                      if (i > 0) const SizedBox(height: AppSpacing.lg),
                       _SkillRow(skill: skills[i]),
                     ],
                   ],
@@ -224,58 +226,38 @@ class _ScoreCallout extends StatelessWidget {
   }
 }
 
-/// One skill line: name + optional notes on the left, a fixed-shape score
-/// chip on the right so every row has the same height regardless of notes.
+/// One skill line: a labeled 0..10 meter (`AppLabeledProgress`) with the score
+/// as its trailing value, and any coach notes hung beneath in muted text. The
+/// bar takes a deterministic sport-style accent per skill name so the breakdown
+/// reads as a colorful spread rather than a wall of identical bars.
 class _SkillRow extends StatelessWidget {
   const _SkillRow({required this.skill});
   final PerformanceSkill skill;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final notes = skill.notes;
     final hasNotes = notes != null && notes.isNotEmpty;
-    return AppListTile(
-      wrapLeading: false,
-      isThreeLine: hasNotes,
-      title: Text(skill.skillName),
-      subtitle: hasNotes
-          ? Text(
-              notes,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            )
-          : null,
-      trailing: _SkillScoreChip(score: skill.score),
-    );
-  }
-}
-
-/// Compact `n/10` chip pinned to a skill row's trailing edge.
-class _SkillScoreChip extends StatelessWidget {
-  const _SkillScoreChip({required this.score});
-  final int score;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
-      child: Text(
-        '$score/10',
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: AppType.bold,
-          color: scheme.onPrimaryContainer,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppLabeledProgress(
+          label: skill.skillName,
+          value: skill.score / 10,
+          trailing: '${skill.score}/10',
+          color: colorFromName(skill.skillName),
         ),
-      ),
+        if (hasNotes) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            notes,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

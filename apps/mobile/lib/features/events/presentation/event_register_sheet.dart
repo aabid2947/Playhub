@@ -105,7 +105,10 @@ class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
                 ),
                 shrinkWrap: true,
                 children: [
-                  const AppSectionHeader(title: 'Choose a student'),
+                  const AppSectionHeader(
+                    title: 'Choose a student',
+                    icon: Icons.person_search_outlined,
+                  ),
                   AppFormField(
                     controller: _search,
                     hint: 'Search students by name',
@@ -130,7 +133,10 @@ class _EventRegisterSheetState extends ConsumerState<EventRegisterSheet> {
                     onSelected: (id) => setState(() => _studentId = id),
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  const AppSectionHeader(title: 'Notes'),
+                  const AppSectionHeader(
+                    title: 'Notes',
+                    icon: Icons.notes_rounded,
+                  ),
                   AppFormField(
                     controller: _notes,
                     label: 'Category, weight class, etc. (optional)',
@@ -226,6 +232,8 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    // Deterministic accent from the event kind, matching the detail hero.
+    final c = colorFromName(event.kind.label);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
@@ -236,13 +244,26 @@ class _Header extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(Icons.how_to_reg_rounded, color: c, size: 22),
+          ),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Register for ${event.title}',
-                  style: theme.textTheme.titleLarge,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: AppType.bold,
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -332,31 +353,17 @@ class _StudentTile extends StatelessWidget {
   final VoidCallback onTap;
   final ColorScheme scheme;
 
-  String get _initials {
-    final f = student.firstName.isNotEmpty ? student.firstName[0] : '';
-    final l = student.lastName.isNotEmpty ? student.lastName[0] : '';
-    final s = '$f$l'.trim();
-    return s.isEmpty ? '?' : s.toUpperCase();
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppListTile(
       onTap: onTap,
       wrapLeading: false,
-      leading: CircleAvatar(
-        backgroundColor:
-            selected ? scheme.primary : scheme.primaryContainer,
-        foregroundColor:
-            selected ? scheme.onPrimary : scheme.onPrimaryContainer,
-        child: Text(
-          _initials,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: selected
-                    ? scheme.onPrimary
-                    : scheme.onPrimaryContainer,
-              ),
-        ),
+      // A gradient-initials avatar; selection is communicated via the trailing
+      // check rather than recoloring the disc, keeping each student's color.
+      leading: AppAvatar(
+        student.fullName,
+        size: 40,
+        color: selected ? scheme.primary : null,
       ),
       title: Text(student.fullName),
       subtitle: student.parentName.trim().isEmpty

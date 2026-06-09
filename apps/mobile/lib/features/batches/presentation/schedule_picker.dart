@@ -89,15 +89,29 @@ class _SchedulePickerState extends State<SchedulePicker> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final scheme = theme.colorScheme;
     final semantic = AppSemanticColors.of(context);
     final invalidRange = _endBeforeStart;
+
+    // v1 field sub-label: a small navy-ink caption above each control group,
+    // matching the label-above style the form's AppFormFields use.
+    Widget subLabel(String text) => Text(
+          text,
+          style: textTheme.labelSmall?.copyWith(
+            fontWeight: AppType.semibold,
+            color: scheme.onSurfaceVariant,
+          ),
+        );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Days', style: textTheme.titleSmall),
+        subLabel('Days'),
         const SizedBox(height: AppSpacing.sm),
+        // Day chips wrap onto multiple rows on narrow widths. Selected chips
+        // fill with the brand orange (the v1 selected-state for choice chips).
         Wrap(
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,
@@ -120,7 +134,7 @@ class _SchedulePickerState extends State<SchedulePicker> {
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
-        Text('Time', style: textTheme.titleSmall),
+        subLabel('Time'),
         const SizedBox(height: AppSpacing.sm),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +205,6 @@ class _TimeField extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: InputDecorator(
-        isEmpty: false,
         decoration: InputDecoration(
           labelText: label,
           errorText: hasError ? '' : null,

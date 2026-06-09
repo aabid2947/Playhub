@@ -52,185 +52,298 @@ class BatchDetailPage extends ConsumerWidget {
     final canManageFinance = caps.manageFinance;
     final canViewFinance = caps.viewRevenue;
 
+    final atCapacity = _atCapacity();
+    final sportLabel = ref.watch(sportDisplayProvider((sportId: batch.sportId)));
+    final hasSport = sportLabel != '—';
+    // Entity-colored hero: tie the band to the batch's sport (falling back to
+    // the brand orange when the batch has no sport).
+    final accent = hasSport ? colorFromName(sportLabel) : AppPalette.brandPrimary;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(batch.name),
-        actions: [
-          BatchChatButton(batchId: batch.id, compact: true),
-          if (canMarkAttendance)
-            IconButton(
-              icon: const Icon(Icons.fact_check_outlined),
-              tooltip: 'Mark attendance',
-              onPressed: () {
-                final today = DateTime.now();
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute(
-                    builder: (_) => AttendanceMarkingPage(
-                      batch: batch,
-                      date: DateTime(today.year, today.month, today.day),
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          // Sport-colored detail hero: back/chat/edit/more circle buttons, a big
+          // gradient avatar, the batch name + sport sub-line, and status chips.
+          AppGradientHeader(
+            colors: [accent.withValues(alpha: 0.92), accent],
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    AppCircleIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: 'Back',
+                      onTap: () => Navigator.of(context).maybePop(),
                     ),
-                  ),
-                );
-              },
-            ),
-          if (canManageEnroll)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Edit batch',
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => BatchFormPage(existing: batch),
+                    const Spacer(),
+                    _HeroChatButton(batchId: batch.id),
+                    if (canMarkAttendance) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      AppCircleIconButton(
+                        icon: Icons.fact_check_outlined,
+                        tooltip: 'Mark attendance',
+                        onTap: () {
+                          final today = DateTime.now();
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => AttendanceMarkingPage(
+                                batch: batch,
+                                date: DateTime(
+                                  today.year,
+                                  today.month,
+                                  today.day,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    if (canManageEnroll) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      AppCircleIconButton(
+                        icon: Icons.edit_outlined,
+                        tooltip: 'Edit batch',
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => BatchFormPage(existing: batch),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      _HeroMoreButton(
+                        onSelected: (v) => _confirmSetActive(
+                          context,
+                          ref,
+                          makeActive: v == 'restore',
+                        ),
+                        isActive: batch.isActive,
+                      ),
+                    ],
+                  ],
                 ),
-              ),
-            ),
-          if (canManageEnroll)
-            PopupMenuButton<String>(
-              tooltip: 'More',
-              onSelected: (v) =>
-                  _confirmSetActive(context, ref, makeActive: v == 'restore'),
-              itemBuilder: (_) => [
-                PopupMenuItem<String>(
-                  value: batch.isActive ? 'archive' : 'restore',
-                  child: Text(batch.isActive ? 'Archive batch' : 'Restore batch'),
+                const SizedBox(height: AppSpacing.md),
+                AppAvatar(batch.name, size: 78, color: Colors.white),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  batch.name,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(color: Colors.white),
+                ),
+                if (hasSport) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    sportLabel,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                  ),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    AppGlassChip(
+                      batch.isActive ? 'Active' : 'Archived',
+                      icon: batch.isActive
+                          ? Icons.verified_rounded
+                          : Icons.archive_outlined,
+                    ),
+                    if (batch.capacity != null)
+                      AppGlassChip(
+                        atCapacity ? 'At capacity' : 'Spots open',
+                        icon: atCapacity
+                            ? Icons.event_busy_outlined
+                            : Icons.event_available_outlined,
+                      ),
+                    if (batch.skillLevel != null)
+                      AppGlassChip(
+                        batch.skillLevel!,
+                        icon: Icons.bar_chart_outlined,
+                      ),
+                  ],
                 ),
               ],
             ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        children: [
-          _HeaderCard(batch: batch, atCapacity: _atCapacity()),
-          const SizedBox(height: AppSpacing.lg),
-          if (canViewFinance) ...[
-            BatchFeesSection(batchId: batch.id, canManage: canManageFinance),
-            const SizedBox(height: AppSpacing.lg),
-            BatchDiscountsSection(
-              batchId: batch.id,
-              canManage: canManageFinance,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-          AppSectionHeader(
-            title: 'Enrolment',
-            trailing: canManageEnroll
-                ? _EnrollAction(
-                    atCapacity: _atCapacity(),
-                    onPressed: () async {
-                      final students = studentsAsync.valueOrNull ?? const [];
-                      final enrolled = enrollmentsAsync.valueOrNull ?? const [];
-                      final activeIds = enrolled
-                          .where((e) => e.status != 'withdrawn')
-                          .map((e) => e.studentId)
-                          .toSet();
-                      final candidates = students
-                          .where((s) => !activeIds.contains(s.id))
-                          .toList();
-                      await _showEnrollSheet(
-                        context,
-                        ref,
-                        candidates,
-                        waitlist: _atCapacity(),
-                      );
-                    },
-                  )
-                : null,
           ),
-          enrollmentsAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-              child: AppLoading(),
-            ),
-            error: (e, _) => AppErrorView(
-              message: friendlyError(e),
-              onRetry: () =>
-                  ref.invalidate(batchEnrollmentsProvider(batch.id)),
-            ),
-            data: (enrollments) {
-              if (enrollments.isEmpty) {
-                return AppEmptyState(
-                  icon: Icons.group_outlined,
-                  title: 'No students enrolled yet',
-                  subtitle: canManageEnroll
-                      ? 'Use Enrol to add the first student to this batch.'
-                      : 'Students enrolled in this batch will appear here.',
-                );
-              }
-              final byId = {
-                for (final s
-                    in (studentsAsync.valueOrNull ?? const <Student>[]))
-                  s.id: s,
-              };
-              final active =
-                  enrollments.where((e) => e.status == 'active').toList();
-              final waitlisted = enrollments
-                  .where((e) => e.status == 'waitlisted')
-                  .toList();
-              final withdrawn = enrollments
-                  .where((e) => e.status == 'withdrawn')
-                  .toList();
-
-              return Column(
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (active.isNotEmpty)
-                    _EnrollmentSection(
-                      title: 'Active',
-                      tone: AppBadgeTone.success,
-                      enrollments: active,
-                      byStudent: byId,
-                      onWithdraw: canManageEnroll
-                          ? (e) async {
-                              await withdrawEnrollment(
-                                ref,
-                                enrollmentId: e.id,
-                                batchId: batch.id,
-                              );
-                            }
-                          : null,
-                      onTransfer: canManageEnroll
-                          ? (e) => _showTransferSheet(context, ref, e)
-                          : null,
+                  // Floating 3-up mini-stat row overlapping the band.
+                  _MiniStatRow(batch: batch, accent: accent),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // Capacity meter + scannable batch facts.
+                  const AppSectionHeader(
+                    title: 'Overview',
+                    icon: Icons.info_outline,
+                  ),
+                  _OverviewCard(
+                    batch: batch,
+                    atCapacity: atCapacity,
+                    accent: accent,
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // Finance: view for any revenue-capable role; write only when
+                  // canManageFinance (admin) — center_admin is view-only.
+                  if (canViewFinance) ...[
+                    BatchFeesSection(
+                      batchId: batch.id,
+                      canManage: canManageFinance,
                     ),
-                  if (waitlisted.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.lg),
-                    _EnrollmentSection(
-                      title: 'Waitlist',
-                      tone: AppBadgeTone.warning,
-                      enrollments: waitlisted,
-                      byStudent: byId,
-                      onWithdraw: canManageEnroll
-                          ? (e) async {
-                              await withdrawEnrollment(
+                    BatchDiscountsSection(
+                      batchId: batch.id,
+                      canManage: canManageFinance,
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
+
+                  // Enrolment, grouped by status (one reusable section per
+                  // group, each with a count sub-header).
+                  AppSectionHeader(
+                    title: 'Enrolment',
+                    icon: Icons.groups_outlined,
+                    trailing: canManageEnroll
+                        ? _EnrollAction(
+                            atCapacity: atCapacity,
+                            onPressed: () async {
+                              final students =
+                                  studentsAsync.valueOrNull ?? const [];
+                              final enrolled =
+                                  enrollmentsAsync.valueOrNull ?? const [];
+                              final activeIds = enrolled
+                                  .where((e) => e.status != 'withdrawn')
+                                  .map((e) => e.studentId)
+                                  .toSet();
+                              final candidates = students
+                                  .where((s) => !activeIds.contains(s.id))
+                                  .toList();
+                              await _showEnrollSheet(
+                                context,
                                 ref,
-                                enrollmentId: e.id,
-                                batchId: batch.id,
-                              );
-                            }
-                          : null,
-                      onPromote: (!canManageEnroll || _atCapacity())
-                          ? null
-                          : (e) async {
-                              await promoteEnrollment(
-                                ref,
-                                enrollmentId: e.id,
-                                batchId: batch.id,
+                                candidates,
+                                waitlist: atCapacity,
                               );
                             },
+                          )
+                        : null,
+                  ),
+                  enrollmentsAsync.when(
+                    loading: () => const Padding(
+                      padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                      child: AppLoading(),
                     ),
-                  ],
-                  if (withdrawn.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    _EnrollmentSection(
-                      title: 'Withdrawn',
-                      tone: AppBadgeTone.neutral,
-                      enrollments: withdrawn,
-                      byStudent: byId,
+                    error: (e, _) => AppErrorView(
+                      message: friendlyError(e),
+                      onRetry: () =>
+                          ref.invalidate(batchEnrollmentsProvider(batch.id)),
                     ),
-                  ],
+                    data: (enrollments) {
+                      if (enrollments.isEmpty) {
+                        return AppEmptyState(
+                          icon: Icons.group_outlined,
+                          title: 'No students enrolled yet',
+                          subtitle: canManageEnroll
+                              ? 'Use Enrol to add the first student to this '
+                                  'batch.'
+                              : 'Students enrolled in this batch will appear '
+                                  'here.',
+                        );
+                      }
+                      final byId = {
+                        for (final s
+                            in (studentsAsync.valueOrNull ?? const <Student>[]))
+                          s.id: s,
+                      };
+                      final active = enrollments
+                          .where((e) => e.status == 'active')
+                          .toList();
+                      final waitlisted = enrollments
+                          .where((e) => e.status == 'waitlisted')
+                          .toList();
+                      final withdrawn = enrollments
+                          .where((e) => e.status == 'withdrawn')
+                          .toList();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (active.isNotEmpty)
+                            _EnrollmentSection(
+                              title: 'Active',
+                              tone: AppBadgeTone.success,
+                              enrollments: active,
+                              byStudent: byId,
+                              onWithdraw: canManageEnroll
+                                  ? (e) async {
+                                      await withdrawEnrollment(
+                                        ref,
+                                        enrollmentId: e.id,
+                                        batchId: batch.id,
+                                      );
+                                    }
+                                  : null,
+                              onTransfer: canManageEnroll
+                                  ? (e) => _showTransferSheet(context, ref, e)
+                                  : null,
+                            ),
+                          if (waitlisted.isNotEmpty) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            _EnrollmentSection(
+                              title: 'Waitlist',
+                              tone: AppBadgeTone.warning,
+                              enrollments: waitlisted,
+                              byStudent: byId,
+                              onWithdraw: canManageEnroll
+                                  ? (e) async {
+                                      await withdrawEnrollment(
+                                        ref,
+                                        enrollmentId: e.id,
+                                        batchId: batch.id,
+                                      );
+                                    }
+                                  : null,
+                              onPromote: (!canManageEnroll || atCapacity)
+                                  ? null
+                                  : (e) async {
+                                      await promoteEnrollment(
+                                        ref,
+                                        enrollmentId: e.id,
+                                        batchId: batch.id,
+                                      );
+                                    },
+                            ),
+                          ],
+                          if (withdrawn.isNotEmpty) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            _EnrollmentSection(
+                              title: 'Withdrawn',
+                              tone: AppBadgeTone.neutral,
+                              enrollments: withdrawn,
+                              byStudent: byId,
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
                 ],
-              );
-            },
+              ),
+            ),
           ),
         ],
       ),
@@ -265,7 +378,10 @@ class BatchDetailPage extends ConsumerWidget {
         ..invalidate(batchesProvider)
         ..invalidate(myBatchesProvider);
       if (!context.mounted) return;
-      AppSnackbar.success(context, makeActive ? 'Batch restored.' : 'Batch archived.');
+      AppSnackbar.success(
+        context,
+        makeActive ? 'Batch restored.' : 'Batch archived.',
+      );
       Navigator.of(context).pop();
     } on Object catch (e) {
       if (context.mounted) AppSnackbar.error(context, friendlyError(e));
@@ -298,7 +414,7 @@ class BatchDetailPage extends ConsumerWidget {
             final cap = b.capacity;
             final atCap = cap != null && b.enrolledCount >= cap;
             return AppListTile(
-              leading: const Icon(Icons.groups_outlined),
+              leading: AppAvatar(b.name, size: 40),
               title: Text(b.name),
               subtitle: Text(
                 atCap
@@ -351,7 +467,7 @@ class BatchDetailPage extends ConsumerWidget {
           itemBuilder: (_, i) {
             final s = candidates[i];
             return AppListTile(
-              leading: const Icon(Icons.person_outline),
+              leading: AppAvatar(s.fullName, size: 40),
               title: Text(s.fullName),
               subtitle: Text(s.parentName),
               trailing: Icon(waitlist ? Icons.queue_outlined : Icons.add),
@@ -372,41 +488,193 @@ class BatchDetailPage extends ConsumerWidget {
   }
 }
 
-/// Identity + scannable facts header for the batch (§3.2).
-class _HeaderCard extends StatelessWidget {
-  const _HeaderCard({required this.batch, required this.atCapacity});
+/// Batch chat opened from the hero — wraps [BatchChatButton] (which is a plain
+/// IconButton in compact mode) in a frosted circle so it reads as a hero action.
+class _HeroChatButton extends StatelessWidget {
+  const _HeroChatButton({required this.batchId});
+
+  final String batchId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        shape: BoxShape.circle,
+      ),
+      child: IconTheme(
+        data: const IconThemeData(color: Colors.white, size: 22),
+        child: BatchChatButton(batchId: batchId, compact: true),
+      ),
+    );
+  }
+}
+
+/// The hero "more" (archive/restore) action — a frosted circle wrapping the
+/// archive popup so it matches the other hero circle buttons.
+class _HeroMoreButton extends StatelessWidget {
+  const _HeroMoreButton({
+    required this.onSelected,
+    required this.isActive,
+  });
+
+  final ValueChanged<String> onSelected;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        shape: BoxShape.circle,
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'More',
+        icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
+        onSelected: onSelected,
+        itemBuilder: (_) => [
+          PopupMenuItem<String>(
+            value: isActive ? 'archive' : 'restore',
+            child: Text(isActive ? 'Archive batch' : 'Restore batch'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Floating 3-up mini-stat row that overlaps the hero band — enrolled count,
+/// capacity (or "Open" when uncapped), and sessions per week from the schedule.
+class _MiniStatRow extends StatelessWidget {
+  const _MiniStatRow({required this.batch, required this.accent});
 
   final Batch batch;
-  final bool atCapacity;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final cap = batch.capacity;
+    final perWeek = batch.schedule.days.length;
+    final semantics = AppSemanticColors.of(context);
+    final atCapacity = cap != null && batch.enrolledCount >= cap;
+    return Row(
+      children: [
+        Expanded(
+          child: _MiniStat(
+            value: '${batch.enrolledCount}',
+            label: 'Enrolled',
+            icon: Icons.groups_rounded,
+            tint: accent,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            value: cap != null ? '$cap' : '∞',
+            label: 'Capacity',
+            icon: Icons.event_seat_rounded,
+            tint: atCapacity ? semantics.warning : AppPalette.accent,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            value: '$perWeek',
+            label: perWeek == 1 ? 'Day / wk' : 'Days / wk',
+            icon: Icons.calendar_today_rounded,
+            tint: AppPalette.brandPrimary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A single floating mini-stat tile — a tinted icon, a heavy value, and a muted
+/// label, on a soft-shadowed card so it lifts over the hero band.
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.tint,
+  });
+
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color tint;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.md,
+        horizontal: AppSpacing.sm,
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: tint, size: 22),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: tint,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Overview card: a capacity meter (when capped) plus scannable batch facts
+/// (schedule, sport, age group, skill level) and an optional description.
+class _OverviewCard extends StatelessWidget {
+  const _OverviewCard({
+    required this.batch,
+    required this.atCapacity,
+    required this.accent,
+  });
+
+  final Batch batch;
+  final bool atCapacity;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final semantics = AppSemanticColors.of(context);
     final cap = batch.capacity;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              AppBadge(
-                text: batch.isActive ? 'Active' : 'Archived',
-                tone: batch.isActive
-                    ? AppBadgeTone.success
-                    : AppBadgeTone.neutral,
-              ),
-              if (cap != null)
-                AppBadge(
-                  text: atCapacity ? 'At capacity' : 'Spots open',
-                  tone: atCapacity
-                      ? AppBadgeTone.warning
-                      : AppBadgeTone.brand,
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
+          if (cap != null) ...[
+            AppLabeledProgress(
+              label: 'Capacity',
+              value: cap == 0 ? 0 : batch.enrolledCount / cap,
+              trailing: '${batch.enrolledCount} / $cap',
+              color: atCapacity ? semantics.warning : accent,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
           _FactRow(
             icon: Icons.schedule_outlined,
             label: 'Schedule',
@@ -414,9 +682,9 @@ class _HeaderCard extends StatelessWidget {
           ),
           Consumer(
             builder: (_, ref, __) {
-              final sportLabel = ref.watch(sportDisplayProvider((
-                sportId: batch.sportId,
-              )));
+              final sportLabel = ref.watch(
+                sportDisplayProvider((sportId: batch.sportId)),
+              );
               if (sportLabel == '—') return const SizedBox.shrink();
               return _FactRow(
                 icon: Icons.sports_outlined,
@@ -437,13 +705,6 @@ class _HeaderCard extends StatelessWidget {
               label: 'Skill level',
               value: batch.skillLevel!,
             ),
-          _FactRow(
-            icon: Icons.groups_outlined,
-            label: 'Enrolled',
-            value: cap != null
-                ? '${batch.enrolledCount} of $cap'
-                : '${batch.enrolledCount}',
-          ),
           if (batch.description != null &&
               batch.description!.trim().isNotEmpty) ...[
             const Divider(height: AppSpacing.xl),
@@ -460,7 +721,7 @@ class _HeaderCard extends StatelessWidget {
   }
 }
 
-/// One labeled icon + value fact line for the header card.
+/// One labeled icon + value fact line for the overview card.
 class _FactRow extends StatelessWidget {
   const _FactRow({
     required this.icon,
@@ -560,7 +821,11 @@ class _EnrollmentSection extends StatelessWidget {
             children: [
               for (final e in enrollments)
                 AppListTile(
-                  leading: const Icon(Icons.person_outline),
+                  wrapLeading: false,
+                  leading: AppAvatar(
+                    byStudent[e.studentId]?.fullName ?? '?',
+                    size: 40,
+                  ),
                   title: Text(
                     byStudent[e.studentId]?.fullName ?? '(unknown student)',
                   ),

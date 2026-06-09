@@ -13,6 +13,8 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// Local active/inactive filter for the coaches list. `null` = all.
 enum _CoachStatusFilter { all, active, inactive }
 
+/// Body tab under `owner_home_shell`'s single AppBar — stays app-bar-less with
+/// an in-body header row instead (archetype B). v1 "Sports-Light" list.
 class CoachesTab extends ConsumerStatefulWidget {
   const CoachesTab({super.key});
 
@@ -72,14 +74,21 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
     final coachesAsync = ref.watch(coachesProvider);
     final caps = ref.watch(capabilitiesProvider);
 
+    // Header count reflects the filtered view (null until data lands).
+    final loaded = coachesAsync.valueOrNull;
+    final headerCount = loaded == null ? null : _filter(loaded).length;
+
     return Scaffold(
       body: Column(
         children: [
           _FilterBar(
             controller: _search,
             status: _status,
+            count: headerCount,
             onSearch: () => setState(() {}),
             onStatusChanged: (v) => setState(() => _status = v),
+            // Bulk import creates NEW coaches — onboarding, so it follows the
+            // same gate as the New-coach FAB. RLS rejects it regardless.
             onImport: caps.manageCoaches ? _openImport : null,
           ),
           Expanded(
@@ -104,19 +113,19 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(coachesProvider),
                   child: ListView.separated(
-                    itemCount: results.length + 1,
-                    separatorBuilder: (_, i) => i == 0
-                        ? const SizedBox.shrink()
-                        : const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      if (i == 0) {
-                        return _ResultCount(count: results.length);
-                      }
-                      return _CoachTile(
-                        coach: results[i - 1],
-                        onTap: () => _openForm(existing: results[i - 1]),
-                      );
-                    },
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.xxl,
+                    ),
+                    itemCount: results.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.md),
+                    itemBuilder: (context, i) => _CoachTile(
+                      coach: results[i],
+                      onTap: () => _openForm(existing: results[i]),
+                    ),
                   ),
                 );
               },
@@ -136,13 +145,14 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
   }
 }
 
-/// The single, unified filter block: a search field with an inline status
-/// menu and the secondary CSV-import action, so the list's controls read as
-/// one coherent surface rather than orphaned buttons.
+/// In-body header (no AppBar here — this is a shell body tab): a navy
+/// `headlineSmall` title with a live count badge, the search field, then a
+/// segmented status pill bar — one coherent control surface, v1-style.
 class _FilterBar extends StatelessWidget {
   const _FilterBar({
     required this.controller,
     required this.status,
+    required this.count,
     required this.onSearch,
     required this.onStatusChanged,
     required this.onImport,
@@ -150,80 +160,75 @@ class _FilterBar extends StatelessWidget {
 
   final TextEditingController controller;
   final _CoachStatusFilter status;
+  // Live count of the filtered results, shown in the header badge.
+  final int? count;
   final VoidCallback onSearch;
   final ValueChanged<_CoachStatusFilter> onStatusChanged;
+  // Null hides the CSV-import action (roles that can't manage coaches).
   final VoidCallback? onImport;
+
+  static const _tabs = ['All', 'Active', 'Inactive'];
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
 
     return Material(
-      color: scheme.surface,
+      color: theme.colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
           AppSpacing.sm,
-          AppSpacing.md,
-          AppSpacing.xs,
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                controller: controller,
-                onSubmitted: (_) => onSearch(),
-                onChanged: (_) => onSearch(),
-                decoration: InputDecoration(
-                  hintText: 'Search name, specialization…',
-                  prefixIcon: const Icon(Icons.search),
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  suffixIcon: controller.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          icon: const Icon(Icons.close),
-                          onPressed: () {
-                            controller.clear();
-                            onSearch();
-                          },
-                        ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            PopupMenuButton<_CoachStatusFilter>(
-              tooltip: 'Filter status',
-              icon: Icon(
-                Icons.filter_list,
-                color: status == _CoachStatusFilter.all
-                    ? scheme.onSurfaceVariant
-                    : scheme.primary,
-              ),
-              initialValue: status,
-              onSelected: onStatusChanged,
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: _CoachStatusFilter.all,
-                  child: Text('All'),
-                ),
-                PopupMenuItem(
-                  value: _CoachStatusFilter.active,
-                  child: Text('Active'),
-                ),
-                PopupMenuItem(
-                  value: _CoachStatusFilter.inactive,
-                  child: Text('Inactive'),
-                ),
+            Row(
+              children: [
+                Text('Coaches', style: theme.textTheme.headlineSmall),
+                const SizedBox(width: AppSpacing.sm),
+                if (count != null)
+                  AppBadge(text: '$count', tone: AppBadgeTone.brand),
+                const Spacer(),
+                if (onImport != null)
+                  IconButton(
+                    tooltip: 'Import CSV',
+                    icon: const Icon(Icons.upload_file_outlined),
+                    onPressed: onImport,
+                  ),
               ],
             ),
-            if (onImport != null)
-              IconButton(
-                tooltip: 'Import CSV',
-                icon: const Icon(Icons.upload_file_outlined),
-                onPressed: onImport,
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: controller,
+              onSubmitted: (_) => onSearch(),
+              onChanged: (_) => onSearch(),
+              decoration: InputDecoration(
+                hintText: 'Search name, specialization…',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          controller.clear();
+                          onSearch();
+                        },
+                      ),
               ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppPillTabs(
+              tabs: _tabs,
+              index: status.index,
+              onChanged: (i) =>
+                  onStatusChanged(_CoachStatusFilter.values[i]),
+            ),
           ],
         ),
       ),
@@ -231,31 +236,9 @@ class _FilterBar extends StatelessWidget {
   }
 }
 
-/// Visible result count above the list, e.g. "12 coaches".
-class _ResultCount extends StatelessWidget {
-  const _ResultCount({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.xs,
-      ),
-      child: Text(
-        count == 1 ? '1 coach' : '$count coaches',
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
+/// A coach row as a soft-shadow [AppCard]: photo (or gradient-initials)
+/// avatar → name → one tight fact line (specialization • experience) →
+/// trailing active/inactive [AppBadge].
 class _CoachTile extends StatelessWidget {
   const _CoachTile({required this.coach, required this.onTap});
   final Coach coach;
@@ -263,6 +246,7 @@ class _CoachTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final initials =
         (coach.firstName.isNotEmpty ? coach.firstName[0] : '?') +
             (coach.lastName.isNotEmpty ? coach.lastName[0] : '');
@@ -272,17 +256,43 @@ class _CoachTile extends StatelessWidget {
       if (coach.specialization.isNotEmpty) coach.specialization.first,
       if (coach.experienceYears != null) '${coach.experienceYears} yrs',
     ];
-    return AppListTile(
-      wrapLeading: false,
-      leading: AvatarView(url: coach.photo, fallbackInitials: initials),
-      title: Text(coach.fullName),
-      subtitle: Text(
-        facts.isEmpty ? 'Coach' : facts.join(' • '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: _StatusBadge(isActive: coach.isActive),
+    final hasPhoto = coach.photo != null && coach.photo!.isNotEmpty;
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       onTap: onTap,
+      child: Row(
+        children: [
+          if (hasPhoto)
+            AvatarView(url: coach.photo, fallbackInitials: initials)
+          else
+            AppAvatar(coach.fullName),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  coach.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  facts.isEmpty ? 'Coach' : facts.join(' • '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          _StatusBadge(isActive: coach.isActive),
+        ],
+      ),
     );
   }
 }

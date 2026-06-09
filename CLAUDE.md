@@ -223,6 +223,23 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-09 — BRAND RE-SKIN: violet → orange + navy, LIGHT-ONLY (v1, reverses 2026-06-06)
+Client approved the **`ui_demo/v1` "Sports-Light"** concept, so the locked-violet
+theme is **reversed**: brand is now **orange `#FF6A2C` + navy ink `#0F2540`**
+(accent blue `#1763E0`), and the app ships **light only** (`main.dart`
+`themeMode: ThemeMode.light`; dark theme retained but dormant). Source of truth =
+[colors.ts](colors.ts) + [design_tokens.dart](apps/mobile/lib/core/design_tokens.dart)
+(`AppPalette` repaletted + new `AppShadows`) + [theme.dart](apps/mobile/lib/core/theme.dart).
+**Any prose saying "violet / both themes ship" is now stale** (SKILLS.md, REVAMP.md,
+shared/widgets/README.md updated; older change-log entries below are historical).
+New v1 shared widgets: `AppGradientHeader` (+`AppHeroStatRow`/`AppGlassChip`/`AppCircleIconButton`),
+`AppFeatureCard`, `AppPillTabs`, `AppAvatar`, `AppLabeledProgress`, `AppMiniBarChart`,
+`ui_helpers.dart`; upgraded `AppCard` (soft shadow), `AppStatTile` (trendUp), `AppBadge` (icon),
+`AppSectionHeader` (icon/action, mixed-case). **Authoritative plan: [UI_REVAMP_V1.md](UI_REVAMP_V1.md)**;
+worklist [UI_REVAMP_V1_BY_ROLE.md](UI_REVAMP_V1_BY_ROLE.md). Rollout: Phase 0 (tokens/theme/widgets)
+done + **center_admin** surface in progress; other roles follow. `flutter analyze` not yet run
+(standing preference — large reskin; recommend running it).
+
 ### 2026-06-08 — super-admin module completed in the app (per PLAN.md v1)
 PLAN.md scopes the super-admin module to the **mobile app** (v1, line 374); the
 web-admin is the **v2.0 desktop power-tool**. Completed the app's

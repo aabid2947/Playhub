@@ -44,22 +44,25 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
     final studentsAsync = ref.watch(studentsProvider);
     final caps = ref.watch(capabilitiesProvider);
 
+    // Bulk import creates NEW students — onboarding, so hide it for roles that
+    // can't create (e.g. coaches, who only edit their own batch students). RLS
+    // rejects it regardless.
+    final onImport = caps.createStudents
+        ? () => Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const StudentBulkImportPage()),
+            )
+        : null;
+
     return Scaffold(
+      // Body tab under owner_home_shell's single AppBar — no AppBar here; the
+      // in-body header row stands in for it.
       body: Column(
         children: [
           _FilterBar(
             controller: _search,
             onSearch: _applySearch,
-            // Bulk import creates NEW students — onboarding, so hide it for
-            // roles that can't create (e.g. coaches, who only edit their own
-            // batch students). RLS rejects it regardless.
-            onImport: caps.createStudents
-                ? () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => const StudentBulkImportPage(),
-                      ),
-                    )
-                : null,
+            count: studentsAsync.valueOrNull?.length,
+            onImport: onImport,
           ),
           Expanded(
             child: studentsAsync.when(
@@ -75,18 +78,20 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(studentsProvider),
                   child: ListView.separated(
-                    itemCount: students.length + 1,
-                    separatorBuilder: (_, i) =>
-                        i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      if (i == 0) {
-                        return _ResultCount(count: students.length);
-                      }
-                      return _StudentTile(
-                        student: students[i - 1],
-                        onTap: () => _openForm(existing: students[i - 1]),
-                      );
-                    },
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      // Leave room so the last tile clears the FAB.
+                      AppSpacing.xxl + AppSpacing.xl,
+                    ),
+                    itemCount: students.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.sm),
+                    itemBuilder: (context, i) => _StudentTile(
+                      student: students[i],
+                      onTap: () => _openForm(existing: students[i]),
+                    ),
                   ),
                 );
               },
@@ -106,25 +111,32 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
   }
 }
 
-/// The single, unified filter block: a search field with an inline status
-/// menu, then the sport chip bar in the same coherent surface so the two
-/// filters never read as orphaned controls.
+/// The in-body list header: a navy title with a live count badge (the tab has
+/// no AppBar), the search field with an inline status filter + CSV import, and
+/// the sport chip bar — one coherent surface so the filters never read as
+/// orphaned controls.
 class _FilterBar extends ConsumerWidget {
   const _FilterBar({
     required this.controller,
     required this.onSearch,
+    required this.count,
     required this.onImport,
   });
 
   final TextEditingController controller;
   final VoidCallback onSearch;
+
+  /// Live result count for the header badge; null while loading.
+  final int? count;
+
   // Null hides the CSV-import action (roles that can't create students).
   final VoidCallback? onImport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final filter = ref.watch(studentsFilterProvider);
-    final scheme = Theme.of(context).colorScheme;
 
     return Material(
       color: scheme.surface,
@@ -133,63 +145,89 @@ class _FilterBar extends ConsumerWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
               AppSpacing.md,
-              AppSpacing.sm,
-              AppSpacing.md,
+              AppSpacing.lg,
               AppSpacing.xs,
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    onSubmitted: (_) => onSearch(),
-                    decoration: InputDecoration(
-                      hintText: 'Search name, parent…',
-                      prefixIcon: const Icon(Icons.search),
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: controller.text.isEmpty
-                          ? null
-                          : IconButton(
-                              tooltip: 'Clear search',
-                              icon: const Icon(Icons.close),
-                              onPressed: () {
-                                controller.clear();
-                                onSearch();
-                              },
-                            ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                PopupMenuButton<String?>(
-                  tooltip: 'Filter status',
-                  icon: Icon(
-                    Icons.filter_list,
-                    color: filter.status == null
-                        ? scheme.onSurfaceVariant
-                        : scheme.primary,
-                  ),
-                  initialValue: filter.status,
-                  onSelected: (v) {
-                    ref.read(studentsFilterProvider.notifier).state =
-                        filter.copyWith(status: v);
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem<String?>(child: Text('All')),
-                    PopupMenuItem(value: 'active', child: Text('Active')),
-                    PopupMenuItem(value: 'paused', child: Text('Paused')),
-                    PopupMenuItem(value: 'inactive', child: Text('Inactive')),
-                    PopupMenuItem(value: 'graduated', child: Text('Graduated')),
+                // Title + live count.
+                Row(
+                  children: [
+                    Text('Students', style: theme.textTheme.headlineSmall),
+                    const SizedBox(width: AppSpacing.sm),
+                    if (count != null)
+                      AppBadge(
+                        text: count == 1 ? '1 total' : '$count total',
+                        tone: AppBadgeTone.brand,
+                      ),
+                    const Spacer(),
+                    if (onImport != null)
+                      IconButton(
+                        tooltip: 'Import CSV',
+                        icon: const Icon(Icons.upload_file_outlined),
+                        onPressed: onImport,
+                      ),
                   ],
                 ),
-                if (onImport != null)
-                  IconButton(
-                    tooltip: 'Import CSV',
-                    icon: const Icon(Icons.upload_file_outlined),
-                    onPressed: onImport,
-                  ),
+                const SizedBox(height: AppSpacing.md),
+                // Search with an inline status filter.
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        onSubmitted: (_) => onSearch(),
+                        decoration: InputDecoration(
+                          hintText: 'Search name, parent…',
+                          prefixIcon: const Icon(Icons.search),
+                          border: const OutlineInputBorder(),
+                          isDense: true,
+                          suffixIcon: controller.text.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Clear search',
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () {
+                                    controller.clear();
+                                    onSearch();
+                                  },
+                                ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    PopupMenuButton<String?>(
+                      tooltip: 'Filter status',
+                      icon: Icon(
+                        Icons.filter_list,
+                        color: filter.status == null
+                            ? scheme.onSurfaceVariant
+                            : scheme.primary,
+                      ),
+                      initialValue: filter.status,
+                      onSelected: (v) {
+                        ref.read(studentsFilterProvider.notifier).state =
+                            filter.copyWith(status: v);
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem<String?>(child: Text('All')),
+                        PopupMenuItem(value: 'active', child: Text('Active')),
+                        PopupMenuItem(value: 'paused', child: Text('Paused')),
+                        PopupMenuItem(
+                          value: 'inactive',
+                          child: Text('Inactive'),
+                        ),
+                        PopupMenuItem(
+                          value: 'graduated',
+                          child: Text('Graduated'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -207,31 +245,8 @@ class _FilterBar extends ConsumerWidget {
   }
 }
 
-/// Visible result count above the list, e.g. "12 students".
-class _ResultCount extends StatelessWidget {
-  const _ResultCount({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.xs,
-      ),
-      child: Text(
-        count == 1 ? '1 student' : '$count students',
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
+/// A people-list row in the v1 list archetype: a card with a gradient (or
+/// photo) avatar → name + sport·parent subtitle → trailing status badges.
 class _StudentTile extends ConsumerWidget {
   const _StudentTile({required this.student, required this.onTap});
   final Student student;
@@ -239,38 +254,85 @@ class _StudentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final initials =
         (student.firstName.isNotEmpty ? student.firstName[0] : '?') +
             (student.lastName.isNotEmpty ? student.lastName[0] : '');
     final sportLabel = ref.watch(
       sportDisplayProvider((sportId: student.sportId)),
     );
-    // Two facts that matter on a people list: sport and the parent it maps to.
-    // Skill level lives on the detail page so the subtitle stays one tight line.
-    final facts = <String>[
-      if (sportLabel != '—') sportLabel,
-      'Parent: ${student.parentName}',
-    ];
-    return AppListTile(
-      wrapLeading: false,
-      leading: AvatarView(url: student.photo, fallbackInitials: initials),
-      title: Text(student.fullName),
-      subtitle: Text(
-        facts.join(' • '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+    final hasSport = sportLabel != '—';
+    final sportColor = colorFromName(sportLabel);
+
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      onTap: onTap,
+      child: Row(
         children: [
-          if (student.feeOverdue) ...[
-            const AppBadge(text: 'Unpaid', tone: AppBadgeTone.danger),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          _StatusBadge(status: student.status),
+          // Photo when set, otherwise the deterministic gradient-initials disc.
+          if (student.photo != null && student.photo!.isNotEmpty)
+            AvatarView(
+              url: student.photo,
+              fallbackInitials: initials,
+              radius: 24,
+            )
+          else
+            AppAvatar(student.fullName, size: 48),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  student.fullName,
+                  style: theme.textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                // Two facts that matter on a people list: sport (with its
+                // colored glyph) and the parent it maps to. Skill level lives
+                // on the detail page so the subtitle stays one tight line.
+                Row(
+                  children: [
+                    if (hasSport) ...[
+                      Icon(
+                        sportIcon(sportLabel),
+                        size: 14,
+                        color: sportColor,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        hasSport
+                            ? '$sportLabel · ${student.parentName}'
+                            : 'Parent: ${student.parentName}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _StatusBadge(status: student.status),
+              if (student.feeOverdue) ...[
+                const SizedBox(height: 6),
+                const AppBadge(text: 'Unpaid', tone: AppBadgeTone.danger),
+              ],
+            ],
+          ),
         ],
       ),
-      onTap: onTap,
     );
   }
 }

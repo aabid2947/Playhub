@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
@@ -7,10 +6,14 @@ import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Self-service profile editor available to every signed-in user.
-/// Edits name + phone on the `users` row and uploads an avatar into
-/// `avatars/<academy_id>/users/<own_id>/`. Email is read-only here (changing
-/// it goes through Supabase Auth, not this page).
+/// Self-service profile editor available to every signed-in user — v1
+/// "Sports-Light". Edits name + phone on the `users` row and uploads an avatar
+/// into `avatars/<academy_id>/users/<own_id>/`. Email is read-only here
+/// (changing it goes through Supabase Auth, not this page).
+///
+/// Pushed page rendered with a navy hero instead of an app bar: a compact
+/// identity band (avatar + name + role chip + a hero back button), an editable
+/// "Your details" section, and a read-only "Account" section.
 class ProfilePage extends ConsumerStatefulWidget {
   const ProfilePage({super.key});
 
@@ -94,97 +97,176 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   Widget build(BuildContext context) {
     final async = ref.watch(currentProfileProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
       body: async.when(
         loading: () => const AppLoading(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(currentProfileProvider),
+        error: (e, _) => SafeArea(
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(currentProfileProvider),
+          ),
         ),
         data: (profile) {
           if (profile == null) {
-            return const AppEmptyState(
-              icon: Icons.person_off_outlined,
-              title: 'Not signed in',
-              subtitle: 'Sign in to view and edit your profile.',
+            return const SafeArea(
+              child: AppEmptyState(
+                icon: Icons.person_off_outlined,
+                title: 'Not signed in',
+                subtitle: 'Sign in to view and edit your profile.',
+              ),
             );
           }
           _seed();
-          final photoUrl = ref
-              .read(storageServiceProvider)
-              .publicAvatarUrl(profile.profilePhoto);
           return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: EdgeInsets.zero,
             children: [
-              _ProfileHeader(
-                photoUrl: photoUrl,
-                name: profile.displayName,
-                role: _roleLabel(profile.role),
-                uploading: _uploading,
-                onChangePhoto: _changePhoto,
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Your details'),
-              const SizedBox(height: AppSpacing.sm),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final stack = constraints.maxWidth < AppBreakpoints.phone;
-                  final firstField = AppFormField(
-                    controller: _firstName,
-                    label: 'First name',
-                    enabled: !_saving,
-                    textInputAction: TextInputAction.next,
-                  );
-                  final lastField = AppFormField(
-                    controller: _lastName,
-                    label: 'Last name',
-                    enabled: !_saving,
-                    textInputAction: TextInputAction.next,
-                  );
-                  if (stack) {
-                    return Column(
+              // Navy identity hero — avatar + name + role chip, with a hero
+              // back button and an inline "Change photo" affordance.
+              AppGradientHeader(
+                colors: AppPalette.navyGradient,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        firstField,
-                        const SizedBox(height: AppSpacing.md),
-                        lastField,
+                        AppCircleIconButton(
+                          icon: Icons.arrow_back_rounded,
+                          tooltip: 'Back',
+                          onTap: () => Navigator.of(context).maybePop(),
+                        ),
+                        const Spacer(),
                       ],
-                    );
-                  }
-                  return Row(
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      children: [
+                        _AvatarWithEdit(
+                          uploading: _uploading,
+                          onChangePhoto: _changePhoto,
+                        ),
+                        const SizedBox(width: AppSpacing.lg),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile.displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: AppType.heavy,
+                                    ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              AppGlassChip(
+                                _roleLabel(profile.role),
+                                icon: Icons.badge_outlined,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Body overlaps the hero band upward, v1-style.
+              Transform.translate(
+                offset: const Offset(0, -AppSpacing.lg),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: firstField),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(child: lastField),
+                      const AppSectionHeader(
+                        title: 'Your details',
+                        icon: Icons.edit_outlined,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      AppCard(
+                        child: Column(
+                          children: [
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final stack = constraints.maxWidth <
+                                    AppBreakpoints.phone;
+                                final firstField = AppFormField(
+                                  controller: _firstName,
+                                  label: 'First name',
+                                  enabled: !_saving,
+                                  textInputAction: TextInputAction.next,
+                                );
+                                final lastField = AppFormField(
+                                  controller: _lastName,
+                                  label: 'Last name',
+                                  enabled: !_saving,
+                                  textInputAction: TextInputAction.next,
+                                );
+                                if (stack) {
+                                  return Column(
+                                    children: [
+                                      firstField,
+                                      const SizedBox(height: AppSpacing.md),
+                                      lastField,
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: firstField),
+                                    const SizedBox(width: AppSpacing.md),
+                                    Expanded(child: lastField),
+                                  ],
+                                );
+                              },
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            AppFormField(
+                              controller: _phone,
+                              label: 'Phone',
+                              enabled: !_saving,
+                              keyboardType: TextInputType.phone,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      const AppSectionHeader(
+                        title: 'Account',
+                        icon: Icons.lock_outline_rounded,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      _AccountCard(
+                        email: profile.email,
+                        role: _roleLabel(profile.role),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save_outlined),
+                          label: const Text('Save'),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
                     ],
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _phone,
-                label: 'Phone',
-                enabled: !_saving,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Account'),
-              const SizedBox(height: AppSpacing.sm),
-              _AccountCard(
-                email: profile.email,
-                role: _roleLabel(profile.role),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: const Text('Save'),
+                  ),
+                ),
               ),
             ],
           );
@@ -202,67 +284,56 @@ String _roleLabel(String role) {
   return spaced[0].toUpperCase() + spaced.substring(1);
 }
 
-/// Compact identity header: avatar alongside name + role, with an inline
-/// "Change photo" affordance — replaces the tall centered avatar block.
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({
-    required this.photoUrl,
-    required this.name,
-    required this.role,
-    required this.uploading,
-    required this.onChangePhoto,
-  });
+/// The signed-in user's avatar on the navy hero, with a small circular camera
+/// button overlaid bottom-right that triggers the upload (spinner while busy).
+class _AvatarWithEdit extends StatelessWidget {
+  const _AvatarWithEdit({required this.uploading, required this.onChangePhoto});
 
-  final String? photoUrl;
-  final String name;
-  final String role;
   final bool uploading;
   final VoidCallback onChangePhoto;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AppCard(
-      child: Row(
+    final scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 76,
+      height: 76,
+      child: Stack(
         children: [
-          _AvatarPreview(
-            url: photoUrl,
-            fallback: name.isNotEmpty ? name[0].toUpperCase() : '?',
-          ),
-          const SizedBox(width: AppSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: theme.textTheme.titleMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  role,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+          const AppUserAvatar(size: 72, onGradient: true),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Material(
+              color: scheme.primary,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: uploading ? null : onChangePhoto,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
                   ),
+                  child: uploading
+                      ? const SizedBox(
+                          height: 13,
+                          width: 13,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.photo_camera_outlined,
+                          size: 14,
+                          color: Colors.white,
+                        ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: uploading ? null : onChangePhoto,
-                    icon: uploading
-                        ? const SizedBox(
-                            height: 14,
-                            width: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.photo_camera_outlined),
-                    label: const Text('Change photo'),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -344,38 +415,6 @@ class _AccountRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AvatarPreview extends StatelessWidget {
-  const _AvatarPreview({required this.url, required this.fallback});
-  final String? url;
-  final String fallback;
-
-  @override
-  Widget build(BuildContext context) {
-    if (url == null) {
-      return CircleAvatar(
-        radius: 28,
-        child: Text(fallback, style: Theme.of(context).textTheme.titleLarge),
-      );
-    }
-    return ClipOval(
-      child: CachedNetworkImage(
-        imageUrl: url!,
-        width: 56,
-        height: 56,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => const CircleAvatar(
-          radius: 28,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        errorWidget: (_, __, ___) => CircleAvatar(
-          radius: 28,
-          child: Text(fallback, style: Theme.of(context).textTheme.titleLarge),
-        ),
       ),
     );
   }

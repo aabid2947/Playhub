@@ -121,7 +121,10 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
                   ),
                   shrinkWrap: true,
                   children: [
-                    const AppSectionHeader(title: 'Movement type'),
+                    const AppSectionHeader(
+                      title: 'Movement type',
+                      icon: Icons.swap_vert_rounded,
+                    ),
                     SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: 'in', label: Text('In')),
@@ -138,7 +141,10 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
                           setState(() => _kind = s.first),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    const AppSectionHeader(title: 'Quantity'),
+                    const AppSectionHeader(
+                      title: 'Quantity',
+                      icon: Icons.tag_rounded,
+                    ),
                     AppFormField(
                       controller: _qty,
                       label: _kind == 'adjustment'
@@ -164,7 +170,10 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
                       onCoachChanged: (v) => setState(() => _coachId = v),
                     ),
                     const SizedBox(height: AppSpacing.lg),
-                    const AppSectionHeader(title: 'Details'),
+                    const AppSectionHeader(
+                      title: 'Details',
+                      icon: Icons.notes_rounded,
+                    ),
                     AppFormField(
                       controller: _ref,
                       label: 'Reference (PO #, etc.)',
@@ -179,23 +188,36 @@ class _MovementSheetState extends ConsumerState<MovementSheet> {
                 ),
               ),
             ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                AppSpacing.md,
-                AppSpacing.lg,
-                AppSpacing.lg,
+            // Pinned action bar with a floating lift so it reads as a
+            // deliberate commit, separate from the scrolling form above.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                boxShadow: AppShadows.floating,
               ),
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Record'),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Record'),
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -309,6 +331,7 @@ class _RecipientSection extends StatelessWidget {
       children: [
         AppSectionHeader(
           title: 'Recipient',
+          icon: Icons.person_outline_rounded,
           trailing: enabled
               ? null
               : Text(

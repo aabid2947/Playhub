@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/features/leads/presentation/lead_form_page.dart';
@@ -29,13 +30,15 @@ AppBadgeTone _toneFor(LeadStatus status) {
 }
 
 /// Six-column kanban scrolling horizontally. Each column holds the leads in
-/// that status; tap a card → detail page.
+/// that status; tap a card → detail page. Pushed page, so it keeps its AppBar;
+/// the v1 hero band sits beneath it and the board overlaps upward.
 class LeadsKanbanPage extends ConsumerWidget {
   const LeadsKanbanPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(leadsListProvider);
+    final caps = ref.watch(capabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Leads'),
@@ -47,13 +50,17 @@ class LeadsKanbanPage extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('New lead'),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const LeadFormPage()),
-        ),
-      ),
+      // Creating a lead is gated — only roles with manageLeads see the FAB
+      // (RLS is the real gate; this just hides the entry point).
+      floatingActionButton: caps.manageLeads
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('New lead'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const LeadFormPage()),
+              ),
+            )
+          : null,
       body: async.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
@@ -92,6 +99,49 @@ class _Board extends StatelessWidget {
       column.add(l);
     }
 
+    // Funnel summary for the hero strip: everything still in play (not yet
+    // converted or lost) and the two terminal outcomes.
+    final converted = byStatus[LeadStatus.converted]?.length ?? 0;
+    final lost = byStatus[LeadStatus.lost]?.length ?? 0;
+    final active = leads.length - converted - lost;
+
+    return Column(
+      children: [
+        AppGradientHeader(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.xl + AppSpacing.md,
+          ),
+          child: AppHeroStatRow(
+            stats: [
+              ('$active', 'In funnel'),
+              ('$converted', 'Converted'),
+              ('${leads.length}', 'Total'),
+            ],
+          ),
+        ),
+        // The kanban overlaps the hero band upward, v1-style.
+        Expanded(
+          child: Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: _Lanes(byStatus: byStatus),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The horizontally-scrolling lane strip. Pulled out so the hero stays fixed
+/// while the columns page sideways underneath it.
+class _Lanes extends StatelessWidget {
+  const _Lanes({required this.byStatus});
+  final Map<LeadStatus, List<Lead>> byStatus;
+
+  @override
+  Widget build(BuildContext context) {
     // Size each column so a phone shows roughly one column plus a peek of the
     // next — wide enough for scannable cards, narrow enough to invite the
     // horizontal swipe. Capped so it doesn't balloon on tablets.
@@ -102,7 +152,12 @@ class _Board extends StatelessWidget {
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       physics: const PageScrollPhysics(),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+        AppSpacing.lg,
+      ),
       itemCount: LeadStatus.kanbanOrder.length,
       separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.md),
       itemBuilder: (context, i) {
@@ -162,6 +217,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final accent = _accentFor(context, status);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
@@ -173,10 +229,18 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // A small tone dot so each lane reads as its own colour at a glance.
+          Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               status.label,
-              style: theme.textTheme.titleSmall,
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: AppType.bold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -185,6 +249,27 @@ class _Header extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// The foreground colour for a status' tone — used for the lane header dot so
+/// the dot matches the count badge without re-deriving it inside the badge.
+Color _accentFor(BuildContext context, LeadStatus status) {
+  final scheme = Theme.of(context).colorScheme;
+  final semantics = AppSemanticColors.of(context);
+  switch (_toneFor(status)) {
+    case AppBadgeTone.success:
+      return semantics.success;
+    case AppBadgeTone.warning:
+      return semantics.warning;
+    case AppBadgeTone.danger:
+      return semantics.danger;
+    case AppBadgeTone.info:
+      return semantics.info;
+    case AppBadgeTone.brand:
+      return scheme.primary;
+    case AppBadgeTone.neutral:
+      return scheme.onSurfaceVariant;
   }
 }
 
@@ -237,35 +322,42 @@ class _Card extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Avatar + name, with the status pill trailing.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              AppAvatar(lead.displayName, size: 36),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(
-                  lead.displayName,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      lead.displayName,
+                      style: theme.textTheme.titleSmall
+                          ?.copyWith(fontWeight: AppType.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (sportLabel != '—' || contact != null)
+                      Text(
+                        [
+                          if (sportLabel != '—') sportLabel,
+                          if (contact != null) contact,
+                        ].join(' · '),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
               AppBadge(text: lead.status.label, tone: _toneFor(lead.status)),
             ],
           ),
-          if (sportLabel != '—' || contact != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              [
-                if (sportLabel != '—') sportLabel,
-                if (contact != null) contact,
-              ].join(' · '),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
@@ -310,6 +402,7 @@ class _FollowupChip extends StatelessWidget {
     return AppBadge(
       text: overdue ? 'Overdue · $date' : date,
       tone: overdue ? AppBadgeTone.danger : AppBadgeTone.neutral,
+      icon: overdue ? Icons.event_busy_outlined : Icons.event_outlined,
     );
   }
 }

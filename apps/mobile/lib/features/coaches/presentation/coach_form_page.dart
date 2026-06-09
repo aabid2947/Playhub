@@ -166,221 +166,224 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
     final caps = ref.watch(capabilitiesProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: AvatarPicker(
-                  entity: 'coaches',
-                  url: _photo,
-                  fallbackInitials: _initials(),
-                  onUploaded: (url) => setState(() => _photo = url),
-                ),
+      // v1 archetype D: the primary action is pinned to a soft-floating bottom
+      // bar so it's always reachable above the long edit-mode form.
+      bottomNavigationBar: _SaveBar(
+        label: isEdit ? 'Save changes' : 'Create coach',
+        busy: _busy,
+        onPressed: _busy ? null : _save,
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            Center(
+              child: AvatarPicker(
+                entity: 'coaches',
+                url: _photo,
+                fallbackInitials: _initials(),
+                onUploaded: (url) => setState(() => _photo = url),
               ),
-              const SizedBox(height: AppSpacing.xl),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            // One consistent required-marker legend for the whole form.
+            Text(
+              'Fields marked * are required.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.xl),
 
-              // ── Personal ──────────────────────────────────────────────
-              const AppSectionHeader(title: 'Personal'),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _firstName,
-                      label: 'First name *',
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
+            // ── Personal ──────────────────────────────────────────────
+            const AppSectionHeader(title: 'Personal'),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _firstName,
+                    label: 'First name *',
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppFormField(
-                      controller: _lastName,
-                      label: 'Last name *',
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _email,
-                      label: 'Email',
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppFormField(
-                      controller: _phone,
-                      label: 'Phone',
-                      keyboardType: TextInputType.phone,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── Expertise ─────────────────────────────────────────────
-              // Sports coached is its own labeled block (a structured
-              // multi-select), kept distinct from the free-text sub-specialty
-              // and the comma-separated credential fields below it.
-              const AppSectionHeader(title: 'Expertise'),
-              const SizedBox(height: AppSpacing.sm),
-              _SportsField(
-                selectedIds: _sportIds,
-                onToggle: (sid, sel) => setState(() {
-                  if (sel) {
-                    _sportIds.add(sid);
-                  } else {
-                    _sportIds.remove(sid);
-                  }
-                }),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _specialization,
-                label: 'Sub-specialty / notes',
-                hint: 'Batting, Wicket-keeping, …',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _experience,
-                label: 'Experience (yrs)',
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _qualifications,
-                label: 'Qualifications',
-                hint: 'BPEd, MPEd (comma-separated)',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _certifications,
-                label: 'Certifications',
-                hint: 'NIS Level 1, ICC Coaching Certificate',
-              ),
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── Assignment ────────────────────────────────────────────
-              const AppSectionHeader(title: 'Assignment'),
-              const SizedBox(height: AppSpacing.sm),
-              centresAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                  child: AppLoading(),
                 ),
-                error: (e, _) => AppErrorView(
-                  message: friendlyError(e),
-                  onRetry: () => ref.invalidate(centersProvider),
-                ),
-                data: (centres) => AppDropdownField<String>(
-                  label: 'Center',
-                  value: _centerId,
-                  items: [
-                    const DropdownMenuItem<String>(
-                      child: Text('— none —'),
-                    ),
-                    for (final c in centres.where((c) => c.isActive))
-                      DropdownMenuItem(
-                        value: c.id,
-                        child: Text(c.name),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => _centerId = v),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-
-              // ── Compensation ──────────────────────────────────────────
-              const AppSectionHeader(title: 'Compensation'),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AppFormField(
-                      controller: _salary,
-                      label: 'Salary (₹)',
-                      keyboardType: TextInputType.number,
-                    ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppFormField(
+                    controller: _lastName,
+                    label: 'Last name *',
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppDropdownField<String>(
-                      label: 'Payment type',
-                      value: _paymentType,
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'monthly',
-                          child: Text('Monthly'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'hourly',
-                          child: Text('Hourly'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'session',
-                          child: Text('Per session'),
-                        ),
-                      ],
-                      onChanged: (v) => setState(() => _paymentType = v),
-                    ),
-                  ),
-                ],
-              ),
-
-              // ── Edit-only sections, clearly separated below a divider ──
-              if (isEdit) ...[
-                const SizedBox(height: AppSpacing.xxl),
-                const Divider(),
-                const SizedBox(height: AppSpacing.lg),
-                CoachDocumentsSection(coachId: widget.existing!.id),
-                const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'Login & access'),
-                const SizedBox(height: AppSpacing.sm),
-                _LoginAccessCard(
-                  coach: widget.existing!,
-                  onInvite: () => _invite(context),
                 ),
-                if (caps.manageCoaches) ...[
-                  const SizedBox(height: AppSpacing.xl),
-                  const AppSectionHeader(title: 'Danger zone'),
-                  const SizedBox(height: AppSpacing.sm),
-                  _ArchiveButton(
-                    label: 'Archive coach',
-                    busy: _busy,
-                    onPressed: _confirmArchive,
-                  ),
-                ],
               ],
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save changes' : 'Create coach'),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _email,
+                    label: 'Email',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppFormField(
+                    controller: _phone,
+                    label: 'Phone',
+                    keyboardType: TextInputType.phone,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ── Expertise ─────────────────────────────────────────────
+            // Sports coached is its own labeled block (a structured
+            // multi-select), kept distinct from the free-text sub-specialty
+            // and the comma-separated credential fields below it.
+            const AppSectionHeader(title: 'Expertise'),
+            const SizedBox(height: AppSpacing.sm),
+            _SportsField(
+              selectedIds: _sportIds,
+              onToggle: (sid, sel) => setState(() {
+                if (sel) {
+                  _sportIds.add(sid);
+                } else {
+                  _sportIds.remove(sid);
+                }
+              }),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _specialization,
+              label: 'Sub-specialty / notes',
+              hint: 'Batting, Wicket-keeping, …',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _experience,
+              label: 'Experience (yrs)',
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _qualifications,
+              label: 'Qualifications',
+              hint: 'BPEd, MPEd (comma-separated)',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppFormField(
+              controller: _certifications,
+              label: 'Certifications',
+              hint: 'NIS Level 1, ICC Coaching Certificate',
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ── Assignment ────────────────────────────────────────────
+            const AppSectionHeader(title: 'Assignment'),
+            const SizedBox(height: AppSpacing.sm),
+            centresAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                child: AppLoading(),
               ),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(centersProvider),
+              ),
+              data: (centres) => AppDropdownField<String>(
+                label: 'Center',
+                value: _centerId,
+                items: [
+                  const DropdownMenuItem<String>(
+                    child: Text('— none —'),
+                  ),
+                  for (final c in centres.where((c) => c.isActive))
+                    DropdownMenuItem(
+                      value: c.id,
+                      child: Text(c.name),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _centerId = v),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
+            // ── Compensation ──────────────────────────────────────────
+            const AppSectionHeader(title: 'Compensation'),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _salary,
+                    label: 'Salary (₹)',
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: AppDropdownField<String>(
+                    label: 'Payment type',
+                    value: _paymentType,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'monthly',
+                        child: Text('Monthly'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'hourly',
+                        child: Text('Hourly'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'session',
+                        child: Text('Per session'),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _paymentType = v),
+                  ),
+                ),
+              ],
+            ),
+
+            // ── Edit-only sections, clearly separated below a divider ──
+            if (isEdit) ...[
+              const SizedBox(height: AppSpacing.xxl),
+              const Divider(),
+              const SizedBox(height: AppSpacing.lg),
+              CoachDocumentsSection(coachId: widget.existing!.id),
+              const SizedBox(height: AppSpacing.xl),
+              const AppSectionHeader(title: 'Login & access'),
+              const SizedBox(height: AppSpacing.sm),
+              _LoginAccessCard(
+                coach: widget.existing!,
+                onInvite: () => _invite(context),
+              ),
+              if (caps.manageCoaches) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Danger zone'),
+                const SizedBox(height: AppSpacing.sm),
+                _ArchiveButton(
+                  label: 'Archive coach',
+                  busy: _busy,
+                  onPressed: _confirmArchive,
+                ),
+              ],
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -410,6 +413,53 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
           firstName: coach.firstName,
           lastName: coach.lastName,
           linkCoachId: coach.id,
+        ),
+      ),
+    );
+  }
+}
+
+/// Pinned bottom action bar for the form (v1 archetype D). A full-width primary
+/// [FilledButton] on a white bar lifted with [AppShadows.floating]; the button
+/// swaps to an inline spinner while [busy]. Mirrors the student form's save bar.
+class _SaveBar extends StatelessWidget {
+  const _SaveBar({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        boxShadow: AppShadows.floating,
+      ),
+      child: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.md,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onPressed,
+            child: busy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(label),
+          ),
         ),
       ),
     );

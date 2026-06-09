@@ -84,13 +84,44 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit center' : 'New center')),
+      // Pinned, full-width primary action (archetype D) — inline spinner while
+      // saving. A floating shadow lifts the bar off the scrolling form below it.
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _busy
+                    ? 'Saving…'
+                    : (isEdit ? 'Save changes' : 'Create center'),
+              ),
+              onPressed: _busy ? null : _save,
+            ),
+          ),
+        ),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             // Identity ------------------------------------------------------
-            const AppSectionHeader(title: 'Identity'),
+            const AppSectionHeader(
+              title: 'Identity',
+              icon: Icons.location_city_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _name,
@@ -105,7 +136,10 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
 
             // Contact -------------------------------------------------------
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Contact'),
+            const AppSectionHeader(
+              title: 'Contact',
+              icon: Icons.call_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _phone,
@@ -129,7 +163,10 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
 
             // Address -------------------------------------------------------
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Address'),
+            const AppSectionHeader(
+              title: 'Address',
+              icon: Icons.place_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _address,
@@ -187,28 +224,17 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
               onFieldSubmitted: (_) => _busy ? null : _save(),
             ),
 
-            // Primary action -----------------------------------------------
-            const SizedBox(height: AppSpacing.xl),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save changes' : 'Create center'),
-              ),
-            ),
-
-            // Lifecycle (edit-only, clearly separated below a divider) ------
+            // Lifecycle (edit-only, clearly separated below a divider). The
+            // primary save action is pinned at the bottom (see bottomNavigationBar);
+            // this lifecycle action stays a distinct, secondary edit-only path.
             if (isEdit) ...[
               const SizedBox(height: AppSpacing.xl),
               Divider(color: Theme.of(context).colorScheme.outlineVariant),
               const SizedBox(height: AppSpacing.md),
-              const AppSectionHeader(title: 'Center status'),
+              const AppSectionHeader(
+                title: 'Center status',
+                icon: Icons.toggle_on_outlined,
+              ),
               const SizedBox(height: AppSpacing.sm),
               _LifecycleCard(
                 isActive: widget.existing!.isActive,
@@ -217,6 +243,8 @@ class _CenterFormPageState extends ConsumerState<CenterFormPage> {
                 onReactivate: _reactivate,
               ),
             ],
+            // Tail spacing so the last field clears the pinned save bar.
+            const SizedBox(height: AppSpacing.xl),
           ],
         ),
       ),

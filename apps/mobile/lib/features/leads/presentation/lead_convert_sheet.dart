@@ -91,11 +91,20 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            // Title row: icon + title + lead name subtext.
+            // Title row: a brand-tinted action disc + title + lead name subtext.
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.person_add_alt_1, color: scheme.primary),
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: Icon(Icons.person_add_alt_1, color: scheme.primary),
+                ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
@@ -103,7 +112,9 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
                     children: [
                       Text(
                         'Convert to student',
-                        style: theme.textTheme.titleLarge,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: AppType.bold,
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(

@@ -104,7 +104,10 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             // ── Contact ──────────────────────────────────────────────
-            const AppSectionHeader(title: 'Contact'),
+            const AppSectionHeader(
+              title: 'Contact',
+              icon: Icons.contact_phone_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             // First + last sit side-by-side on wide layouts and stack to full
             // width when the screen is too narrow to hold both usably.
@@ -145,16 +148,35 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
               onChanged: (_) => _revalidateContact(),
               validator: _contactValidator,
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'A phone number or email is required so the lead is reachable.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+            const SizedBox(height: AppSpacing.sm),
+            // Cross-field hint for the phone-OR-email rule — a quiet info row
+            // so the requirement is clear before the inline validator fires.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'A phone number or email is required so the lead is '
+                    'reachable.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
+                ),
+              ],
             ),
             const SizedBox(height: AppSpacing.xl),
             // ── Interest & source ────────────────────────────────────
-            const AppSectionHeader(title: 'Interest & source'),
+            const AppSectionHeader(
+              title: 'Interest & source',
+              icon: Icons.sports_rounded,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _parentName,
@@ -196,20 +218,27 @@ class _LeadFormPageState extends ConsumerState<LeadFormPage> {
           ],
         ),
       ),
-      // Pinned, full-width primary action — inline spinner while saving.
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(AppSpacing.lg),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            icon: _saving
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save),
-            label: Text(_saving ? 'Saving…' : 'Save lead'),
-            onPressed: _saving ? null : _save,
+      // Pinned, full-width primary action — inline spinner while saving. A
+      // floating shadow lifts the bar off the scrolling form below it.
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: _saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save),
+              label: Text(_saving ? 'Saving…' : 'Save lead'),
+              onPressed: _saving ? null : _save,
+            ),
           ),
         ),
       ),

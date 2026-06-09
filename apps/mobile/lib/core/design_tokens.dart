@@ -94,31 +94,57 @@ class AppFontSize {
   static const double display = 36; // splash / marketing
 }
 
-/// Brand + semantic palette. These are the solid anchor colors, usable inline
-/// anywhere in a widget tree. For backgrounds/foregrounds that must adapt to
-/// light vs dark, use the theme-aware [AppSemanticColors] instead.
+/// Brand + semantic palette ("Sports-Light" v1). Solid anchor colors, usable
+/// inline anywhere in a widget tree. For backgrounds/foregrounds that must
+/// adapt to light/dark, use the theme-aware [AppSemanticColors] instead.
+///
+/// v1 identity (locked, mirrored in colors.ts `lightColors`): an energetic
+/// **orange** (`#FF6A2C`) leads every call-to-action; a deep **navy** ink
+/// (`#0F2540`) carries headings/high-contrast text; a broadcast **blue**
+/// (`#1763E0`) accents sparingly. The app ships **light only** — the dark
+/// neutrals below are retained but dormant.
 class AppPalette {
   const AppPalette._();
 
-  // Brand — violet (colors.ts `primary`). A vivid violet leads, a magenta
-  // accents, and a violet → magenta gradient covers brand moments. Reads
-  // cleanly on both light and dark surfaces.
-  static const Color brandPrimary = Color(0xFF9933FF); // vivid violet
-  static const Color brandSecondary = Color(0xFFE95FE9); // magenta accent
+  // Brand — energetic orange leads every call-to-action.
+  static const Color brandPrimary = Color(0xFFFF6A2C); // vivid orange
+  static const Color brandPrimaryDark = Color(0xFFF4511E); // pressed / grad end
+  static const Color brandPrimarySoft = Color(0xFFFFF1EA); // tint bg / nav pill
+  static const Color brandPrimaryMuted = Color(0xFFFFD9C7); // borders on tint
+
+  // Accent — broadcast blue, links / secondary highlights (colors.ts secondary).
+  static const Color brandSecondary = Color(0xFF1763E0);
+  static const Color accent = Color(0xFF1763E0);
+  static const Color accentSoft = Color(0xFFE9F1FE);
+
+  // Ink — deep navy for headings + high-contrast text on light surfaces.
+  static const Color ink = Color(0xFF0F2540); // deep navy (titles)
+  static const Color inkSoft = Color(0xFF1B3A5C); // navy gradient end
+  static const Color textPrimary = Color(0xFF12283F);
+  static const Color textSecondary = Color(0xFF5B6B7F);
+  static const Color textMuted = Color(0xFF8A99AC);
 
   // Semantic — standard status colors, independent of the brand (colors.ts).
-  static const Color success = Color(0xFF22C55E);
+  static const Color success = Color(0xFF16A34A);
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFEF4444);
-  static const Color info = Color(0xFF1D9BF0); // verified / info blue
+  static const Color info = Color(0xFF1763E0); // accent / info blue
 
-  // Semantic — lifted for legibility on dark surfaces.
+  // Semantic — lifted for legibility on dark surfaces (dormant: light-only app).
   static const Color successDark = Color(0xFF4ADE80);
   static const Color warningDark = Color(0xFFFBBF24);
   static const Color dangerDark = Color(0xFFF87171);
   static const Color infoDark = Color(0xFF4DB3F5);
 
-  // Neutral grays (slate-tinted) — light-theme surfaces + text.
+  // Light surfaces (colors.ts lightColors): near-white page, white cards, a
+  // hairline border, and an inset alt for segment tracks / tinted icon boxes.
+  static const Color pageBackground = Color(0xFFF4F7FB);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color surfaceAlt = Color(0xFFEFF4FA);
+  static const Color borderLight = Color(0xFFE6EDF5);
+  static const Color dividerLight = Color(0xFFEDF1F7);
+
+  // Neutral grays (slate-tinted) — kept for incidental use.
   static const Color gray50 = Color(0xFFF8FAFC);
   static const Color gray100 = Color(0xFFF1F5F9);
   static const Color gray200 = Color(0xFFE2E8F0);
@@ -130,8 +156,7 @@ class AppPalette {
   static const Color gray800 = Color(0xFF1E293B);
   static const Color gray900 = Color(0xFF0F172A);
 
-  // Dark-theme neutrals — matches colors.ts: near-black background, gently
-  // lifted surfaces, a low-contrast border, and soft near-white text.
+  // Dark-theme neutrals — retained but DORMANT (the app pins light mode).
   static const Color ink950 = Color(0xFF141318); // page background
   static const Color ink900 = Color(0xFF1C1D22); // surface
   static const Color ink800 = Color(0xFF212129); // cards / inputs / elevated
@@ -144,12 +169,49 @@ class AppPalette {
   static const Color surfaceTintLight = Color(0xFFF5F5F5);
   static const Color surfaceTintDark = Color(0xFF1C1D22);
 
-  // Brand gradient — a violet → magenta sweep, for brand marks, hero headers,
-  // and splash.
+  // Brand gradient — an orange sweep for hero bands, brand marks, peak chart bars.
   static const List<Color> brandGradient = [
-    Color(0xFF9933FF), // violet
-    Color(0xFFB84DFF), // bright violet
-    Color(0xFFE95FE9), // magenta
+    Color(0xFFFF8A4C),
+    Color(0xFFFF6A2C),
+    Color(0xFFF4511E),
+  ];
+
+  // Navy gradient — finance / profile / "more" hero bands.
+  static const List<Color> navyGradient = [
+    Color(0xFF173B62),
+    Color(0xFF0F2540),
+  ];
+
+  // Rotating palette for sport / category accents (deterministic via name).
+  static const List<Color> categorySwatch = [
+    Color(0xFFFF6A2C), // orange
+    Color(0xFF1763E0), // blue
+    Color(0xFF16A34A), // green
+    Color(0xFF9333EA), // purple
+    Color(0xFFEA580C), // amber-orange
+    Color(0xFF0EA5E9), // sky
+  ];
+}
+
+/// Soft, layered shadows for the v1 light theme. Subtle by design — cards lift
+/// gently off the near-white page rather than relying only on a hairline border.
+class AppShadows {
+  const AppShadows._();
+
+  /// Default card lift.
+  static const List<BoxShadow> card = [
+    BoxShadow(color: Color(0x0F0F2540), blurRadius: 18, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x080F2540), blurRadius: 2, offset: Offset(0, 1)),
+  ];
+
+  /// Brand-tinted lift for emphasized/elevated surfaces.
+  static const List<BoxShadow> raised = [
+    BoxShadow(color: Color(0x1AFF6A2C), blurRadius: 20, offset: Offset(0, 10)),
+  ];
+
+  /// Stronger lift for pinned bottom bars / sheets / overlapping hero cards.
+  static const List<BoxShadow> floating = [
+    BoxShadow(color: Color(0x1F0F2540), blurRadius: 28, offset: Offset(0, 14)),
   ];
 }
 
@@ -199,7 +261,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
   /// Light-theme tones. Containers are the base color at ~13% alpha.
   static const AppSemanticColors light = AppSemanticColors(
     success: AppPalette.success,
-    successContainer: Color(0x2122C55E),
+    successContainer: Color(0x2116A34A),
     onSuccess: Colors.white,
     warning: AppPalette.warning,
     warningContainer: Color(0x21F59E0B),
@@ -208,7 +270,7 @@ class AppSemanticColors extends ThemeExtension<AppSemanticColors> {
     dangerContainer: Color(0x21EF4444),
     onDanger: Colors.white,
     info: AppPalette.info,
-    infoContainer: Color(0x211D9BF0),
+    infoContainer: Color(0x211763E0),
     onInfo: Colors.white,
   );
 

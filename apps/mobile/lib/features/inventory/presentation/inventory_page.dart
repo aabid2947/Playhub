@@ -10,7 +10,9 @@ import 'package:playhub/features/inventory/presentation/inventory_item_page.dart
 import 'package:playhub/features/inventory/presentation/vendors_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Three-tab landing for inventory: All, Low stock, Vendors.
+/// Three-tab landing for inventory: All, Low stock, Vendors. Pushed page, so it
+/// keeps its own AppBar + TabBar; the body lists follow the v1 list archetype
+/// (in-body count badge → AppCard tiles with a tinted icon + low-stock badge).
 class InventoryPage extends ConsumerStatefulWidget {
   const InventoryPage({super.key});
 
@@ -128,17 +130,20 @@ class _ItemsList extends ConsumerWidget {
         }
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(inventoryItemsProvider),
-          child: ListView.separated(
-            padding: const EdgeInsets.only(bottom: AppSpacing.xxxl),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.xxxl,
+            ),
             // +1 leading row for the result-count header.
             itemCount: list.length + 1,
-            separatorBuilder: (_, i) =>
-                i == 0 ? const SizedBox.shrink() : const Divider(height: 1),
             itemBuilder: (_, i) {
               if (i == 0) {
                 return _CountHeader(count: list.length, lowOnly: showOnlyLow);
               }
-              return _ItemRow(item: list[i - 1]);
+              return _ItemCard(item: list[i - 1]);
             },
           ),
         );
@@ -147,7 +152,8 @@ class _ItemsList extends ConsumerWidget {
   }
 }
 
-/// Thin overline showing how many items match the active tab.
+/// In-body header: a count [AppBadge] tinted to the active tab (danger when
+/// listing low stock, neutral otherwise).
 class _CountHeader extends StatelessWidget {
   const _CountHeader({required this.count, required this.lowOnly});
   final int count;
@@ -155,29 +161,27 @@ class _CountHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final noun = count == 1 ? 'item' : 'items';
-    final label =
-        lowOnly ? '$count low-stock $noun' : '$count $noun';
+    final label = lowOnly ? '$count low-stock $noun' : '$count $noun';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.md,
-        AppSpacing.lg,
-        AppSpacing.sm,
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AppBadge(
+          text: label,
+          tone: lowOnly ? AppBadgeTone.danger : AppBadgeTone.neutral,
+          icon: lowOnly ? Icons.warning_amber_rounded : Icons.inventory_2_outlined,
         ),
       ),
     );
   }
 }
 
-class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
+/// A v1 list tile rendered as an [AppCard]: a tinted inventory icon (warning
+/// tint for low stock), the item name, a one-line qty/unit subtitle, and a
+/// trailing low-stock [AppBadge] when applicable.
+class _ItemCard extends StatelessWidget {
+  const _ItemCard({required this.item});
   final InventoryItem item;
 
   // Whole-number qty renders without a trailing ".0".
@@ -188,25 +192,73 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final semantics = AppSemanticColors.of(context);
+    final low = item.lowStock;
+    // Low-stock items pick up the warning accent on their leading icon; the
+    // trailing badge carries the explicit "Low stock" signal.
+    final tint = low ? semantics.warning : scheme.primary;
+
     // Subtitle is always exactly one line (qty · unit, optional SKU prefix) so
-    // row height stays constant whether or not an item has a SKU. The low-stock
-    // signal lives in the trailing badge, not an extra subtitle line.
+    // row height stays constant whether or not an item has a SKU.
     final subtitle = [
       if (item.sku != null && item.sku!.isNotEmpty) item.sku!,
       '$_qtyLabel ${item.unit}',
     ].join(' · ');
 
-    return AppListTile(
-      leading: const Icon(Icons.inventory_2_outlined),
-      title: Text(item.name),
-      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: item.lowStock
-          ? const AppBadge(text: 'Low stock', tone: AppBadgeTone.warning)
-          : null,
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => InventoryItemPage(itemId: item.id),
         ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(Icons.inventory_2_outlined, color: tint, size: 22),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(fontWeight: AppType.semibold),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          if (low)
+            const AppBadge(text: 'Low stock', tone: AppBadgeTone.warning)
+          else
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+        ],
       ),
     );
   }

@@ -33,8 +33,11 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
     final caps = ref.watch(capabilitiesProvider);
 
     return Scaffold(
+      // Body tab under owner_home_shell's single AppBar — no AppBar here; the
+      // in-body header row stands in for it.
       body: Column(
         children: [
+          _Header(count: batchesAsync.valueOrNull?.length),
           // The sport chip bar is the single, unified filter for this list —
           // batches only filter on sport, so the chip bar *is* the filter row
           // (mirrors the students/coaches unified-filter pattern).
@@ -62,16 +65,17 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(batchesProvider),
                   child: ListView.separated(
-                    itemCount: list.length + 1,
-                    separatorBuilder: (_, i) => i == 0
-                        ? const SizedBox.shrink()
-                        : const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      if (i == 0) {
-                        return _ResultCount(count: list.length);
-                      }
-                      return _BatchTile(batch: list[i - 1]);
-                    },
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      // Leave room so the last card clears the FAB.
+                      AppSpacing.xxl + AppSpacing.xl,
+                    ),
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.sm),
+                    itemBuilder: (context, i) => _BatchTile(batch: list[i]),
                   ),
                 );
               },
@@ -91,81 +95,194 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
   }
 }
 
-/// Visible result count above the list, e.g. "12 batches".
-class _ResultCount extends StatelessWidget {
-  const _ResultCount({required this.count});
-  final int count;
+/// The in-body list header: a navy title with a live count badge (the tab has
+/// no AppBar), so the sport chip filter below it never reads as an orphaned
+/// control.
+class _Header extends StatelessWidget {
+  const _Header({required this.count});
+
+  /// Live result count for the badge; null while loading.
+  final int? count;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.xs,
-      ),
-      child: Text(
-        count == 1 ? '1 batch' : '$count batches',
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            Text('Batches', style: theme.textTheme.headlineSmall),
+            const SizedBox(width: AppSpacing.sm),
+            if (count != null)
+              AppBadge(
+                text: count == 1 ? '1 total' : '$count total',
+                tone: AppBadgeTone.brand,
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
+/// A batch card in the v1 list archetype: a gradient sport-icon tile → name +
+/// schedule/skill subtitle → a status badge (Open / Almost full / Archived),
+/// then a capacity meter ([AppLabeledProgress]) tinted by the sport color.
 class _BatchTile extends ConsumerWidget {
   const _BatchTile({required this.batch});
   final Batch batch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cap = batch.capacity;
-    final capacityLabel = cap == null
-        ? '${batch.enrolledCount}'
-        : '${batch.enrolledCount}/$cap';
-    // Tone the capacity pill by fullness so a full/over-capacity batch reads at
-    // a glance; neutral when there's no cap to measure against.
-    final capacityTone = cap == null
-        ? AppBadgeTone.neutral
-        : batch.enrolledCount >= cap
-            ? AppBadgeTone.warning
-            : AppBadgeTone.brand;
-
+    final theme = Theme.of(context);
     final sportLabel = ref.watch(
       sportDisplayProvider((sportId: batch.sportId)),
     );
+    final hasSport = sportLabel != '—';
+    // Tie the card's accent to the sport (deterministic), falling back to the
+    // brand color for an untagged batch.
+    final accent =
+        hasSport ? colorFromName(sportLabel) : AppPalette.brandPrimary;
+
+    final cap = batch.capacity;
+    final fill = (cap == null || cap == 0)
+        ? null
+        : (batch.enrolledCount / cap).clamp(0.0, 1.0);
+    final capacityLabel =
+        cap == null ? '${batch.enrolledCount}' : '${batch.enrolledCount}/$cap';
+
     // One tight subtitle line: schedule, then sport, then skill level.
     final facts = <String>[
       batch.schedule.summary,
-      if (sportLabel != '—') sportLabel,
+      if (hasSport) sportLabel,
       if (batch.skillLevel != null) batch.skillLevel!,
     ];
 
-    return AppListTile(
-      leading: const Icon(Icons.schedule_outlined),
-      title: Text(batch.name),
-      subtitle: Text(
-        facts.join(' • '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!batch.isActive) ...[
-            const AppBadge(text: 'Archived'),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          AppBadge(text: capacityLabel, tone: capacityTone),
-        ],
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(builder: (_) => BatchDetailPage(batch: batch)),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Gradient sport-icon tile (the v1 entity glyph).
+              Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [accent.withValues(alpha: 0.85), accent],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  hasSport ? sportIcon(sportLabel) : Icons.schedule_outlined,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      batch.name,
+                      style: theme.textTheme.titleSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      facts.join(' • '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              _StatusBadge(batch: batch, fill: fill),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Capacity meter — bar + enrolled/cap trailing, tinted by the sport.
+          // Falls back to a plain count line when the batch has no capacity to
+          // measure against.
+          if (fill != null)
+            AppLabeledProgress(
+              label: 'Capacity',
+              value: fill,
+              trailing: capacityLabel,
+              color: accent,
+            )
+          else
+            Row(
+              children: [
+                Icon(
+                  Icons.groups_outlined,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  capacityLabel == '0'
+                      ? 'No students enrolled'
+                      : '$capacityLabel enrolled',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: AppType.semibold,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
+  }
+}
+
+/// Status pill for a batch row: an archived batch always reads "Archived";
+/// otherwise the capacity fill drives Open → Almost full → Full.
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.batch, required this.fill});
+  final Batch batch;
+
+  /// Capacity fill 0..1, or null when the batch has no capacity set.
+  final double? fill;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!batch.isActive) {
+      return const AppBadge(text: 'Archived');
+    }
+    final f = fill;
+    if (f == null) {
+      return const AppBadge(text: 'Open', tone: AppBadgeTone.success);
+    }
+    if (f >= 1) {
+      return const AppBadge(text: 'Full', tone: AppBadgeTone.warning);
+    }
+    if (f >= 0.9) {
+      return const AppBadge(text: 'Almost full', tone: AppBadgeTone.warning);
+    }
+    return const AppBadge(text: 'Open', tone: AppBadgeTone.success);
   }
 }
 

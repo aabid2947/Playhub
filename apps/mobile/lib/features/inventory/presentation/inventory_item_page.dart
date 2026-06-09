@@ -15,6 +15,10 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// reveal over the already-loaded list (no extra query).
 const _kMovementsPageSize = 20;
 
+/// Inventory item detail — archetype C. An entity-colored gradient hero
+/// (item-derived) with back/edit/delete circle buttons, a low-stock glass chip,
+/// and a floating 3-up mini-stat row (on-hand · reorder · unit cost) overlapping
+/// the band, then SKU / description info rows and the movement ledger.
 class InventoryItemPage extends ConsumerStatefulWidget {
   const InventoryItemPage({required this.itemId, super.key});
   final String itemId;
@@ -52,6 +56,14 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
     }
   }
 
+  void _edit(InventoryItem item) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InventoryItemFormPage(existing: item),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(inventoryItemsProvider).valueOrNull ?? const [];
@@ -66,26 +78,6 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(item.name),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Edit item',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => InventoryItemFormPage(existing: item),
-              ),
-            ),
-          ),
-          if (caps.manageInventory)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete item',
-              onPressed: () => _confirmDelete(item),
-            ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.swap_vert),
         label: const Text('Movement'),
@@ -102,42 +94,364 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
             ..invalidate(itemMovementsProvider(widget.itemId));
         },
         child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.zero,
           children: [
-            _StockCard(item: item),
-            const SizedBox(height: AppSpacing.xl),
-            movesAsync.when(
-              loading: () => const Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppSectionHeader(title: 'Movements'),
-                  SizedBox(height: AppSpacing.sm),
-                  AppSkeletonList(count: 3),
-                ],
-              ),
-              error: (e, _) => Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const AppSectionHeader(title: 'Movements'),
-                  const SizedBox(height: AppSpacing.sm),
-                  _InlineNote(
-                    icon: Icons.error_outline,
-                    tone: AppBadgeTone.danger,
-                    text: friendlyError(e),
-                  ),
-                ],
-              ),
-              data: (moves) => _MovementsSection(
-                moves: moves,
-                visible: _visible,
-                onShowMore: () => setState(
-                  () => _visible =
-                      (_visible + _kMovementsPageSize).clamp(0, moves.length),
+            _Hero(
+              item: item,
+              canDelete: caps.manageInventory,
+              onEdit: () => _edit(item),
+              onDelete: () => _confirmDelete(item),
+            ),
+            // Body overlaps the hero band upward, v1-style.
+            Transform.translate(
+              offset: const Offset(0, -AppSpacing.lg),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _MiniStats(item: item),
+                    const SizedBox(height: AppSpacing.lg),
+                    _Details(item: item),
+                    const SizedBox(height: AppSpacing.lg),
+                    movesAsync.when(
+                      loading: () => const Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AppSectionHeader(
+                            title: 'Movements',
+                            icon: Icons.swap_vert_rounded,
+                          ),
+                          SizedBox(height: AppSpacing.sm),
+                          AppSkeletonList(count: 3),
+                        ],
+                      ),
+                      error: (e, _) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const AppSectionHeader(
+                            title: 'Movements',
+                            icon: Icons.swap_vert_rounded,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          _InlineNote(
+                            icon: Icons.error_outline,
+                            tone: AppBadgeTone.danger,
+                            text: friendlyError(e),
+                          ),
+                        ],
+                      ),
+                      data: (moves) => _MovementsSection(
+                        moves: moves,
+                        visible: _visible,
+                        onShowMore: () => setState(
+                          () => _visible = (_visible + _kMovementsPageSize)
+                              .clamp(0, moves.length),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The item-colored gradient hero: back + edit/delete circle buttons, a tinted
+/// box-icon mark, the item name + SKU sub, and a low-stock glass chip.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.item,
+    required this.canDelete,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final InventoryItem item;
+  final bool canDelete;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Entity hero: tint the gradient from the item name so each item reads as
+    // its own card (pair = lighter→base of a deterministic accent color).
+    final c = colorFromName(item.name);
+    final sku = item.sku;
+    return AppGradientHeader(
+      colors: [c.withValues(alpha: 0.92), c],
+      child: Column(
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+              const Spacer(),
+              AppCircleIconButton(
+                icon: Icons.edit_outlined,
+                tooltip: 'Edit item',
+                onTap: onEdit,
+              ),
+              if (canDelete) ...[
+                const SizedBox(width: AppSpacing.sm),
+                AppCircleIconButton(
+                  icon: Icons.delete_outline,
+                  tooltip: 'Delete item',
+                  onTap: onDelete,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: 76,
+            height: 76,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.inventory_2_rounded,
+              color: Colors.white,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            item.name,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          if (item.lowStock) ...[
+            const SizedBox(height: AppSpacing.md),
+            const AppGlassChip('Low stock', icon: Icons.warning_amber_rounded),
+          ] else if (sku != null && sku.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppGlassChip('SKU $sku', icon: Icons.qr_code_2_rounded),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Floating 3-up mini-stat row that overlaps the hero band: on-hand quantity,
+/// the reorder threshold, and the unit cost.
+class _MiniStats extends StatelessWidget {
+  const _MiniStats({required this.item});
+  final InventoryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final semantics = AppSemanticColors.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.inventory_rounded,
+            value: '${_qty(item.onHand)} ${item.unit}',
+            label: 'On hand',
+            tint: item.lowStock ? semantics.danger : scheme.primary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.low_priority_rounded,
+            value: item.reorderThreshold > 0
+                ? '${_qty(item.reorderThreshold)} ${item.unit}'
+                : '—',
+            label: 'Reorder at',
+            tint: item.lowStock ? semantics.warning : scheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.currency_rupee_rounded,
+            value: item.unitCost > 0
+                ? '₹${item.unitCost.toStringAsFixed(2)}'
+                : '—',
+            label: 'Unit cost',
+            tint: scheme.secondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _qty(double v) =>
+      v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2);
+}
+
+/// A compact floating stat card used in the overlapping mini-stat row.
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.tint,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.md,
+        horizontal: AppSpacing.sm,
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: tint, size: 22),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: tint,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// SKU / reorder / description info rows in a "Details" section card, each with
+/// a leading tinted icon so the card reads the same regardless of which optional
+/// fields are populated.
+class _Details extends StatelessWidget {
+  const _Details({required this.item});
+  final InventoryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final desc = item.description;
+    final rows = <Widget>[
+      _InfoRow(
+        icon: Icons.qr_code_2_outlined,
+        label: 'SKU',
+        value: (item.sku != null && item.sku!.isNotEmpty) ? item.sku! : '—',
+      ),
+      _InfoRow(
+        icon: Icons.straighten_outlined,
+        label: 'Unit',
+        value: item.unit,
+      ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const AppSectionHeader(
+          title: 'Details',
+          icon: Icons.info_outline_rounded,
+        ),
+        AppCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.xs,
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                rows[i],
+                if (i != rows.length - 1) const Divider(height: 1),
+              ],
+              if (desc != null && desc.isNotEmpty) ...[
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                  child: Text(
+                    desc,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// An info row: leading tinted icon, a small label and the value beneath it.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: theme.textTheme.bodyLarge),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -163,7 +477,10 @@ class _MovementsSection extends StatelessWidget {
       return const Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppSectionHeader(title: 'Movements'),
+          AppSectionHeader(
+            title: 'Movements',
+            icon: Icons.swap_vert_rounded,
+          ),
           SizedBox(height: AppSpacing.sm),
           _InlineNote(
             icon: Icons.history,
@@ -181,6 +498,7 @@ class _MovementsSection extends StatelessWidget {
       children: [
         AppSectionHeader(
           title: 'Movements',
+          icon: Icons.swap_vert_rounded,
           trailing: AppBadge(text: '${moves.length}'),
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -310,139 +628,6 @@ class _InlineNote extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Stable stock-summary header card: an on-hand metric callout up top, then a
-/// fixed-rhythm run of fact rows so the card reads the same regardless of
-/// which optional fields are populated.
-class _StockCard extends StatelessWidget {
-  const _StockCard({required this.item});
-  final InventoryItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final semantics = AppSemanticColors.of(context);
-    final onHand = item.onHand.toStringAsFixed(
-      item.onHand.truncateToDouble() == item.onHand ? 0 : 2,
-    );
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // On-hand metric callout.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'On hand',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      '$onHand ${item.unit}',
-                      style: theme.textTheme.headlineSmall,
-                    ),
-                  ],
-                ),
-              ),
-              if (item.lowStock)
-                const AppBadge(text: 'Low stock', tone: AppBadgeTone.danger),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const Divider(height: 1),
-          const SizedBox(height: AppSpacing.md),
-          // Fixed-rhythm fact rows.
-          _FactRow(
-            label: 'SKU',
-            value: (item.sku != null && item.sku!.isNotEmpty)
-                ? item.sku!
-                : '—',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _FactRow(
-            label: 'Reorder threshold',
-            value: item.reorderThreshold > 0
-                ? '${_qty(item.reorderThreshold)} ${item.unit}'
-                : 'Not set',
-            valueColor: item.lowStock ? semantics.danger : null,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _FactRow(
-            label: 'Unit cost',
-            value: item.unitCost > 0
-                ? '₹${item.unitCost.toStringAsFixed(2)}'
-                : '—',
-          ),
-          if (item.description != null && item.description!.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            const Divider(height: 1),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              item.description!,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _qty(double v) =>
-      v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2);
-}
-
-/// One label/value row inside the stock-summary card, laid out so every fact
-/// aligns consistently.
-class _FactRow extends StatelessWidget {
-  const _FactRow({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
-
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Flexible(
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: valueColor,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

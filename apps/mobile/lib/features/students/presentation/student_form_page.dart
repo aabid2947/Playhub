@@ -189,6 +189,13 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit student' : 'New student')),
+      // v1 archetype D: the primary action is pinned to a soft-floating bottom
+      // bar so it's always reachable above the long edit-mode form.
+      bottomNavigationBar: _SaveBar(
+        label: isEdit ? 'Save changes' : 'Create student',
+        busy: _busy,
+        onPressed: _busy ? null : _save,
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -411,19 +418,54 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 ),
               ],
             ],
-
-            const SizedBox(height: AppSpacing.xl),
-            FilledButton(
-              onPressed: _busy ? null : _save,
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(isEdit ? 'Save changes' : 'Create student'),
-            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pinned bottom action bar for the form (v1 archetype D). A full-width primary
+/// [FilledButton] on a white bar lifted with [AppShadows.floating]; the button
+/// swaps to an inline spinner while [busy].
+class _SaveBar extends StatelessWidget {
+  const _SaveBar({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        boxShadow: AppShadows.floating,
+      ),
+      child: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.md,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: onPressed,
+            child: busy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(label),
+          ),
         ),
       ),
     );

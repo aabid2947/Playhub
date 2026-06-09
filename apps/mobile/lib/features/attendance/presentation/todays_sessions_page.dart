@@ -10,7 +10,8 @@ import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Coach (and admin) entry point for daily attendance — chronological list
-/// of today's batches. Tap → AttendanceMarkingPage.
+/// of today's batches under a v1 "Sports-Light" roster hero. Tap a session →
+/// AttendanceMarkingPage.
 class TodaysSessionsPage extends ConsumerWidget {
   const TodaysSessionsPage({super.key});
 
@@ -19,35 +20,65 @@ class TodaysSessionsPage extends ConsumerWidget {
     final batchesAsync = ref.watch(todaysBatchesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Today's sessions")),
       body: batchesAsync.when(
-        loading: () => const AppSkeletonList(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(todaysBatchesProvider),
+        loading: () => const _SessionsScaffold(
+          sessionCount: 0,
+          studentCount: 0,
+          markedCount: 0,
+          child: AppSkeletonList(),
+        ),
+        error: (e, _) => _SessionsScaffold(
+          sessionCount: 0,
+          studentCount: 0,
+          markedCount: 0,
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(todaysBatchesProvider),
+          ),
         ),
         data: (batches) {
-          if (batches.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.event_available_outlined,
-              title: 'No sessions scheduled for today',
-              subtitle:
-                  'Active batches whose schedule includes today appear here, '
-                  'ready for you to mark attendance.',
-            );
-          }
-          return RefreshIndicator(
+          final totalStudents =
+              batches.fold<int>(0, (sum, b) => sum + b.enrolledCount);
+          final fullyMarked = _fullyMarkedToday(ref, batches);
+
+          final body = batches.isEmpty
+              ? const AppEmptyState(
+                  icon: Icons.event_available_outlined,
+                  title: 'No sessions scheduled for today',
+                  subtitle:
+                      'Active batches whose schedule includes today appear '
+                      'here, ready for you to mark attendance.',
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppSectionHeader(
+                      title: 'Sessions',
+                      icon: Icons.fact_check_outlined,
+                      trailing: AppBadge(
+                        text: '${batches.length}',
+                        tone: AppBadgeTone.brand,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    for (final batch in batches) ...[
+                      _SessionTile(batch: batch),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
+                );
+
+          return _SessionsScaffold(
+            sessionCount: batches.length,
+            studentCount: totalStudents,
+            markedCount: fullyMarked,
             onRefresh: () async {
               ref
                 ..invalidate(batchesProvider)
                 ..invalidate(todaysBatchesProvider);
             },
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              itemCount: batches.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) => _SessionTile(batch: batches[i]),
-            ),
+            child: body,
           );
         },
       ),
@@ -55,6 +86,129 @@ class TodaysSessionsPage extends ConsumerWidget {
   }
 }
 
+/// Counts how many of today's sessions are **fully marked** by watching each
+/// batch's attendance family from the page's build — so the hero summary stays
+/// in sync as the user marks a session and returns. A session with no roster
+/// (`enrolledCount == 0`) is never counted as complete.
+int _fullyMarkedToday(WidgetRef ref, List<Batch> batches) {
+  final today = DateTime.now();
+  final ymd = DateTime(today.year, today.month, today.day);
+  var done = 0;
+  for (final batch in batches) {
+    final total = batch.enrolledCount;
+    if (total == 0) continue;
+    final marked = ref
+            .watch(
+              attendanceForBatchProvider(
+                AttendanceKey(batchId: batch.id, date: ymd),
+              ),
+            )
+            .valueOrNull
+            ?.length ??
+        0;
+    if (marked >= total) done++;
+  }
+  return done;
+}
+
+/// Shared chrome for every state: a brand roster hero (back button + date +
+/// summary strip) with the body overlapping the band upward, v1-style.
+class _SessionsScaffold extends StatelessWidget {
+  const _SessionsScaffold({
+    required this.sessionCount,
+    required this.studentCount,
+    required this.markedCount,
+    required this.child,
+    this.onRefresh,
+  });
+
+  final int sessionCount;
+  final int studentCount;
+  final int markedCount;
+  final Widget child;
+  final Future<void> Function()? onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final today = DateTime.now();
+
+    final list = ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        AppGradientHeader(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  AppCircleIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    tooltip: 'Back',
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Today's sessions",
+                          style: theme.textTheme.titleLarge
+                              ?.copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _prettyDate(today),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppHeroStatRow(
+                stats: [
+                  ('$sessionCount', 'Sessions'),
+                  ('$markedCount/$sessionCount', 'Marked'),
+                  ('$studentCount', 'Students'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Transform.translate(
+          offset: const Offset(0, -AppSpacing.lg),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: child,
+          ),
+        ),
+      ],
+    );
+
+    if (onRefresh == null) return list;
+    return RefreshIndicator(onRefresh: onRefresh!, child: list);
+  }
+
+  static String _prettyDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const weekdays = [
+      'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+    ];
+    return '${weekdays[d.weekday - 1]}, ${d.day} ${months[d.month - 1]}';
+  }
+}
+
+/// One session as a soft-shadow [AppCard]: a progress ring → batch name +
+/// schedule/sport subtitle → trailing "N/M marked" with an unambiguous state
+/// badge. Tap → mark attendance.
 class _SessionTile extends ConsumerWidget {
   const _SessionTile({required this.batch});
   final Batch batch;
@@ -82,21 +236,48 @@ class _SessionTile extends ConsumerWidget {
       isLoading: isLoadingMarks,
     );
 
-    return AppListTile(
-      wrapLeading: false,
-      leading: _ProgressIndicatorLeading(progress: progress),
-      title: Text(batch.name),
-      subtitle: Text(
-        [
-          batch.schedule.summary,
-          if (sportLabel != '—') sportLabel,
-        ].join(' • '),
-      ),
-      trailing: _SessionStatus(progress: progress),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => AttendanceMarkingPage(batch: batch, date: ymd),
         ),
+      ),
+      child: Row(
+        children: [
+          _ProgressIndicatorLeading(progress: progress),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  batch.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: AppType.bold,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    batch.schedule.summary,
+                    if (sportLabel != '—') sportLabel,
+                  ].join(' • '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          _SessionStatus(progress: progress),
+        ],
       ),
     );
   }
@@ -200,6 +381,21 @@ class _SessionProgress {
         return AppBadgeTone.success;
     }
   }
+
+  /// An optional glyph that reinforces the badge state without relying on color.
+  IconData? get badgeIcon {
+    switch (state) {
+      case _SessionState.notStarted:
+        return Icons.schedule_outlined;
+      case _SessionState.inProgress:
+        return Icons.timelapse_rounded;
+      case _SessionState.done:
+        return Icons.check_rounded;
+      case _SessionState.loading:
+      case _SessionState.noStudents:
+        return null;
+    }
+  }
 }
 
 /// A determinate progress ring with a glanceable centre glyph — a neutral
@@ -209,7 +405,7 @@ class _ProgressIndicatorLeading extends StatelessWidget {
   const _ProgressIndicatorLeading({required this.progress});
   final _SessionProgress progress;
 
-  static const double _size = 44;
+  static const double _size = 46;
 
   @override
   Widget build(BuildContext context) {
@@ -302,17 +498,21 @@ class _SessionStatus extends StatelessWidget {
         if (progress.state == _SessionState.noStudents)
           Text(
             'No roster',
-            style: textTheme.titleMedium?.copyWith(
+            style: textTheme.titleSmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
           )
         else
           Text(
             '${progress.marked}/${progress.total} marked',
-            style: textTheme.titleMedium,
+            style: textTheme.titleSmall?.copyWith(fontWeight: AppType.bold),
           ),
         const SizedBox(height: AppSpacing.xs),
-        AppBadge(text: progress.badgeLabel, tone: progress.badgeTone),
+        AppBadge(
+          text: progress.badgeLabel,
+          tone: progress.badgeTone,
+          icon: progress.badgeIcon,
+        ),
       ],
     );
   }

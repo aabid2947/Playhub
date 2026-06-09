@@ -111,13 +111,44 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit batch' : 'New batch')),
+      // Pinned, full-width primary action (archetype D) — inline spinner while
+      // saving. A floating shadow lifts the bar off the scrolling form below it.
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _busy
+                    ? 'Saving…'
+                    : (isEdit ? 'Save changes' : 'Create batch'),
+              ),
+              onPressed: _busy ? null : _save,
+            ),
+          ),
+        ),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
             // Details -------------------------------------------------------
-            const AppSectionHeader(title: 'Details'),
+            const AppSectionHeader(
+              title: 'Details',
+              icon: Icons.groups_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _name,
@@ -208,13 +239,19 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
             // Schedule ------------------------------------------------------
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Schedule'),
+            const AppSectionHeader(
+              title: 'Schedule',
+              icon: Icons.event_repeat_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             SchedulePicker(value: _schedule, onChanged: (s) => _schedule = s),
 
             // Capacity ------------------------------------------------------
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Capacity'),
+            const AppSectionHeader(
+              title: 'Capacity',
+              icon: Icons.event_seat_outlined,
+            ),
             const SizedBox(height: AppSpacing.sm),
             AppFormField(
               controller: _capacity,
@@ -226,19 +263,8 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => _busy ? null : _save(),
             ),
-
-            // Primary action ------------------------------------------------
+            // Tail spacing so the last field clears the pinned save bar.
             const SizedBox(height: AppSpacing.xl),
-            FilledButton(
-              onPressed: _busy ? null : _save,
-              child: _busy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(isEdit ? 'Save changes' : 'Create batch'),
-            ),
           ],
         ),
       ),
@@ -247,9 +273,10 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 }
 
 /// A labeled select backed by an [AsyncValue] list. Keeps a **stable field
-/// shape** across loading / error / data so the form never jumps: loading and
-/// error both render inside an [InputDecorator] sized like the real dropdown
-/// (a thin progress bar that flickered separately is what we're replacing).
+/// shape** across loading / error / data so the form never jumps: loading
+/// shows a calm skeleton bar and error a retry row, both inside an
+/// [InputDecorator] sized like the real dropdown — no separate spinner that
+/// flickers in and out as the future resolves.
 class _AsyncDropdownField<T> extends StatelessWidget {
   const _AsyncDropdownField({
     required this.label,
@@ -336,26 +363,30 @@ class _FieldShell extends StatelessWidget {
   }
 }
 
+/// A calm skeleton placeholder occupying the field's body — a single muted bar
+/// the height of the dropdown's text. Steadier than a spinner (which pops in
+/// and out), so the field doesn't flicker while the options load.
 class _LoadingRow extends StatelessWidget {
   const _LoadingRow();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Row(
       children: [
         Expanded(
-          child: Text(
-            'Loading…',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          child: Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
           ),
         ),
-        const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
+        const SizedBox(width: AppSpacing.md),
+        Icon(
+          Icons.arrow_drop_down,
+          color: scheme.onSurfaceVariant,
         ),
       ],
     );

@@ -1,11 +1,13 @@
-// Color palette for the application
-// Supports both dark and light themes
+// Color palette for the application — "Sports-Light" v1 identity.
+// The app SHIPS LIGHT ONLY (per client). `darkColors` is retained but dormant.
+// Energetic orange (#FF6A2C) leads CTAs; deep navy (#0F2540) is the ink; a
+// broadcast blue (#1763E0) accents. This file mirrors design_tokens.dart.
 
 export const darkColors = {
-  primary: '#9933FF',        // use ONLY for critical actions
+  primary: '#FF6A2C',        // orange (dormant — light-only app)
   verified: '#1D9BF0',
   secondary: '#373a43',      // default button bg
-  accent: '#9933FF',         // same as primary, no extra accent color
+  accent: '#1763E0',         // broadcast blue
 
   background: '#141318',     // main app background
   surface: '#1c1d22',        // secondary background
@@ -18,25 +20,25 @@ export const darkColors = {
 
   border: '#2a2d34',
   error: '#EF4444',
-  success: '#22C55E',
+  success: '#16A34A',
   warning: '#F59E0B',
 };
 
 export const lightColors = {
-  primary: '#9933FF',
+  primary: '#FF6A2C',        // energetic orange — every call-to-action
   verified: '#1D9BF0',
-  secondary: '#00BFFF',
-  accent: '#E95FE9',
-  background: '#FFFFFF',
-  surface: '#F5F5F5',
-  surfaceHover: '#E5E5E5',
-  card: '#F5F5F5',
-  text: '#111418',
-  textPrimary: '#111418',
-  textSecondary: '#4A5568',
-  border: '#D1D5DB',
+  secondary: '#1763E0',      // broadcast blue accent
+  accent: '#1763E0',
+  background: '#F4F7FB',     // near-white page
+  surface: '#FFFFFF',        // cards
+  surfaceHover: '#EFF4FA',   // inset / segment track
+  card: '#FFFFFF',
+  text: '#12283F',           // navy ink
+  textPrimary: '#0F2540',
+  textSecondary: '#5B6B7F',
+  border: '#E6EDF5',
   error: '#EF4444',
-  success: '#22C55E',
+  success: '#16A34A',
   warning: '#F59E0B',
 };
 

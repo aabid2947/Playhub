@@ -35,60 +35,70 @@ class EventDetailPage extends ConsumerWidget {
       ..invalidate(eventRegistrationsProvider(eventId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Event'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: refresh,
-          ),
-          if (canManage)
-            IconButton(
-              icon: const Icon(Icons.emoji_events_outlined),
-              tooltip: 'Results & certificates',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => EventResultsPage(eventId: eventId),
-                ),
-              ),
-            ),
-          if (canManage)
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete event',
-              onPressed: () => _confirmDelete(context, ref),
-            ),
-        ],
-      ),
       body: eventAsync.when(
         loading: () => const AppLoading(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: refresh,
+        error: (e, _) => SafeArea(
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: refresh,
+          ),
         ),
         data: (event) {
           if (event == null) {
-            return const AppEmptyState(
-              icon: Icons.event_busy_outlined,
-              title: 'Not found',
+            return const SafeArea(
+              child: AppEmptyState(
+                icon: Icons.event_busy_outlined,
+                title: 'Not found',
+              ),
             );
           }
-          return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            children: [
-              _Header(event: event),
-              if (canManage) ...[
-                const SizedBox(height: AppSpacing.md),
-                _StatusSection(event: event),
+          return RefreshIndicator(
+            onRefresh: () async => refresh(),
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _Hero(
+                  event: event,
+                  regsAsync: regsAsync,
+                  canManage: canManage,
+                  onBack: () => Navigator.of(context).pop(),
+                  onResults: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => EventResultsPage(eventId: eventId),
+                    ),
+                  ),
+                  onDelete: () => _confirmDelete(context, ref),
+                ),
+                // Body overlaps the hero band upward, v1-style.
+                Transform.translate(
+                  offset: const Offset(0, -AppSpacing.xl),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _MiniStatRow(event: event, regsAsync: regsAsync),
+                        const SizedBox(height: AppSpacing.lg),
+                        _DetailsSection(event: event),
+                        if (canManage) ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          _StatusSection(event: event),
+                        ],
+                        const SizedBox(height: AppSpacing.lg),
+                        _RegistrationsSection(
+                          event: event,
+                          regsAsync: regsAsync,
+                          canManage: canManage,
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
+                    ),
+                  ),
+                ),
               ],
-              const SizedBox(height: AppSpacing.md),
-              _RegistrationsSection(
-                event: event,
-                regsAsync: regsAsync,
-                canManage: canManage,
-              ),
-            ],
+            ),
           );
         },
       ),
@@ -97,7 +107,7 @@ class EventDetailPage extends ConsumerWidget {
 
   /// Hard-delete the event after confirmation. Cascades to its registrations
   /// and results (FK on delete cascade). RLS limits this to admin tier +
-  /// center_admin + head_coach, which is exactly the page's [canManage] gate.
+  /// center_admin + head_coach, which is exactly the page's `canManage` gate.
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
     final ok = await confirmAction(
       context,
@@ -141,79 +151,294 @@ AppBadgeTone _statusTone(EventStatus s) {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.event});
+/// A representative glyph per event kind, used in the hero mark.
+IconData _kindIcon(EventKind kind) {
+  switch (kind) {
+    case EventKind.tournament:
+      return Icons.emoji_events_rounded;
+    case EventKind.workshop:
+      return Icons.school_rounded;
+    case EventKind.camp:
+      return Icons.cabin_rounded;
+    case EventKind.fixture:
+      return Icons.sports_rounded;
+    case EventKind.social:
+      return Icons.celebration_rounded;
+  }
+}
+
+/// Archetype-C entity hero: an event-kind-colored gradient band with the back
+/// and (gated) manage circle buttons, a large kind glyph, the title, and a row
+/// of glass chips summarising kind · status · registration state.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.event,
+    required this.regsAsync,
+    required this.canManage,
+    required this.onBack,
+    required this.onResults,
+    required this.onDelete,
+  });
+
   final EventEntry event;
+  final AsyncValue<List<EventRegistration>> regsAsync;
+  final bool canManage;
+  final VoidCallback onBack;
+  final VoidCallback onResults;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final df = DateFormat('EEE, dd MMM yyyy · h:mma');
-    return AppCard(
+    // Deterministic accent from the event kind so each kind reads consistently.
+    final c = colorFromName(event.kind.label);
+    return AppGradientHeader(
+      colors: [c.withValues(alpha: 0.92), c],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(event.title, style: theme.textTheme.titleLarge),
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
               ),
-              const SizedBox(width: AppSpacing.sm),
-              AppBadge(
-                text: event.status.label,
-                tone: _statusTone(event.status),
-              ),
+              const Spacer(),
+              if (canManage) ...[
+                AppCircleIconButton(
+                  icon: Icons.emoji_events_outlined,
+                  tooltip: 'Results & certificates',
+                  onTap: onResults,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                AppCircleIconButton(
+                  icon: Icons.delete_outline,
+                  tooltip: 'Delete event',
+                  onTap: onDelete,
+                ),
+              ],
             ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: 64,
+            height: 64,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+            ),
+            child: Icon(_kindIcon(event.kind), color: Colors.white, size: 32),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            event.title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            event.kind.label,
+            df.format(event.startsAt),
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+              color: Colors.white.withValues(alpha: 0.9),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          _MetaRow(
-            icon: Icons.event_outlined,
-            label: 'Starts',
-            value: df.format(event.startsAt),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppGlassChip(event.kind.label, icon: _kindIcon(event.kind)),
+              AppGlassChip(event.status.label, icon: Icons.flag_rounded),
+              if (event.registrationOpen)
+                const AppGlassChip(
+                  'Registration open',
+                  icon: Icons.how_to_reg_rounded,
+                ),
+            ],
           ),
-          if (event.endsAt != null)
-            _MetaRow(
-              icon: Icons.event_available_outlined,
-              label: 'Ends',
-              value: df.format(event.endsAt!),
-            ),
-          if (event.location != null && event.location!.isNotEmpty)
-            _MetaRow(
-              icon: Icons.place_outlined,
-              label: 'Location',
-              value: event.location!,
-            ),
-          if (event.feeAmount > 0)
-            _MetaRow(
-              icon: Icons.payments_outlined,
-              label: 'Fee',
-              value: '₹${event.feeAmount}',
-            ),
-          if (event.capacity != null)
-            _MetaRow(
-              icon: Icons.groups_outlined,
-              label: 'Capacity',
-              value: '${event.capacity}',
-            ),
-          if (event.description != null && event.description!.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(event.description!, style: theme.textTheme.bodyMedium),
-          ],
         ],
       ),
     );
   }
 }
 
-/// One labeled fact line in the header card: icon · label · value.
+/// A floating 3-up mini-stat strip overlapping the hero band: registered count,
+/// capacity (or "Open"), and entry fee.
+class _MiniStatRow extends StatelessWidget {
+  const _MiniStatRow({required this.event, required this.regsAsync});
+
+  final EventEntry event;
+  final AsyncValue<List<EventRegistration>> regsAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final semantics = AppSemanticColors.of(context);
+    final regs = regsAsync.valueOrNull ?? const <EventRegistration>[];
+    final active =
+        regs.where((r) => r.status != 'cancelled').length;
+    final feeLabel = event.feeAmount > 0
+        ? '₹${event.feeAmount.toStringAsFixed(0)}'
+        : 'Free';
+    return Row(
+      children: [
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.how_to_reg_rounded,
+            value: '$active',
+            label: 'Registered',
+            color: AppPalette.accent,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.groups_rounded,
+            value: event.capacity == null ? 'Open' : '${event.capacity}',
+            label: 'Capacity',
+            color: AppPalette.brandPrimary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.payments_rounded,
+            value: feeLabel,
+            label: 'Entry fee',
+            color: event.feeAmount > 0 ? semantics.warning : semantics.success,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One compact KPI inside the floating overlap row.
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.md,
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The event's facts — schedule, location, fee, capacity, and description —
+/// presented as labeled info rows under a section header.
+class _DetailsSection extends StatelessWidget {
+  const _DetailsSection({required this.event});
+  final EventEntry event;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final df = DateFormat('EEE, dd MMM yyyy · h:mma');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: 'Details',
+          icon: Icons.event_note_outlined,
+        ),
+        AppCard(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.sm,
+          ),
+          child: Column(
+            children: [
+              _MetaRow(
+                icon: Icons.event_outlined,
+                label: 'Starts',
+                value: df.format(event.startsAt),
+              ),
+              if (event.endsAt != null)
+                _MetaRow(
+                  icon: Icons.event_available_outlined,
+                  label: 'Ends',
+                  value: df.format(event.endsAt!),
+                ),
+              if (event.location != null && event.location!.isNotEmpty)
+                _MetaRow(
+                  icon: Icons.place_outlined,
+                  label: 'Location',
+                  value: event.location!,
+                ),
+              if (event.feeAmount > 0)
+                _MetaRow(
+                  icon: Icons.payments_outlined,
+                  label: 'Fee',
+                  value: '₹${event.feeAmount.toStringAsFixed(0)}',
+                ),
+              if (event.capacity != null)
+                _MetaRow(
+                  icon: Icons.groups_outlined,
+                  label: 'Capacity',
+                  value: '${event.capacity}',
+                ),
+            ],
+          ),
+        ),
+        if (event.description != null && event.description!.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          const AppSectionHeader(
+            title: 'About',
+            icon: Icons.notes_rounded,
+          ),
+          AppCard(
+            child: Text(
+              event.description!,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One labeled fact line: leading icon · fixed-width label · value.
 class _MetaRow extends StatelessWidget {
   const _MetaRow({
     required this.icon,
@@ -229,7 +454,7 @@ class _MetaRow extends StatelessWidget {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -243,7 +468,12 @@ class _MetaRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(value, style: theme.textTheme.bodyMedium),
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: AppType.semibold,
+              ),
+            ),
           ),
         ],
       ),
@@ -268,27 +498,20 @@ class _StatusSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.sm,
-              AppSpacing.lg,
-              0,
-            ),
-            child: AppSectionHeader(
-              title: 'Status',
-              trailing: AppBadge(
-                text: event.status.label,
-                tone: _statusTone(event.status),
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AppSectionHeader(
+          title: 'Status',
+          icon: Icons.flag_outlined,
+          trailing: AppBadge(
+            text: event.status.label,
+            tone: _statusTone(event.status),
           ),
-          PopupMenuButton<EventStatus>(
+        ),
+        AppCard(
+          padding: EdgeInsets.zero,
+          child: PopupMenuButton<EventStatus>(
             tooltip: 'Change status',
             onSelected: (next) => _changeTo(ref, next),
             itemBuilder: (_) => [
@@ -296,18 +519,18 @@ class _StatusSection extends ConsumerWidget {
                 if (s != event.status)
                   PopupMenuItem(value: s, child: Text(s.label)),
             ],
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
+            child: const ListTile(
+              contentPadding: EdgeInsets.symmetric(
                 horizontal: AppSpacing.lg,
                 vertical: AppSpacing.xs,
               ),
-              leading: const Icon(Icons.swap_horiz_outlined),
-              title: const Text('Change status'),
-              trailing: const Icon(Icons.expand_more),
+              leading: Icon(Icons.swap_horiz_outlined),
+              title: Text('Change status'),
+              trailing: Icon(Icons.expand_more),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -324,14 +547,23 @@ class _RegistrationsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final canAdd = canManage && event.status != EventStatus.cancelled;
+    final count = regsAsync.valueOrNull?.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         AppSectionHeader(
           title: 'Registrations',
-          trailing: canAdd
-              ? TextButton.icon(
+          icon: Icons.groups_2_outlined,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (count != null)
+                AppBadge(text: '$count', tone: AppBadgeTone.brand),
+              if (canAdd) ...[
+                const SizedBox(width: AppSpacing.xs),
+                TextButton.icon(
                   icon: const Icon(Icons.person_add_outlined),
                   label: const Text('Add'),
                   onPressed: () => showModalBottomSheet<void>(
@@ -339,8 +571,10 @@ class _RegistrationsSection extends ConsumerWidget {
                     isScrollControlled: true,
                     builder: (_) => EventRegisterSheet(event: event),
                   ),
-                )
-              : null,
+                ),
+              ],
+            ],
+          ),
         ),
         AppCard(
           padding: EdgeInsets.zero,
@@ -353,21 +587,19 @@ class _RegistrationsSection extends ConsumerWidget {
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Text(
                 friendlyError(e),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
             data: (rs) {
               if (rs.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Text(
-                    'No registrations yet',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                  child: AppEmptyState(
+                    icon: Icons.how_to_reg_outlined,
+                    title: 'No registrations yet',
+                    subtitle: 'Registered students will appear here.',
                   ),
                 );
               }
@@ -433,11 +665,12 @@ class _RegRow extends ConsumerWidget {
     final students =
         ref.watch(studentsProvider).valueOrNull ?? const <Student>[];
     final s = students.where((s) => s.id == reg.studentId).firstOrNull;
+    final name = s?.fullName ?? reg.studentId.substring(0, 8);
     final df = DateFormat('dd MMM yyyy');
     return AppListTile(
       wrapLeading: false,
-      leading: CircleAvatar(child: Text(s == null ? '?' : s.firstName[0])),
-      title: Text(s?.fullName ?? reg.studentId.substring(0, 8)),
+      leading: AppAvatar(name, size: 40),
+      title: Text(name),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: AppSpacing.xs),
         child: Wrap(

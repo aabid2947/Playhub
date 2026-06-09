@@ -32,16 +32,15 @@ consistent and the information hierarchy deliberate** — nothing more, nothing 
 
 These turn a revamp into a bug. They are non-negotiable.
 
-1. **Do NOT change color or typography.** `colors.ts`, `typography.ts`,
-   [design_tokens.dart](apps/mobile/lib/core/design_tokens.dart), and
-   [theme.dart](apps/mobile/lib/core/theme.dart) are the locked source of truth.
-   > ⚠️ Note: the brand was recolored green → **violet** (`AppPalette.brandPrimary
-   > = #9933FF`, magenta accent `#E95FE9`, violet→magenta `brandGradient`); green
-   > `#22C55E` is now only the semantic *success* color. If you hit any leftover
-   > "green is the brand" wording anywhere, **the tokens win — touch neither.**
-   You may *re-place* and *re-group* elements; you may not restyle their colors,
-   font sizes, or weights. Always pull spacing/radius/color from tokens — a raw
-   `Color(0xFF…)`, `EdgeInsets.all(32)`, or `fontSize: 18` is a regression.
+1. **Color/type now follow the v1 skin (this doc's "don't touch color" rule is
+   SUPERSEDED as of 2026-06-09).** The authoritative skin spec is
+   [UI_REVAMP_V1.md](UI_REVAMP_V1.md): the brand is **orange `#FF6A2C` + navy
+   `#0F2540`**, **light-only**. `colors.ts` / `design_tokens.dart` / `theme.dart`
+   remain the single source of truth — never hard-code a `Color(0xFF…)`,
+   `EdgeInsets.all(32)`, or `fontSize: 18`; consume tokens. This doc's layout
+   anatomies (§3) are still correct and reused; only the skin changed.
+   > ⚠️ Wherever this doc still says "violet" / "both themes ship", it's stale —
+   > read orange + navy / light only.
 
 2. **No new architecture for a layout change.** No `freezed`/codegen, no
    `@riverpod`, no state-management lib, no service layer, no new dependency.

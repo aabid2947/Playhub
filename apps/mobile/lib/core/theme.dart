@@ -27,7 +27,7 @@ class AppTheme {
       colorScheme: scheme,
       textTheme: textTheme,
       scaffoldBackgroundColor:
-          isLight ? Colors.white : AppPalette.ink950,
+          isLight ? AppPalette.pageBackground : AppPalette.ink950,
       visualDensity: VisualDensity.adaptivePlatformDensity,
       extensions: <ThemeExtension<dynamic>>[semantics],
 
@@ -45,25 +45,26 @@ class AppTheme {
         clipBehavior: Clip.antiAlias,
       ),
 
-      // Inputs: filled, md radius, no default outline; 1.5px primary on focus.
+      // Inputs (v1): filled white, md radius, a hairline border at rest that
+      // thickens to the brand orange on focus.
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHighest,
+        fillColor: isLight ? AppPalette.surface : scheme.surfaceContainerHighest,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
           vertical: 14,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 1.5),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(color: scheme.outlineVariant, width: 1.5),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          borderSide: BorderSide(color: scheme.primary, width: 1.5),
+          borderSide: BorderSide(color: scheme.primary, width: 1.8),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -244,10 +245,10 @@ class AppTheme {
     );
   }
 
-  /// Violet brand scheme (colors.ts): an exact violet primary (#9933FF) on
-  /// hand-tuned neutral surfaces — white/greys in light, a near-black ramp in
-  /// dark — so the brand reads cleanly in both modes. The primary is pinned
-  /// explicitly rather than taken from the seed's tonal palette.
+  /// "Sports-Light" v1 scheme (colors.ts): an exact **orange** primary
+  /// (#FF6A2C) + **navy** ink (#0F2540) on near-white surfaces in light. The app
+  /// ships light only; the dark branch is retained but dormant. The primary is
+  /// pinned explicitly rather than taken from the seed's tonal palette.
   static ColorScheme _scheme(Brightness brightness) {
     final base = ColorScheme.fromSeed(
       seedColor: AppPalette.brandPrimary,
@@ -256,26 +257,29 @@ class AppTheme {
 
     if (brightness == Brightness.light) {
       return base.copyWith(
-        // Brand — exact violet, not a tonal approximation.
+        // Brand — exact orange, not a tonal approximation.
         primary: AppPalette.brandPrimary,
         onPrimary: Colors.white,
-        primaryContainer: const Color(0xFFEDE0FF),
-        onPrimaryContainer: const Color(0xFF3A1A66),
-        secondary: const Color(0xFF00BFFF), // colors.ts light secondary
+        primaryContainer: AppPalette.brandPrimarySoft, // #FFF1EA nav pill / tint
+        onPrimaryContainer: AppPalette.brandPrimaryDark, // #F4511E
+        secondary: AppPalette.accent, // broadcast blue #1763E0
+        onSecondary: Colors.white,
+        secondaryContainer: AppPalette.accentSoft,
+        onSecondaryContainer: AppPalette.accent,
         error: AppPalette.danger,
         onError: Colors.white,
-        // Surfaces — colors.ts light: white bg, #F5F5F5 cards, #E5E5E5 raised,
-        // #D1D5DB borders, #111418 text, #4A5568 secondary text.
-        surface: const Color(0xFFF5F5F5),
-        surfaceContainerLowest: Colors.white,
-        surfaceContainerLow: Colors.white,
-        surfaceContainer: const Color(0xFFF5F5F5),
-        surfaceContainerHigh: const Color(0xFFEDEDED),
-        surfaceContainerHighest: const Color(0xFFE5E5E5),
-        outlineVariant: const Color(0xFFD1D5DB),
-        outline: const Color(0xFFD1D5DB),
-        onSurface: const Color(0xFF111418),
-        onSurfaceVariant: const Color(0xFF4A5568),
+        // Surfaces — v1 light: #F4F7FB page (scaffold), white cards, #EFF4FA
+        // inset/segment track, #E6EDF5 hairline borders, navy ink text.
+        surface: AppPalette.surface, // white cards
+        surfaceContainerLowest: AppPalette.surface,
+        surfaceContainerLow: AppPalette.surface,
+        surfaceContainer: AppPalette.surfaceAlt,
+        surfaceContainerHigh: AppPalette.surfaceAlt,
+        surfaceContainerHighest: AppPalette.surfaceAlt,
+        outlineVariant: AppPalette.borderLight,
+        outline: AppPalette.borderLight,
+        onSurface: AppPalette.ink, // navy #0F2540
+        onSurfaceVariant: AppPalette.textSecondary, // #5B6B7F
       );
     }
 
@@ -315,29 +319,30 @@ class AppTheme {
     // type scale: every screen consumes these roles via `textTheme.*`, so changing
     // a size here cascades app-wide. (Device text-scaling still applies on top.)
     return base.copyWith(
+      // v1 headlines are heavier (w800) for an energetic, sporty feel.
       displayLarge: base.displayLarge?.copyWith(
         fontSize: 36,
-        fontWeight: AppType.bold,
+        fontWeight: AppType.heavy,
         letterSpacing: AppType.trackingTight,
       ),
       displayMedium: base.displayMedium?.copyWith(
         fontSize: 30,
-        fontWeight: AppType.bold,
+        fontWeight: AppType.heavy,
         letterSpacing: AppType.trackingTight,
       ),
       displaySmall: base.displaySmall?.copyWith(
         fontSize: 26,
-        fontWeight: AppType.bold,
+        fontWeight: AppType.heavy,
         letterSpacing: AppType.trackingTight,
       ),
       headlineLarge: base.headlineLarge?.copyWith(
         fontSize: 24,
-        fontWeight: AppType.bold,
+        fontWeight: AppType.heavy,
         letterSpacing: AppType.trackingSnug,
       ),
       headlineMedium: base.headlineMedium?.copyWith(
         fontSize: 22,
-        fontWeight: AppType.bold,
+        fontWeight: AppType.heavy,
         letterSpacing: AppType.trackingSnug,
       ),
       headlineSmall: base.headlineSmall?.copyWith(

@@ -15,13 +15,19 @@ import 'package:url_launcher/url_launcher.dart' as launcher;
 
 final _absoluteFmt = DateFormat('dd MMM yyyy · HH:mm');
 
-/// Admin sees ALL announcements (history + drafts); other roles see their
-/// targeted feed (with read receipts).
+/// Announcements — v1 "Sports-Light", archetype B (list).
+///
+/// Composers (admin tier + center_admin + head_coach + coach) see the full
+/// history/compose list (RLS scopes it to rows they created + were delivered)
+/// with a Draft/Sent badge; pure recipients see their targeted feed with an
+/// unread affordance. Both render the **same tile anatomy** (a campaign-iconed
+/// [AppCard] → subject → one subtitle → trailing status/metric), differing only
+/// in the trailing chip and whether tapping marks the item read first.
 class AnnouncementsPage extends ConsumerWidget {
   const AnnouncementsPage({super.key, this.embedded = false});
 
   /// When embedded in a shell that already provides an AppBar, suppress this
-  /// page's own AppBar to avoid a second bar.
+  /// page's own AppBar (an in-body header carries the title instead).
   final bool embedded;
 
   @override
@@ -36,14 +42,10 @@ class AnnouncementsPage extends ConsumerWidget {
         ),
       ),
       data: (profile) {
-        // Composers (admin tier + center_admin + head_coach + coach) get the
-        // compose FAB and a history/compose list (RLS scopes it to rows they
-        // created + were delivered). Pure recipients get the read-receipt feed.
         final canCompose = ref.watch(capabilitiesProvider).composeAnnouncements;
         return Scaffold(
-          appBar: embedded
-              ? null
-              : AppBar(title: const Text('Announcements')),
+          appBar:
+              embedded ? null : AppBar(title: const Text('Announcements')),
           floatingActionButton: canCompose
               ? FloatingActionButton.extended(
                   icon: const Icon(Icons.add),
@@ -55,7 +57,9 @@ class AnnouncementsPage extends ConsumerWidget {
                   ),
                 )
               : null,
-          body: canCompose ? const _AdminList() : const _Feed(),
+          body: canCompose
+              ? _AdminList(embedded: embedded)
+              : _Feed(embedded: embedded),
         );
       },
     );
@@ -65,7 +69,9 @@ class AnnouncementsPage extends ConsumerWidget {
 /// Admin compose/history view: every announcement in the academy with a
 /// Draft/Sent badge and (for sent ones) a delivery count.
 class _AdminList extends ConsumerWidget {
-  const _AdminList();
+  const _AdminList({required this.embedded});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,28 +84,41 @@ class _AdminList extends ConsumerWidget {
       ),
       data: (list) {
         if (list.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.campaign_outlined,
-            title: 'No announcements yet',
-            subtitle: 'Tap "New" to broadcast to roles, batches, or centers.',
+          return _ListScaffold(
+            embedded: embedded,
+            title: 'Announcements',
+            subtitle: 'Broadcasts you send',
+            count: 0,
+            onRefresh: () async => ref.invalidate(announcementsListProvider),
+            child: const AppEmptyState(
+              icon: Icons.campaign_outlined,
+              title: 'No announcements yet',
+              subtitle: 'Tap "New" to broadcast to roles, batches, or centers.',
+            ),
           );
         }
-        return RefreshIndicator(
+        return _ListScaffold(
+          embedded: embedded,
+          title: 'Announcements',
+          subtitle: 'Broadcasts you send',
+          count: list.length,
           onRefresh: () async => ref.invalidate(announcementsListProvider),
           child: ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xs,
+              AppSpacing.lg,
+              // Clear the FAB.
+              AppSpacing.xxl + AppSpacing.xl,
+            ),
             itemCount: list.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
             itemBuilder: (_, i) {
               final a = list[i];
-              return AppListTile(
-                leading: const Icon(Icons.campaign_outlined),
-                title: Text(a.subject),
-                subtitle: Text(
-                  _adminSubtitle(a),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              return _AnnouncementTile(
+                subject: a.subject,
+                preview: _adminSubtitle(a),
+                hasMedia: a.media.isNotEmpty,
                 trailing: a.isDraft
                     ? const AppBadge(text: 'Draft', tone: AppBadgeTone.warning)
                     : const AppBadge(text: 'Sent', tone: AppBadgeTone.success),
@@ -129,12 +148,13 @@ class _AdminList extends ConsumerWidget {
 /// with an unread affordance. Tapping opens a real detail surface and marks
 /// the item read before navigating.
 class _Feed extends ConsumerWidget {
-  const _Feed();
+  const _Feed({required this.embedded});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(announcementFeedProvider);
-    final scheme = Theme.of(context).colorScheme;
     return async.when(
       loading: () => const AppSkeletonList(),
       error: (e, _) => AppErrorView(
@@ -142,52 +162,50 @@ class _Feed extends ConsumerWidget {
         onRetry: () => ref.invalidate(announcementFeedProvider),
       ),
       data: (items) {
+        final unreadCount = items.where((it) => it.readAt == null).length;
         if (items.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.campaign_outlined,
-            title: 'No announcements',
-            subtitle: 'Updates from your academy will appear here.',
+          return _ListScaffold(
+            embedded: embedded,
+            title: 'Announcements',
+            subtitle: 'Updates from your academy',
+            count: 0,
+            onRefresh: () async => ref.invalidate(announcementFeedProvider),
+            child: const AppEmptyState(
+              icon: Icons.campaign_outlined,
+              title: 'No announcements',
+              subtitle: 'Updates from your academy will appear here.',
+            ),
           );
         }
-        return RefreshIndicator(
+        return _ListScaffold(
+          embedded: embedded,
+          title: 'Announcements',
+          subtitle: unreadCount > 0
+              ? '$unreadCount unread'
+              : 'Updates from your academy',
+          count: items.length,
           onRefresh: () async => ref.invalidate(announcementFeedProvider),
           child: ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xs,
+              AppSpacing.lg,
+              AppSpacing.xl,
+            ),
             itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
+            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
             itemBuilder: (_, i) {
               final it = items[i];
               final ann = it.announcement;
               final unread = it.readAt == null;
-              final theme = Theme.of(context);
-              return AppListTile(
-                wrapLeading: false,
-                leading: Icon(
-                  unread
-                      ? Icons.fiber_manual_record
-                      : Icons.fiber_manual_record_outlined,
-                  size: 14,
-                  color: unread ? scheme.primary : scheme.outline,
-                ),
-                title: Text(
-                  ann.subject,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: unread ? AppType.bold : AppType.regular,
-                  ),
-                ),
-                subtitle: Text(
-                  ann.body,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              return _AnnouncementTile(
+                subject: ann.subject,
+                preview: ann.body,
+                hasMedia: ann.media.isNotEmpty,
+                unread: unread,
                 trailing: unread
                     ? const AppBadge(text: 'New', tone: AppBadgeTone.brand)
-                    : Text(
-                        _relative(ann.createdAt),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                    : _TimeLabel(ann.createdAt),
                 onTap: () => _open(context, ref, it),
               );
             },
@@ -215,6 +233,189 @@ class _Feed extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Shared chrome for both views: an in-body header (title + subtitle + count
+/// badge) when embedded in a shell, then the pull-to-refresh body. When the
+/// page owns an AppBar (pushed standalone), the title there carries the name,
+/// so the in-body header collapses to just the count strip.
+class _ListScaffold extends StatelessWidget {
+  const _ListScaffold({
+    required this.embedded,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+    required this.onRefresh,
+    required this.child,
+  });
+
+  final bool embedded;
+  final String title;
+  final String subtitle;
+  final int count;
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (embedded)
+                      Text(
+                        title,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: AppType.heavy,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (count > 0) AppBadge(text: '$count'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: onRefresh,
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The unified announcement tile shared by the admin list and the recipient
+/// feed: a campaign-iconed [AppCard] with the subject, one preview line, an
+/// optional media glyph, and a trailing status/metric. Unread feed items lift
+/// to a brand-tinted icon and a bold subject.
+class _AnnouncementTile extends StatelessWidget {
+  const _AnnouncementTile({
+    required this.subject,
+    required this.preview,
+    required this.hasMedia,
+    required this.trailing,
+    required this.onTap,
+    this.unread = false,
+  });
+
+  final String subject;
+  final String preview;
+  final bool hasMedia;
+  final Widget trailing;
+  final VoidCallback onTap;
+  final bool unread;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final iconTint = unread ? scheme.primary : scheme.onSurfaceVariant;
+    final iconBg = unread
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerHighest;
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      onTap: onTap,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(Icons.campaign_rounded, size: 22, color: iconTint),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        subject,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: unread ? AppType.bold : AppType.semibold,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    if (hasMedia) ...[
+                      const SizedBox(width: AppSpacing.xs),
+                      Icon(
+                        Icons.image_outlined,
+                        size: 15,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          trailing,
+        ],
+      ),
+    );
+  }
+}
+
+/// A muted relative-time label ("2d", "5h", "just now") for read feed items.
+class _TimeLabel extends StatelessWidget {
+  const _TimeLabel(this.when);
+  final DateTime when;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      _relative(when),
+      style: theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
 
   static String _relative(DateTime d) {
     final diff = DateTime.now().difference(d);
@@ -225,9 +426,9 @@ class _Feed extends ConsumerWidget {
   }
 }
 
-/// Full-page detail surface for an announcement (§3.2): a header card with the
-/// subject + status/timestamp, then the message body in its own section, then
-/// any attached photos/videos.
+/// Full-page detail surface for an announcement (§3.2): an entity-colored
+/// gradient hero with the subject + status/timestamp, then the message body in
+/// its own section, then any attached photos/videos.
 class _AnnouncementDetailPage extends ConsumerWidget {
   const _AnnouncementDetailPage({required this.announcement});
 
@@ -243,23 +444,32 @@ class _AnnouncementDetailPage extends ConsumerWidget {
         ? const AppBadge(text: 'Draft', tone: AppBadgeTone.warning)
         : const AppBadge(text: 'Sent', tone: AppBadgeTone.success);
     return Scaffold(
-      // Generic title — the subject is the prominent heading in the body now.
-      appBar: AppBar(title: const Text('Announcement')),
       body: ListView(
-        // No outer padding — the hero image runs edge-to-edge at the top; the
+        // No outer padding — the hero band runs edge-to-edge at the top; the
         // text content below is padded. Reads as one cohesive post.
         padding: EdgeInsets.zero,
         children: [
-          if (a.media.isNotEmpty) _HeroMedia(media: a.media.first),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+          AppGradientHeader(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    AppCircleIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: 'Back',
+                      onTap: () => Navigator.of(context).maybePop(),
+                    ),
+                    const Spacer(),
+                    const AppGlassChip('Announcement', icon: Icons.campaign),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
                 Text(
                   a.subject,
                   style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: AppType.bold,
+                    color: Colors.white,
+                    fontWeight: AppType.heavy,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -270,26 +480,40 @@ class _AnnouncementDetailPage extends ConsumerWidget {
                     Icon(
                       Icons.schedule_outlined,
                       size: 14,
-                      color: scheme.onSurfaceVariant,
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(
                       _absoluteFmt.format(timestamp),
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                        color: Colors.white.withValues(alpha: 0.85),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
+              ],
+            ),
+          ),
+          if (a.media.isNotEmpty) _HeroMedia(media: a.media.first),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
                   a.body,
-                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.5),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    height: 1.5,
+                    color: scheme.onSurface,
+                  ),
                 ),
                 // Extra images (beyond the hero) shown as a strip below the body.
                 if (a.media.length > 1) ...[
                   const SizedBox(height: AppSpacing.xl),
-                  const AppSectionHeader(title: 'More photos'),
+                  const AppSectionHeader(
+                    title: 'More photos',
+                    icon: Icons.photo_library_outlined,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   SizedBox(
                     height: 96,
@@ -312,7 +536,7 @@ class _AnnouncementDetailPage extends ConsumerWidget {
   }
 }
 
-/// Full-width hero for the first attachment, at the top of the detail post.
+/// Full-width hero for the first attachment, just under the gradient band.
 /// Tapping opens the file externally via a fresh signed URL (private bucket).
 class _HeroMedia extends ConsumerWidget {
   const _HeroMedia({required this.media});
@@ -416,8 +640,9 @@ class _DetailMediaThumb extends ConsumerWidget {
       );
     } else {
       inner = FutureBuilder<String>(
-        future:
-            ref.read(storageServiceProvider).signedAnnouncementMediaUrl(media.path),
+        future: ref
+            .read(storageServiceProvider)
+            .signedAnnouncementMediaUrl(media.path),
         builder: (_, snap) {
           if (snap.data == null) return ColoredBox(color: fill);
           return CachedNetworkImage(

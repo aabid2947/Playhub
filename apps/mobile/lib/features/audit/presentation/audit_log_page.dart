@@ -6,6 +6,15 @@ import 'package:playhub/features/audit/data/audit_log.dart';
 import 'package:playhub/features/audit/data/audit_log_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Tenant activity log — v1 "Sports-Light".
+///
+/// A pushed page (archetype C/H hybrid): a navy hero summarises the captured
+/// window, then scannable [AppCard] rows (actor · action · entity + an
+/// action-kind [AppBadge]) expand to a clean before→after diff. The "latest 50"
+/// cap is surfaced as an explicit footer cue, not a silent limit.
+///
+/// Presentation-only: the read provider, its 50-row cap, and the academy-scoped
+/// RLS query are unchanged.
 class AuditLogPage extends ConsumerWidget {
   const AuditLogPage({super.key});
 
@@ -14,49 +23,154 @@ class AuditLogPage extends ConsumerWidget {
     final async = ref.watch(auditLogsProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Activity log'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () => ref.invalidate(auditLogsProvider),
-          ),
-        ],
-      ),
       body: async.when(
-        loading: () => const AppSkeletonList(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(auditLogsProvider),
+        loading: () => Column(
+          children: [
+            _Hero(
+              total: null,
+              created: 0,
+              updated: 0,
+              deleted: 0,
+              onRefresh: () => ref.invalidate(auditLogsProvider),
+            ),
+            const Expanded(child: AppSkeletonList()),
+          ],
+        ),
+        error: (e, _) => Column(
+          children: [
+            _Hero(
+              total: null,
+              created: 0,
+              updated: 0,
+              deleted: 0,
+              onRefresh: () => ref.invalidate(auditLogsProvider),
+            ),
+            Expanded(
+              child: AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(auditLogsProvider),
+              ),
+            ),
+          ],
         ),
         data: (logs) {
+          final created = logs.where((l) => l.action == 'insert').length;
+          final updated = logs.where((l) => l.action == 'update').length;
+          final deleted = logs.where((l) => l.action == 'delete').length;
+
+          final hero = _Hero(
+            total: logs.length,
+            created: created,
+            updated: updated,
+            deleted: deleted,
+            onRefresh: () => ref.invalidate(auditLogsProvider),
+          );
+
           if (logs.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.history_outlined,
-              title: 'No activity yet',
-              subtitle: 'Changes to students, payments, and settings '
-                  'show up here.',
+            return Column(
+              children: [
+                hero,
+                const Expanded(
+                  child: AppEmptyState(
+                    icon: Icons.history_outlined,
+                    title: 'No activity yet',
+                    subtitle: 'Changes to students, payments, and settings '
+                        'show up here.',
+                  ),
+                ),
+              ],
             );
           }
+
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(auditLogsProvider),
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              // One extra item: a footer that makes the 50-row cap explicit.
-              itemCount: logs.length + 1,
-              separatorBuilder: (_, index) => index == logs.length - 1
-                  ? const SizedBox.shrink()
-                  : const Divider(height: 1),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              // Header hero + one row per log + a footer cue for the 50-cap.
+              itemCount: logs.length + 2,
               itemBuilder: (_, i) {
-                if (i == logs.length) {
+                if (i == 0) return hero;
+                if (i == logs.length + 1) {
                   return _LoadMoreFooter(count: logs.length);
                 }
-                return _LogTile(log: logs[i]);
+                final log = logs[i - 1];
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.sm,
+                  ),
+                  child: _LogTile(log: log),
+                );
               },
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Navy hero band: a back control, title, refresh, and a translucent summary of
+/// the captured window broken down by action kind.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.total,
+    required this.created,
+    required this.updated,
+    required this.deleted,
+    required this.onRefresh,
+  });
+
+  /// Total entries in the current window; null while loading/erroring.
+  final int? total;
+  final int created;
+  final int updated;
+  final int deleted;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Activity log',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(color: Colors.white),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              AppCircleIconButton(
+                icon: Icons.refresh,
+                tooltip: 'Refresh',
+                onTap: onRefresh,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppHeroStatRow(
+            stats: [
+              ('${total ?? '–'}', 'Entries'),
+              ('$created', 'Created'),
+              ('$updated', 'Updated'),
+              ('$deleted', 'Deleted'),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -92,6 +206,8 @@ class AuditLogPage extends ConsumerWidget {
   }
 }
 
+/// A scannable, expandable row: gradient actor avatar → actor · entity + an
+/// action-kind badge → relative time, expanding to a clean diff in [_DiffPanel].
 class _LogTile extends StatelessWidget {
   const _LogTile({required this.log});
   final AuditLog log;
@@ -109,102 +225,92 @@ class _LogTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final semantics = AppSemanticColors.of(context);
     final style = _actionStyle(log.action);
 
     final subject =
         log.entitySubject ?? '(${log.entityId?.substring(0, 8) ?? '–'})';
     final changed = log.changedFields;
 
-    // Tinted leading icon box mirrors the AppListTile leading rhythm.
-    final leading = Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-      ),
-      alignment: Alignment.center,
-      child: Icon(style.icon, size: 20, color: _iconColor(semantics, scheme)),
-    );
-
-    // Subtitle: relative time, plus a field-change count for updates.
-    final subtitleText = changed.isEmpty
+    // Subtitle: entity type · subject, then time + an optional field-change
+    // count for updates.
+    final metaText = changed.isEmpty
         ? _humanTime
         : '$_humanTime  •  ${changed.length} '
             'field${changed.length == 1 ? '' : 's'} changed';
 
-    return ExpansionTile(
-      leading: leading,
-      tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      childrenPadding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        0,
-        AppSpacing.lg,
-        AppSpacing.lg,
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              log.userDisplay,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge
-                  ?.copyWith(fontWeight: AppType.semibold),
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Theme(
+        // Strip the ExpansionTile's default divider lines so it sits clean
+        // inside the card.
+        data: theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            0,
+            AppSpacing.md,
+            AppSpacing.md,
+          ),
+          leading: AppAvatar(log.userDisplay, size: 40),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  log.userDisplay,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(fontWeight: AppType.semibold),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              AppBadge(text: style.label, tone: style.tone, icon: style.icon),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Entity type + subject as distinct, scannable elements.
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: log.entityType,
+                        style: TextStyle(
+                          color: scheme.onSurface,
+                          fontWeight: AppType.medium,
+                        ),
+                      ),
+                      const TextSpan(text: '  ·  '),
+                      TextSpan(text: subject),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  metaText,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          AppBadge(text: style.label, tone: style.tone),
-        ],
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xs),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Entity type + subject as distinct, scannable elements.
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: log.entityType,
-                    style: TextStyle(
-                      color: scheme.onSurface,
-                      fontWeight: AppType.medium,
-                    ),
-                  ),
-                  const TextSpan(text: '  ·  '),
-                  TextSpan(text: subject),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitleText,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ),
+            _DiffPanel(log: log, changed: changed),
           ],
         ),
       ),
-      children: [
-        _DiffPanel(log: log, changed: changed),
-      ],
     );
-  }
-
-  Color _iconColor(AppSemanticColors semantics, ColorScheme scheme) {
-    return switch (log.action) {
-      'insert' => semantics.success,
-      'update' => semantics.info,
-      'delete' => semantics.danger,
-      _ => scheme.onSurfaceVariant,
-    };
   }
 }
 
@@ -217,16 +323,19 @@ class _DiffPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     final Widget body;
     final String header;
+    final IconData headerIcon;
     if (log.action == 'update') {
       header = 'Changes';
+      headerIcon = Icons.compare_arrows_rounded;
       body = changed.isEmpty
           ? Text(
               '(no field changes detected)',
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: scheme.onSurfaceVariant,
               ),
             )
           : Column(
@@ -242,21 +351,34 @@ class _DiffPanel extends StatelessWidget {
             );
     } else if (log.action == 'insert' && log.after != null) {
       header = 'Inserted row';
+      headerIcon = Icons.add_circle_outline;
       body = _Json(log.after!);
     } else if (log.action == 'delete' && log.before != null) {
       header = 'Deleted row';
+      headerIcon = Icons.delete_outline;
       body = _Json(log.before!);
     } else {
       // Nothing structured to show (e.g. a delete with no captured row).
       return const SizedBox.shrink();
     }
 
-    return AppCard(
+    return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(header, style: theme.textTheme.labelLarge),
+          Row(
+            children: [
+              Icon(headerIcon, size: 16, color: scheme.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.xs),
+              Text(header, style: theme.textTheme.labelLarge),
+            ],
+          ),
           const SizedBox(height: AppSpacing.sm),
           body,
         ],
@@ -342,21 +464,30 @@ class _LoadMoreFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.lg,
-        AppSpacing.lg,
+        AppSpacing.sm,
         AppSpacing.lg,
         AppSpacing.xl,
       ),
-      child: Center(
-        child: Text(
-          'Showing the latest $count entries · pull to refresh',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+      child: Column(
+        children: [
+          Icon(
+            Icons.history_toggle_off_outlined,
+            size: 18,
+            color: scheme.onSurfaceVariant,
           ),
-        ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Showing the latest $count entries · pull to refresh for more',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

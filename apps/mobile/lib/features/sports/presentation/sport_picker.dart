@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/shared/widgets/ui_helpers.dart';
 
 /// Looks up the right list of sports for a picker:
 ///   - centerId given → that center's enabled sports
@@ -189,28 +190,61 @@ class SportFilterChipBar extends ConsumerWidget {
     // filter that would otherwise occupy a list page's header. The other two
     // pickers surface `_emptyHint(centerId)` for the same root condition.
     if (sports.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+
+    // v1 sport chip: a sport-colored pill (filled when selected) with the
+    // sport's icon. The "All" pill uses the navy ink color. Stays a real
+    // [ChoiceChip] so widget-type finders keep resolving.
+    Widget chip({
+      required String label,
+      required Color color,
+      required bool selected,
+      required VoidCallback onTap,
+      IconData? icon,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
+        child: ChoiceChip(
+          label: Text(label),
+          avatar: icon == null
+              ? null
+              : Icon(icon, size: 16, color: selected ? Colors.white : color),
+          selected: selected,
+          showCheckmark: false,
+          onSelected: (_) => onTap(),
+          backgroundColor: color.withValues(alpha: 0.10),
+          selectedColor: color,
+          side: BorderSide(
+            color: selected ? color : color.withValues(alpha: 0.20),
+          ),
+          labelStyle: TextStyle(
+            color: selected ? Colors.white : color,
+            fontWeight: AppType.bold,
+            fontSize: 13,
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       height: 44,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
-            child: ChoiceChip(
-              label: const Text('All'),
-              selected: selectedId == null,
-              onSelected: (_) => onSelected(null),
-            ),
+          chip(
+            label: 'All',
+            color: scheme.onSurface,
+            selected: selectedId == null,
+            onTap: () => onSelected(null),
           ),
           for (final s in sports)
-            Padding(
-              padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
-              child: ChoiceChip(
-                label: Text(s.displayName),
-                selected: selectedId == s.sport.id,
-                onSelected: (_) => onSelected(s.sport.id),
-              ),
+            chip(
+              label: s.displayName,
+              icon: sportIcon(s.displayName),
+              color: colorFromName(s.displayName),
+              selected: selectedId == s.sport.id,
+              onTap: () => onSelected(s.sport.id),
             ),
         ],
       ),

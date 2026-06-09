@@ -41,6 +41,10 @@ String _relativeTime(DateTime when) {
   return _dayFmt.format(when);
 }
 
+/// Lead detail — archetype C. An entity-colored gradient hero (sport-derived)
+/// with the status badge + glass chips, a floating 3-up mini-stat row, then the
+/// status/actions zone, contact info rows, and a real activity timeline. The
+/// note composer is pinned above the keyboard at the bottom.
 class LeadDetailPage extends ConsumerWidget {
   const LeadDetailPage({required this.leadId, super.key});
   final String leadId;
@@ -50,7 +54,6 @@ class LeadDetailPage extends ConsumerWidget {
     final leadAsync = ref.watch(leadByIdProvider(leadId));
     final actsAsync = ref.watch(leadActivitiesProvider(leadId));
     return Scaffold(
-      appBar: AppBar(title: const Text('Lead')),
       body: leadAsync.when(
         loading: () => const AppLoading(),
         error: (e, _) => AppErrorView(
@@ -69,30 +72,51 @@ class LeadDetailPage extends ConsumerWidget {
             children: [
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  padding: EdgeInsets.zero,
                   children: [
-                    _Header(lead: lead),
-                    const SizedBox(height: AppSpacing.lg),
-                    _StatusActions(lead: lead),
-                    const SizedBox(height: AppSpacing.lg),
-                    _Contact(lead: lead),
-                    const SizedBox(height: AppSpacing.xl),
-                    const AppSectionHeader(title: 'Activity'),
-                    const SizedBox(height: AppSpacing.sm),
-                    actsAsync.when(
-                      loading: () => const AppSkeletonList(count: 3),
-                      error: (e, _) => Text(
-                        friendlyError(e),
-                        style: TextStyle(
-                          color: AppSemanticColors.of(context).danger,
+                    _Hero(lead: lead),
+                    Transform.translate(
+                      offset: const Offset(0, -AppSpacing.lg),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _MiniStats(lead: lead),
+                            if (lead.notes != null) ...[
+                              const SizedBox(height: AppSpacing.lg),
+                              _Summary(text: lead.notes!),
+                            ],
+                            const SizedBox(height: AppSpacing.lg),
+                            _StatusActions(lead: lead),
+                            const SizedBox(height: AppSpacing.lg),
+                            _Contact(lead: lead),
+                            const SizedBox(height: AppSpacing.lg),
+                            const AppSectionHeader(
+                              title: 'Activity',
+                              icon: Icons.history_rounded,
+                            ),
+                            actsAsync.when(
+                              loading: () => const AppSkeletonList(count: 3),
+                              error: (e, _) => Text(
+                                friendlyError(e),
+                                style: TextStyle(
+                                  color: AppSemanticColors.of(context).danger,
+                                ),
+                              ),
+                              data: (acts) {
+                                if (acts.isEmpty) {
+                                  return const _ActivityEmpty();
+                                }
+                                return _ActivityTimeline(activities: acts);
+                              },
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                          ],
                         ),
                       ),
-                      data: (acts) {
-                        if (acts.isEmpty) {
-                          return const _ActivityEmpty();
-                        }
-                        return _ActivityTimeline(activities: acts);
-                      },
                     ),
                   ],
                 ),
@@ -106,60 +130,189 @@ class LeadDetailPage extends ConsumerWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.lead});
+/// The sport-colored gradient hero: back button + status badge, a big gradient
+/// avatar, the lead name, and source/sport/age glass chips.
+class _Hero extends ConsumerWidget {
+  const _Hero({required this.lead});
   final Lead lead;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return AppCard(
+    final sportLabel = ref.watch(
+      sportDisplayProvider((sportId: lead.sportId)),
+    );
+    // Entity hero: tint the gradient from the lead name so each lead reads as
+    // its own card (pair = lighter→base of a deterministic accent color).
+    final c = colorFromName(lead.displayName);
+    return AppGradientHeader(
+      colors: [c.withValues(alpha: 0.92), c],
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  lead.displayName,
-                  style: theme.textTheme.titleLarge,
-                ),
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).maybePop(),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              const Spacer(),
               AppBadge(
                 text: lead.status.label,
                 tone: _statusTone(lead.status),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Consumer(
-            builder: (_, ref, __) {
-              final sportLabel = ref.watch(
-                sportDisplayProvider((sportId: lead.sportId)),
-              );
-              return Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.xs,
-                children: [
-                  AppBadge(text: lead.source.label),
-                  if (sportLabel != '—') AppBadge(text: sportLabel),
-                  if (lead.age != null) AppBadge(text: '${lead.age} yrs'),
-                ],
-              );
-            },
+          const SizedBox(height: AppSpacing.md),
+          AppAvatar(lead.displayName, size: 76, color: Colors.white),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            lead.displayName,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
           ),
-          if (lead.notes != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              lead.notes!,
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              AppGlassChip(lead.source.label, icon: Icons.input_rounded),
+              if (sportLabel != '—')
+                AppGlassChip(sportLabel, icon: Icons.sports_rounded),
+              if (lead.age != null)
+                AppGlassChip('${lead.age} yrs', icon: Icons.cake_rounded),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Floating 3-up mini-stat row that overlaps the hero band: pipeline stage,
+/// trial date (if any), and the date the lead came in.
+class _MiniStats extends StatelessWidget {
+  const _MiniStats({required this.lead});
+  final Lead lead;
+
+  @override
+  Widget build(BuildContext context) {
+    final semantics = AppSemanticColors.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    final trial = lead.trialScheduledAt?.toLocal();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.flag_rounded,
+            value: lead.status.label,
+            label: 'Stage',
+            tint: scheme.primary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.event_rounded,
+            value: trial == null ? '—' : _dayFmt.format(trial),
+            label: 'Trial',
+            tint: trial == null ? scheme.onSurfaceVariant : semantics.warning,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: _MiniStat(
+            icon: Icons.schedule_rounded,
+            value: _relativeTime(lead.createdAt),
+            label: 'Added',
+            tint: scheme.secondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A compact floating stat card used in the overlapping mini-stat row.
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.tint,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.md,
+        horizontal: AppSpacing.sm,
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: tint, size: 22),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: tint,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The lead's free-text notes, shown as a quiet summary card under the hero.
+class _Summary extends StatelessWidget {
+  const _Summary({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.sticky_note_2_outlined,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              text,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -210,13 +363,15 @@ class _StatusActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final converted = lead.status == LeadStatus.converted;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(title: 'Status'),
-          const SizedBox(height: AppSpacing.xs),
-          Wrap(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const AppSectionHeader(
+          title: 'Pipeline stage',
+          icon: Icons.timeline_rounded,
+        ),
+        AppCard(
+          child: Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: [
@@ -231,36 +386,38 @@ class _StatusActions extends ConsumerWidget {
                   ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const AppSectionHeader(title: 'Actions'),
-          const SizedBox(height: AppSpacing.xs),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              icon: const Icon(Icons.person_add),
-              label: const Text('Convert to student'),
-              onPressed: converted
-                  ? null
-                  : () {
-                      showModalBottomSheet<void>(
-                        context: context,
-                        isScrollControlled: true,
-                        builder: (_) => LeadConvertSheet(lead: lead),
-                      );
-                    },
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        // Bottom action row: secondary outlined (schedule) + primary filled
+        // (convert). Convert is disabled once the lead is already converted.
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.event, size: 18),
+                label: const Text('Schedule trial'),
+                onPressed: () => _scheduleTrial(context, ref),
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.event),
-              label: const Text('Schedule trial'),
-              onPressed: () => _scheduleTrial(context, ref),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: FilledButton.icon(
+                icon: const Icon(Icons.person_add, size: 18),
+                label: const Text('Convert'),
+                onPressed: converted
+                    ? null
+                    : () {
+                        showModalBottomSheet<void>(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (_) => LeadConvertSheet(lead: lead),
+                        );
+                      },
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -273,9 +430,9 @@ class _Contact extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <Widget>[
       if (lead.phone != null)
-        _ContactRow(icon: Icons.phone_outlined, value: lead.phone!),
+        _ContactRow(icon: Icons.phone_outlined, label: 'Phone', value: lead.phone!),
       if (lead.email != null)
-        _ContactRow(icon: Icons.email_outlined, value: lead.email!),
+        _ContactRow(icon: Icons.email_outlined, label: 'Email', value: lead.email!),
       if (lead.parentName != null)
         _ContactRow(
           icon: Icons.family_restroom_outlined,
@@ -299,13 +456,18 @@ class _Contact extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const AppSectionHeader(title: 'Contact'),
-        const SizedBox(height: AppSpacing.sm),
+        const AppSectionHeader(
+          title: 'Contact',
+          icon: Icons.contact_phone_outlined,
+        ),
         AppCard(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: AppSpacing.xs,
+          ),
           child: rows.isEmpty
               ? Padding(
-                  padding: const EdgeInsets.all(AppSpacing.md),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
                   child: Text(
                     'No contact details on file.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -314,40 +476,60 @@ class _Contact extends StatelessWidget {
                         ),
                   ),
                 )
-              : Column(children: rows),
+              : Column(
+                  children: [
+                    for (var i = 0; i < rows.length; i++) ...[
+                      rows[i],
+                      if (i != rows.length - 1) const Divider(height: 1),
+                    ],
+                  ],
+                ),
         ),
       ],
     );
   }
 }
 
+/// An info row: leading tinted icon, a small label and the value beneath it.
 class _ContactRow extends StatelessWidget {
   const _ContactRow({
     required this.icon,
+    required this.label,
     required this.value,
-    this.label,
   });
 
   final IconData icon;
+  final String label;
   final String value;
-  final String? label;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
-      leading: Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-      title: label != null
-          ? Text(
-              label!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            )
-          : Text(value, style: theme.textTheme.bodyLarge),
-      subtitle: label != null
-          ? Text(value, style: theme.textTheme.bodyLarge)
-          : null,
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(value, style: theme.textTheme.bodyLarge),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -358,8 +540,7 @@ class _ActivityEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+    return AppCard(
       child: Row(
         children: [
           Icon(
@@ -368,10 +549,12 @@ class _ActivityEmpty extends StatelessWidget {
             color: theme.colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            'No activity yet. Add a note below.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          Expanded(
+            child: Text(
+              'No activity yet. Add a note below.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -388,15 +571,17 @@ class _ActivityTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var i = 0; i < activities.length; i++)
-          _TimelineEntry(
-            activity: activities[i],
-            isFirst: i == 0,
-            isLast: i == activities.length - 1,
-          ),
-      ],
+    return AppCard(
+      child: Column(
+        children: [
+          for (var i = 0; i < activities.length; i++)
+            _TimelineEntry(
+              activity: activities[i],
+              isFirst: i == 0,
+              isLast: i == activities.length - 1,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -532,35 +717,36 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
       color: scheme.surface,
       child: SafeArea(
         top: false,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(color: scheme.outlineVariant),
-            ),
+            color: scheme.surface,
+            boxShadow: AppShadows.floating,
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: AppFormField(
-                  controller: _ctrl,
-                  hint: 'Add a note',
-                  textInputAction: TextInputAction.send,
-                  onFieldSubmitted: (_) => _busy ? null : _add(),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppFormField(
+                    controller: _ctrl,
+                    hint: 'Add a note',
+                    textInputAction: TextInputAction.send,
+                    onFieldSubmitted: (_) => _busy ? null : _add(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              FilledButton(
-                onPressed: _busy ? null : _add,
-                child: _busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Add'),
-              ),
-            ],
+                const SizedBox(width: AppSpacing.sm),
+                FilledButton(
+                  onPressed: _busy ? null : _add,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Add'),
+                ),
+              ],
+            ),
           ),
         ),
       ),

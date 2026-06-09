@@ -9,11 +9,15 @@ class AppBadge extends StatelessWidget {
   const AppBadge({
     required this.text,
     this.tone = AppBadgeTone.neutral,
+    this.icon,
     super.key,
   });
 
   final String text;
   final AppBadgeTone tone;
+
+  /// Optional leading glyph (e.g. a check on "Done", a clock on "Pending").
+  final IconData? icon;
 
   ({Color fg, Color bg}) _colors(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -42,20 +46,29 @@ class AppBadge extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = _colors(context);
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
+      padding: EdgeInsets.symmetric(
+        horizontal: icon == null ? AppSpacing.sm : 7,
         vertical: 2,
       ),
       decoration: BoxDecoration(
         color: colors.bg,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: colors.fg,
-          fontWeight: AppType.semibold,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: colors.fg),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.fg,
+              fontWeight: AppType.semibold,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -7,6 +7,11 @@ import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Vendor directory — v1 "Sports-Light" list archetype (B). Pushed page (keeps
+/// its own AppBar) that also renders as the third tab body inside the inventory
+/// landing. Each supplier is an [AppCard] tile with a tinted store icon,
+/// a one-line contact subtitle, and an active-status [AppBadge]. Create/edit go
+/// through a scrollable titled bottom sheet that calls `upsertVendor`.
 class VendorsPage extends ConsumerWidget {
   const VendorsPage({super.key});
 
@@ -29,11 +34,8 @@ class VendorsPage extends ConsumerWidget {
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('New vendor'),
-              onPressed: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => const _VendorSheet(),
-              ),
+              tooltip: 'Add a vendor',
+              onPressed: () => _openSheet(context),
             )
           : null,
       body: async.when(
@@ -52,37 +54,130 @@ class VendorsPage extends ConsumerWidget {
           }
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(vendorsProvider),
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                AppSpacing.xxxl,
+              ),
+              // +1 leading row for the in-body result-count header.
+              itemCount: rows.length + 1,
               itemBuilder: (_, i) {
-                final v = rows[i];
-                final contact = [
-                  if (v.contactName != null && v.contactName!.isNotEmpty)
-                    v.contactName!,
-                  if (v.phone != null && v.phone!.isNotEmpty) v.phone!,
-                  if (v.email != null && v.email!.isNotEmpty) v.email!,
-                ].join(' · ');
-                return AppListTile(
-                  leading: const Icon(Icons.store_outlined),
-                  title: Text(v.name),
-                  subtitle: Text(
-                    contact.isEmpty ? 'No contact details' : contact,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: v.isActive ? null : const AppBadge(text: 'Inactive'),
-                  onTap: () => showModalBottomSheet<void>(
-                    context: context,
-                    isScrollControlled: true,
-                    builder: (_) => _VendorSheet(existing: v),
-                  ),
-                );
+                if (i == 0) return _CountHeader(count: rows.length);
+                return _VendorCard(vendor: rows[i - 1]);
               },
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Opens the create/edit sheet. Scrollable + keyboard-safe so the fields never
+/// clip behind the on-screen keyboard.
+void _openSheet(BuildContext context, {Vendor? existing}) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => _VendorSheet(existing: existing),
+  );
+}
+
+/// In-body header: a neutral count [AppBadge] standing in for the list count
+/// (this is a pushed page / tab body, so the count lives in the body, not a bar).
+class _CountHeader extends StatelessWidget {
+  const _CountHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final noun = count == 1 ? 'vendor' : 'vendors';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: AppBadge(
+          text: '$count $noun',
+          icon: Icons.storefront_outlined,
+        ),
+      ),
+    );
+  }
+}
+
+/// A v1 list tile rendered as an [AppCard]: a tinted store icon, the vendor
+/// name, a one-line contact subtitle, and a trailing status [AppBadge]
+/// ("Active" success / "Inactive" neutral). Tapping opens the edit sheet.
+class _VendorCard extends StatelessWidget {
+  const _VendorCard({required this.vendor});
+  final Vendor vendor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    // Active vendors carry the brand tint; inactive ones read muted.
+    final tint = vendor.isActive ? scheme.primary : scheme.onSurfaceVariant;
+
+    // Subtitle is one tight line of whatever contact details exist.
+    final contact = [
+      if (vendor.contactName != null && vendor.contactName!.isNotEmpty)
+        vendor.contactName!,
+      if (vendor.phone != null && vendor.phone!.isNotEmpty) vendor.phone!,
+      if (vendor.email != null && vendor.email!.isNotEmpty) vendor.email!,
+    ].join(' · ');
+
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
+      onTap: () => _openSheet(context, existing: vendor),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(Icons.store_outlined, color: tint, size: 22),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  vendor.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(fontWeight: AppType.semibold),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  contact.isEmpty ? 'No contact details' : contact,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          AppBadge(
+            text: vendor.isActive ? 'Active' : 'Inactive',
+            tone:
+                vendor.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
+          ),
+        ],
       ),
     );
   }
@@ -179,6 +274,7 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final caps = ref.watch(capabilitiesProvider);
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
     final maxHeight = MediaQuery.of(context).size.height * 0.85;
@@ -188,7 +284,7 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
         child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
             AppSpacing.lg,
-            AppSpacing.lg,
+            AppSpacing.md,
             AppSpacing.lg,
             AppSpacing.lg + viewInsets,
           ),
@@ -196,6 +292,18 @@ class _VendorSheetState extends ConsumerState<_VendorSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Grab handle anchors the scrollable sheet.
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
               Text(
                 widget.existing == null ? 'New vendor' : 'Edit vendor',
                 style: theme.textTheme.titleLarge,

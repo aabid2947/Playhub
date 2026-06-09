@@ -205,9 +205,21 @@ class _DocumentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final uploaded = DateFormat('dd MMM yyyy').format(doc.uploadedAt.toLocal());
+    // v1: a deterministic sport/category-colored tint box for the file glyph,
+    // keyed off the document type so each kind reads with a consistent accent.
+    final tint = colorFromName(doc.type);
     return AppListTile(
       wrapLeading: false,
-      leading: Icon(_icon),
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(_icon, color: tint, size: 20),
+      ),
       isThreeLine: true,
       title: Text(
         doc.displayName,

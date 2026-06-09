@@ -46,10 +46,14 @@ class StudentFeesSection extends ConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         assignmentsAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpacing.sm),
-            child: LinearProgressIndicator(minHeight: 2),
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: AppLoading(),
           ),
-          error: (e, _) => Text(friendlyError(e)),
+          error: (e, _) => AppErrorView(
+            message: friendlyError(e),
+            onRetry: () =>
+                ref.invalidate(assignmentsForStudentProvider(studentId)),
+          ),
           data: (rows) {
             if (rows.isEmpty) {
               return const AppCard(
@@ -65,25 +69,27 @@ class StudentFeesSection extends ConsumerWidget {
               padding: EdgeInsets.zero,
               child: Column(
                 children: [
-                  for (final a in rows)
+                  for (var i = 0; i < rows.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
                     _AssignmentTile(
-                      assignment: a,
-                      fee: byId[a.feeStructureId],
+                      assignment: rows[i],
+                      fee: byId[rows[i].feeStructureId],
                       onDeactivate: canManage
                           ? () async {
                               final ok = await _confirmDeactivate(
                                 context,
-                                byId[a.feeStructureId],
+                                byId[rows[i].feeStructureId],
                               );
                               if (!ok) return;
                               await deactivateAssignment(
                                 ref,
-                                assignmentId: a.id,
+                                assignmentId: rows[i].id,
                                 studentId: studentId,
                               );
                             }
                           : null,
                     ),
+                  ],
                 ],
               ),
             );
@@ -106,6 +112,7 @@ class StudentFeesSection extends ConsumerWidget {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (ctx) => _AssignSheet(
         studentId: studentId,
         fees: active,
@@ -162,13 +169,62 @@ class _AssignmentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isActive = assignment.isActive;
+    return _AssignmentRow(
+      icon: Icons.receipt_long_outlined,
+      tint: colorFromName(fee?.name ?? 'fee'),
+      title: fee?.name ?? '(unknown fee)',
+      subtitle: [
+        fee?.type.label,
+        'starts ${assignment.startDate.toIso8601String().substring(0, 10)}',
+        if (assignment.billingDay != null)
+          'billing day ${assignment.billingDay}',
+        if (assignment.endDate != null)
+          'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
+      ].whereType<String>().join(' · '),
+      isActive: assignment.isActive,
+      stopTooltip: 'Stop billing',
+      onDeactivate: onDeactivate,
+    );
+  }
+}
+
+/// Shared v1 assignment-row layout used by all four billing-assignment
+/// sections (student/batch × fees/discounts): a category-tinted leading glyph
+/// box, a title, one tight subtitle line, an always-present active/inactive
+/// [AppBadge], and the gated stop control (hidden when [onDeactivate] is null
+/// or the assignment is already inactive). Renders a real [AppListTile].
+class _AssignmentRow extends StatelessWidget {
+  const _AssignmentRow({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
+    required this.isActive,
+    required this.stopTooltip,
+    required this.onDeactivate,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String subtitle;
+  final bool isActive;
+  final String stopTooltip;
+  final Future<void> Function()? onDeactivate;
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final glyph = isActive ? tint : scheme.outline;
     final badge = isActive
-        ? const AppBadge(text: 'Active', tone: AppBadgeTone.success)
-        : const AppBadge(text: 'Inactive');
+        ? const AppBadge(
+            text: 'Active',
+            tone: AppBadgeTone.success,
+            icon: Icons.check_circle_outline,
+          )
+        : const AppBadge(text: 'Inactive', icon: Icons.pause_circle_outline);
     // The status badge is always present so active/inactive reads consistently;
-    // the deactivate control is appended only when active and manageable.
+    // the stop control is appended only when active and manageable.
     final trailing = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -176,8 +232,8 @@ class _AssignmentTile extends StatelessWidget {
         if (isActive && onDeactivate != null) ...[
           const SizedBox(width: AppSpacing.xs),
           IconButton(
-            tooltip: 'Stop billing',
-            icon: const Icon(Icons.stop_circle_outlined),
+            tooltip: stopTooltip,
+            icon: Icon(Icons.stop_circle_outlined, color: scheme.error),
             onPressed: onDeactivate,
           ),
         ],
@@ -185,21 +241,18 @@ class _AssignmentTile extends StatelessWidget {
     );
     return AppListTile(
       wrapLeading: false,
-      leading: Icon(
-        Icons.receipt_long_outlined,
-        color: isActive ? scheme.onSurfaceVariant : scheme.outline,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: glyph.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(icon, color: glyph, size: 20),
       ),
-      title: Text(fee?.name ?? '(unknown fee)'),
-      subtitle: Text(
-        [
-          fee?.type.label,
-          'starts ${assignment.startDate.toIso8601String().substring(0, 10)}',
-          if (assignment.billingDay != null)
-            'billing day ${assignment.billingDay}',
-          if (assignment.endDate != null)
-            'ends ${assignment.endDate!.toIso8601String().substring(0, 10)}',
-        ].whereType<String>().join(' · '),
-      ),
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(subtitle),
       trailing: trailing,
     );
   }
@@ -303,14 +356,19 @@ class _AssignSheetState extends State<_AssignSheet> {
       padding: EdgeInsets.only(
         left: AppSpacing.lg,
         right: AppSpacing.lg,
-        top: AppSpacing.lg,
+        top: AppSpacing.xs,
         bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Assign fee', style: theme.textTheme.titleLarge),
+          Text(
+            'Assign fee',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: AppType.bold,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             _invoiceExplainer(selected.type, billingDay),

@@ -94,7 +94,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            const AppSectionHeader(title: 'Details'),
+            const AppSectionHeader(
+              title: 'Details',
+              icon: Icons.inventory_2_outlined,
+            ),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,7 +126,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Stock & cost'),
+            const AppSectionHeader(
+              title: 'Stock & cost',
+              icon: Icons.inventory_outlined,
+            ),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,7 +180,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
-            const AppSectionHeader(title: 'Categorisation'),
+            const AppSectionHeader(
+              title: 'Categorisation',
+              icon: Icons.category_outlined,
+            ),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,19 +232,25 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(AppSpacing.lg),
-        child: SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(isEditing ? 'Save changes' : 'Create item'),
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(isEditing ? 'Save changes' : 'Create item'),
+            ),
           ),
         ),
       ),

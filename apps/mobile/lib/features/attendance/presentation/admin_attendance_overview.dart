@@ -110,13 +110,21 @@ class _AdminAttendanceOverviewState
     final students =
         ref.watch(studentsProvider).valueOrNull ?? const <Student>[];
 
+    // App-bar-less pushed page: the gradient hero owns the header (back button
+    // + title + live summary), so it persists across loading/error/data while
+    // the body swaps underneath.
     return Scaffold(
-      appBar: AppBar(title: const Text('Live attendance')),
       body: feedAsync.when(
-        loading: () => const AppSkeletonList(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(_todaysAttendanceStreamProvider),
+        loading: () => const _Body(
+          header: _Header(present: 0, absent: 0, marked: 0),
+          child: AppSkeletonList(),
+        ),
+        error: (e, _) => _Body(
+          header: const _Header(present: 0, absent: 0, marked: 0),
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(_todaysAttendanceStreamProvider),
+          ),
         ),
         data: (records) {
           final present = records
@@ -135,96 +143,113 @@ class _AdminAttendanceOverviewState
           final visible = records.take(_visibleCount).toList();
           final hasMore = records.length > visible.length;
 
-          return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            children: [
-              // KPI tiles — 2-up via Rows of Expanded so each tile sizes to its
-              // content (a fixed GridView aspect ratio clips the value/label at
-              // larger text scales). Theme-aware status accents (§3.4).
-              Row(
-                children: [
-                  Expanded(
-                    child: AppStatTile(
-                      icon: Icons.fact_check_outlined,
-                      label: 'Marked',
-                      value: '${records.length}',
+          return _Body(
+            header: _Header(
+              present: present,
+              absent: absent,
+              marked: records.length,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // KPI tiles — 2-up via Rows of Expanded so each tile sizes to
+                // its content (a fixed GridView aspect ratio clips the
+                // value/label at larger text scales). Theme-aware status
+                // accents (§3.4).
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppStatTile(
+                        icon: Icons.fact_check_outlined,
+                        label: 'Marked',
+                        value: '${records.length}',
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppStatTile(
-                      icon: Icons.check_circle_outline,
-                      label: 'Present',
-                      value: '$present',
-                      color: semantics.success,
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppStatTile(
+                        icon: Icons.check_circle_outline,
+                        label: 'Present',
+                        value: '$present',
+                        color: semantics.success,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: AppStatTile(
-                      icon: Icons.cancel_outlined,
-                      label: 'Absent',
-                      value: '$absent',
-                      color: semantics.danger,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppStatTile(
-                      icon: Icons.event_busy_outlined,
-                      label: 'Excused',
-                      value: '$excused',
-                      color: semantics.warning,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const AppSectionHeader(title: 'Activity'),
-              if (records.isEmpty)
-                const AppEmptyState(
-                  icon: Icons.timeline_outlined,
-                  title: 'No attendance yet',
-                  subtitle:
-                      'Marks appear here in real time as coaches take '
-                      'attendance today.',
-                )
-              else ...[
-                AppCard(
-                  padding: EdgeInsets.zero,
-                  child: Column(
-                    children: [
-                      for (final r in visible)
-                        AppListTile(
-                          wrapLeading: false,
-                          leading: _StatusDot(status: r.status),
-                          title: Text(_studentName(r.studentId, students)),
-                          subtitle: Text(
-                            _subtitle(r, batches),
-                          ),
-                          trailing: AppBadge(
-                            text: r.status.label,
-                            tone: _toneFor(r.status),
-                          ),
-                        ),
-                    ],
-                  ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                _LoadMoreFooter(
-                  shown: visible.length,
-                  total: records.length,
-                  hasMore: hasMore,
-                  onLoadMore: () => setState(
-                    () => _visibleCount += _activityPageSize,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppStatTile(
+                        icon: Icons.cancel_outlined,
+                        label: 'Absent',
+                        value: '$absent',
+                        color: semantics.danger,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: AppStatTile(
+                        icon: Icons.event_busy_outlined,
+                        label: 'Excused',
+                        value: '$excused',
+                        color: semantics.warning,
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: AppSpacing.lg),
+                AppSectionHeader(
+                  title: 'Activity',
+                  icon: Icons.timeline_outlined,
+                  trailing: records.isEmpty
+                      ? null
+                      : AppBadge(
+                          text: 'Latest ${visible.length}',
+                          tone: AppBadgeTone.brand,
+                        ),
+                ),
+                if (records.isEmpty)
+                  const AppEmptyState(
+                    icon: Icons.timeline_outlined,
+                    title: 'No attendance yet',
+                    subtitle:
+                        'Marks appear here in real time as coaches take '
+                        'attendance today.',
+                  )
+                else ...[
+                  AppCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        for (final r in visible)
+                          AppListTile(
+                            wrapLeading: false,
+                            leading: _StatusDot(status: r.status),
+                            title: Text(_studentName(r.studentId, students)),
+                            subtitle: Text(
+                              _subtitle(r, batches),
+                            ),
+                            trailing: AppBadge(
+                              text: r.status.label,
+                              tone: _toneFor(r.status),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _LoadMoreFooter(
+                    shown: visible.length,
+                    total: records.length,
+                    hasMore: hasMore,
+                    onLoadMore: () => setState(
+                      () => _visibleCount += _activityPageSize,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           );
         },
       ),
@@ -253,6 +278,124 @@ class _AdminAttendanceOverviewState
     if (time == null) return batch;
     return '$batch · ${_formatTime(time)}';
   }
+}
+
+/// Page scaffold body: the orange [AppGradientHeader] hero on top, then the
+/// scrollable [child] (KPI grid + activity feed) overlapping the band upward,
+/// v1-style. Used by every async state so the hero never flickers away.
+class _Body extends StatelessWidget {
+  const _Body({required this.header, required this.child});
+
+  final _Header header;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        header,
+        Transform.translate(
+          offset: const Offset(0, -AppSpacing.lg),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              0,
+              AppSpacing.lg,
+              AppSpacing.xl,
+            ),
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The hero band for this pushed page: back button + title + a "Live" cue,
+/// the local date sub-line, and a translucent present/absent/marked summary.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.present,
+    required this.absent,
+    required this.marked,
+  });
+
+  final int present;
+  final int absent;
+  final int marked;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Live attendance',
+                      style: theme.textTheme.titleLarge
+                          ?.copyWith(color: Colors.white),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _todayLabel(),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              const AppGlassChip('Live', icon: Icons.sensors_rounded),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppHeroStatRow(
+            stats: [
+              ('$marked', 'Marked'),
+              ('$present', 'Present'),
+              ('$absent', 'Absent'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Today's date as a friendly "Mon, 9 Jun" label without pulling in `intl`.
+String _todayLabel() {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final now = DateTime.now();
+  return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}';
 }
 
 /// 12-hour clock formatting without pulling in `intl` for one label.
