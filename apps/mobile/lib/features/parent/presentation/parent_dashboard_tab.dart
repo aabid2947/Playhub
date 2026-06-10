@@ -389,14 +389,26 @@ class _AvatarCircle extends StatelessWidget {
   }
 }
 
-class _UpcomingSessionsCard extends ConsumerWidget {
+class _UpcomingSessionsCard extends ConsumerStatefulWidget {
   const _UpcomingSessionsCard({required this.studentId});
   final String studentId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_UpcomingSessionsCard> createState() =>
+      _UpcomingSessionsCardState();
+}
+
+class _UpcomingSessionsCardState extends ConsumerState<_UpcomingSessionsCard> {
+  /// Sessions are sorted soonest-first by the provider, so showing the first
+  /// few = the most relevant (nearest in time). The rest of the week is one
+  /// "Read more" tap away — keeps the dashboard glanceable without hiding data.
+  static const _collapsedCount = 3;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final async = ref.watch(studentUpcomingSessionsProvider(studentId));
+    final async = ref.watch(studentUpcomingSessionsProvider(widget.studentId));
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,9 +439,14 @@ class _UpcomingSessionsCard extends ConsumerWidget {
                   ),
                 );
               }
+              final hasMore = sessions.length > _collapsedCount;
+              final visible = (_expanded || !hasMore)
+                  ? sessions
+                  : sessions.take(_collapsedCount).toList();
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final s in sessions)
+                  for (final s in visible)
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
@@ -439,6 +456,25 @@ class _UpcomingSessionsCard extends ConsumerWidget {
                         s.coachDisplayName == null
                             ? s.whenLabel
                             : '${s.whenLabel}  •  Coach ${s.coachDisplayName}',
+                      ),
+                    ),
+                  if (hasMore)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _expanded = !_expanded),
+                        icon: Icon(
+                          _expanded
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _expanded
+                              ? 'Show less'
+                              : 'Read more (${sessions.length - _collapsedCount} more)',
+                        ),
                       ),
                     ),
                 ],

@@ -347,10 +347,11 @@ class _MemberTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Removal mirrors the provisioning ladder: you can only remove a rung you
-    // could have invited (canInvite → can_provision_role), and never yourself.
-    // RLS (users_admin_delete) is the real gate and also enforces center scope.
-    final canRemove = member.id != ref.watch(currentUserIdProvider) &&
+    // The ⋮ actions (reset password, remove) mirror the provisioning ladder:
+    // you can only act on a rung you could have invited (canInvite →
+    // can_provision_role), and never yourself. RLS (users_admin_delete) is the
+    // real gate for removal and also enforces center scope.
+    final canManage = member.id != ref.watch(currentUserIdProvider) &&
         ref.watch(capabilitiesProvider).canInvite(member.role);
 
     return AppCard(
@@ -376,13 +377,18 @@ class _MemberTile extends ConsumerWidget {
               const SizedBox(width: AppSpacing.xs),
             ],
             AppBadge(text: _roleLabel(member.role), tone: AppBadgeTone.brand),
-            if (canRemove)
+            if (canManage)
               PopupMenuButton<String>(
                 tooltip: 'Member actions',
                 onSelected: (v) {
+                  if (v == 'reset') _confirmReset(context, ref);
                   if (v == 'remove') _confirmRemove(context, ref);
                 },
                 itemBuilder: (_) => const [
+                  PopupMenuItem<String>(
+                    value: 'reset',
+                    child: Text('Send password reset link'),
+                  ),
                   PopupMenuItem<String>(
                     value: 'remove',
                     child: Text('Remove from academy'),
@@ -393,6 +399,33 @@ class _MemberTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmReset(BuildContext context, WidgetRef ref) async {
+    if (member.email.isEmpty) {
+      AppSnackbar.error(context, 'No email on file for this member.');
+      return;
+    }
+    final ok = await confirmAction(
+      context,
+      title: 'Send password reset link?',
+      message:
+          'A password-reset email will be sent to ${member.email}. They can '
+          'use the link to set a new password and sign in.',
+      confirmLabel: 'Send link',
+    );
+    if (!ok) return;
+    try {
+      await ref.read(inviteRepoProvider).sendPasswordReset(member.email);
+      if (context.mounted) {
+        AppSnackbar.success(
+          context,
+          'Password reset link sent to ${member.email}.',
+        );
+      }
+    } on Object catch (e) {
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    }
   }
 
   Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {

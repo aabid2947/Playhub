@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -70,6 +71,17 @@ class InviteRepo {
         "You can't remove this member — they're outside the staff you manage.",
       );
     }
+  }
+
+  /// Sends a password-reset (recovery) email so the member can set a new
+  /// password. Reuses the same deep-link redirect as the Forgot-password flow,
+  /// so the email link opens the app's set-new-password screen. Supabase does
+  /// not reveal whether the address exists, so a clean return means the email
+  /// was dispatched.
+  Future<void> sendPasswordReset(String email) async {
+    final redirectTo =
+        kIsWeb ? Uri.base.origin : 'ai.hammad.playhub://login-callback';
+    await _client.auth.resetPasswordForEmail(email, redirectTo: redirectTo);
   }
 }
 
