@@ -54,93 +54,272 @@ class PlansPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(allPlansProvider);
-    final theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.md,
-            AppSpacing.lg,
-            AppSpacing.sm,
+        async.when(
+          loading: () => const AppSkeletonList(),
+          error: (e, _) => AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(allPlansProvider),
           ),
-          child: AppSectionHeader(
-            title: 'Subscription plans',
-            trailing: TextButton.icon(
-              onPressed: () => _openSheet(context),
-              icon: const Icon(Icons.add),
-              label: const Text('New plan'),
-            ),
-          ),
-        ),
-        Expanded(
-          child: async.when(
-            loading: () => const AppSkeletonList(),
-            error: (e, _) => AppErrorView(
-              message: friendlyError(e),
-              onRetry: () => ref.invalidate(allPlansProvider),
-            ),
-            data: (rows) {
-              if (rows.isEmpty) {
-                return AppEmptyState(
-                  icon: Icons.workspace_premium_outlined,
-                  title: 'No plans yet',
-                  subtitle: 'Create the first subscription plan academies can '
-                      'be billed on.',
-                  actionLabel: 'New plan',
-                  onAction: () => _openSheet(context),
-                );
-              }
-              return RefreshIndicator(
-                onRefresh: () async => ref.invalidate(allPlansProvider),
-                child: ListView.separated(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.xxl),
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, i) {
-                    final p = rows[i];
-                    return AppListTile(
-                      leading: const Icon(Icons.workspace_premium_outlined),
-                      title: Text('${p.name} (${p.code})'),
-                      subtitle: Text(_priceLine(p)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AppBadge(
-                            text: p.isActive ? 'Active' : 'Inactive',
-                            tone: p.isActive
-                                ? AppBadgeTone.success
-                                : AppBadgeTone.neutral,
-                          ),
-                          IconButton(
-                            tooltip: 'Delete plan',
-                            icon: Icon(
-                              Icons.delete_outline,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                            onPressed: () => _confirmDelete(context, ref, p),
-                          ),
-                        ],
-                      ),
-                      onTap: () => _openSheet(context, existing: p),
-                    );
-                  },
-                ),
+          data: (rows) {
+            if (rows.isEmpty) {
+              return AppEmptyState(
+                icon: Icons.workspace_premium_outlined,
+                title: 'No plans yet',
+                subtitle: 'Create the first subscription plan academies can '
+                    'be billed on.',
+                actionLabel: 'New plan',
+                onAction: () => _openSheet(context),
               );
-            },
+            }
+            return RefreshIndicator(
+              onRefresh: () async => ref.invalidate(allPlansProvider),
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  // Leave room so the last card clears the FAB.
+                  AppSpacing.xxl + AppSpacing.xl,
+                ),
+                itemCount: rows.length + 1,
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: AppSpacing.sm),
+                itemBuilder: (context, i) {
+                  if (i == 0) return _ListHeader(count: rows.length);
+                  final p = rows[i - 1];
+                  return _PlanCard(
+                    plan: p,
+                    onEdit: () => _openSheet(context, existing: p),
+                    onDelete: () => _confirmDelete(context, ref, p),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        Positioned(
+          right: AppSpacing.lg,
+          bottom: AppSpacing.lg,
+          child: FloatingActionButton.extended(
+            onPressed: () => _openSheet(context),
+            icon: const Icon(Icons.add),
+            label: const Text('New plan'),
           ),
         ),
       ],
     );
   }
+}
+
+/// In-body list header: title + a live count [AppBadge] (archetype B).
+class _ListHeader extends StatelessWidget {
+  const _ListHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Text(
+          'Subscription plans',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: AppType.bold,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        AppBadge(
+          text: count == 1 ? '1 plan' : '$count plans',
+          tone: AppBadgeTone.brand,
+        ),
+      ],
+    );
+  }
+}
+
+/// One subscription plan as a v1 card: a colored workspace-icon tile → name +
+/// code → price line → seat/center limit chips, with the active/inactive
+/// [AppBadge] and a delete affordance. Tap the card to edit.
+class _PlanCard extends StatelessWidget {
+  const _PlanCard({
+    required this.plan,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final PlanRow plan;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final tint = colorFromName(plan.code);
+
+    final limits = <(IconData, String)>[
+      (Icons.groups_outlined, _limitLabel(plan.maxStudents, 'students')),
+      (Icons.sports_outlined, _limitLabel(plan.maxCoaches, 'coaches')),
+      (Icons.location_city_outlined, _limitLabel(plan.maxCenters, 'centers')),
+    ];
+
+    return AppCard(
+      onTap: onEdit,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  Icons.workspace_premium_outlined,
+                  color: tint,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            plan.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: AppType.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        AppBadge(
+                          text: plan.isActive ? 'Active' : 'Inactive',
+                          tone: plan.isActive
+                              ? AppBadgeTone.success
+                              : AppBadgeTone.neutral,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      plan.code,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            _priceLine(plan),
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: scheme.primary,
+              fontWeight: AppType.bold,
+            ),
+          ),
+          if (plan.description != null && plan.description!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              plan.description!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final (icon, label) in limits)
+                      _LimitChip(icon: icon, label: label),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Delete plan',
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "1,000 students" for a cap, or "Unlimited students" when null.
+  String _limitLabel(int? value, String noun) =>
+      value == null ? 'Unlimited $noun' : '$value $noun';
 
   /// "₹999/mo · ₹9,999/yr" — yearly omitted when unset.
   String _priceLine(PlanRow p) {
     final monthly = '₹${p.monthlyPrice.toStringAsFixed(0)}/mo';
     if (p.yearlyPrice == null) return monthly;
     return '$monthly · ₹${p.yearlyPrice!.toStringAsFixed(0)}/yr';
+  }
+}
+
+/// A small, icon-led limit summary pill (e.g. "Unlimited students").
+class _LimitChip extends StatelessWidget {
+  const _LimitChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: AppType.semibold,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -248,9 +427,41 @@ class _PlanSheetState extends ConsumerState<_PlanSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                widget.existing == null ? 'New plan' : 'Edit plan',
-                style: theme.textTheme.titleLarge,
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(
+                      Icons.workspace_premium_outlined,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Text(
+                    widget.existing == null ? 'New plan' : 'Edit plan',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: AppType.bold,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: AppSpacing.lg),
               Row(

@@ -101,14 +101,18 @@ class AuthScaffold extends StatelessWidget {
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key});
 
+  /// Fixed brand-mark tile size — a lockup dimension, not a spacing/layout
+  /// value, so it lives here rather than in the spacing scale.
+  static const double _tileSize = 64;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 64,
-          height: 64,
+          width: _tileSize,
+          height: _tileSize,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: AppPalette.brandGradient,
@@ -116,6 +120,9 @@ class BrandMark extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(AppRadius.lg),
+            // A soft orange glow lifts the monogram off the calm auth canvas
+            // without resorting to a hero band.
+            boxShadow: AppShadows.raised,
           ),
           alignment: Alignment.center,
           // White is the gradient's "on" color and reads correctly in both
@@ -124,7 +131,7 @@ class BrandMark extends StatelessWidget {
             'P',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 34,
+              fontSize: AppFontSize.display,
               fontWeight: AppType.bold,
               height: 1,
             ),

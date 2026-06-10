@@ -81,7 +81,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
           onFieldSubmitted: (_) => _busy ? null : _send(),
         ),
         if (_message != null) ...[
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.xs),
           AuthMessage(message: _message!, isError: _isError),
         ],
         const SizedBox(height: AppSpacing.lg),

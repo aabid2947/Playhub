@@ -60,72 +60,249 @@ const _statusOptions = <String>[
 /// Selectable priorities (low → urgent).
 const _priorityOptions = <String>['low', 'normal', 'high', 'urgent'];
 
-class SuperTicketsPage extends ConsumerWidget {
+/// In-body status filter buckets. Five raw statuses don't fit an equal-width
+/// [AppPillTabs] cleanly, so they're grouped into four readable segments;
+/// "All" passes everything through.
+enum _StatusFilter { all, open, active, closed }
+
+extension _StatusFilterX on _StatusFilter {
+  String get label => switch (this) {
+        _StatusFilter.all => 'All',
+        _StatusFilter.open => 'Open',
+        _StatusFilter.active => 'Active',
+        _StatusFilter.closed => 'Closed',
+      };
+
+  bool matches(String status) => switch (this) {
+        _StatusFilter.all => true,
+        _StatusFilter.open => status == 'open',
+        _StatusFilter.active =>
+          status == 'in_progress' || status == 'waiting_on_user',
+        _StatusFilter.closed => status == 'resolved' || status == 'closed',
+      };
+}
+
+/// Support tickets list — v1 "Sports-Light", archetype B (list).
+///
+/// App-bar-less tab body inside the super-admin shell (the shell owns the one
+/// AppBar). An in-body header (title + result-count [AppBadge]) and an
+/// [AppPillTabs] status filter sit above a column of ticket [AppCard] rows:
+/// subject, academy, priority + status [AppBadge]s and an age cue. Tap a row →
+/// the pushed [_TicketDetailPage].
+///
+/// Super-admin-only (gated upstream by `is_super_admin` RLS — no in-screen
+/// capability gate).
+class SuperTicketsPage extends ConsumerStatefulWidget {
   const SuperTicketsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SuperTicketsPage> createState() => _SuperTicketsPageState();
+}
+
+class _SuperTicketsPageState extends ConsumerState<SuperTicketsPage> {
+  _StatusFilter _filter = _StatusFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(allTicketsProvider);
-    final df = DateFormat('dd MMM · HH:mm');
-    return async.when(
-      loading: () => const AppSkeletonList(),
-      error: (e, _) => AppErrorView(
-        message: friendlyError(e),
-        onRetry: () => ref.invalidate(allTicketsProvider),
-      ),
-      data: (rows) {
-        if (rows.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.support_agent_outlined,
-            title: 'No tickets',
-            subtitle: 'Academy support requests will show up here.',
-          );
-        }
-        return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(allTicketsProvider),
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) {
-              final t = rows[i];
-              return AppListTile(
-                leading: const Icon(Icons.confirmation_number_outlined),
-                title: Text(
-                  t.subject,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.xs),
-                  child: Wrap(
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      AppBadge(
-                        text: _humanize(t.priority),
-                        tone: _priorityTone(t.priority),
+    // Resolve academy names for the row subtitle; falls back gracefully while
+    // the academies list loads.
+    final academies =
+        ref.watch(allAcademiesProvider).valueOrNull ?? const <AcademyRow>[];
+    final names = {for (final a in academies) a.id: a.name};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.sm,
+          ),
+          child: AppPillTabs(
+            tabs: [for (final f in _StatusFilter.values) f.label],
+            index: _StatusFilter.values.indexOf(_filter),
+            onChanged: (i) =>
+                setState(() => _filter = _StatusFilter.values[i]),
+          ),
+        ),
+        Expanded(
+          child: async.when(
+            loading: () => const AppSkeletonList(),
+            error: (e, _) => AppErrorView(
+              message: friendlyError(e),
+              onRetry: () => ref.invalidate(allTicketsProvider),
+            ),
+            data: (rows) {
+              if (rows.isEmpty) {
+                return const AppEmptyState(
+                  icon: Icons.support_agent_outlined,
+                  title: 'No tickets',
+                  subtitle: 'Academy support requests will show up here.',
+                );
+              }
+              final list = rows
+                  .where((t) => _filter.matches(t.status))
+                  .toList(growable: false);
+              if (list.isEmpty) {
+                return AppEmptyState(
+                  icon: Icons.support_agent_outlined,
+                  title: 'No ${_filter.label.toLowerCase()} tickets',
+                  subtitle: 'No support tickets match this filter.',
+                );
+              }
+              return RefreshIndicator(
+                onRefresh: () async => ref.invalidate(allTicketsProvider),
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  itemCount: list.length + 1,
+                  separatorBuilder: (_, i) => i == 0
+                      ? const SizedBox.shrink()
+                      : const SizedBox(height: AppSpacing.sm),
+                  itemBuilder: (context, i) {
+                    if (i == 0) return _ResultHeader(count: list.length);
+                    final t = list[i - 1];
+                    return _TicketCard(
+                      ticket: t,
+                      academyName: names[t.academyId],
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => _TicketDetailPage(ticket: t),
+                        ),
                       ),
-                      Text(df.format(t.createdAt)),
-                    ],
-                  ),
-                ),
-                trailing: AppBadge(
-                  text: _humanize(t.status),
-                  tone: _statusTone(t.status),
-                ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _TicketDetailPage(ticket: t),
-                  ),
+                    );
+                  },
                 ),
               );
             },
           ),
-        );
-      },
+        ),
+      ],
     );
+  }
+}
+
+/// In-body list header: a navy section title with a brand-toned count badge.
+class _ResultHeader extends StatelessWidget {
+  const _ResultHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppSectionHeader(
+        title: 'Support tickets',
+        icon: Icons.support_agent_outlined,
+        trailing: AppBadge(
+          text: count == 1 ? '1 ticket' : '$count tickets',
+          tone: AppBadgeTone.brand,
+        ),
+      ),
+    );
+  }
+}
+
+/// One ticket row: a priority-tinted ticket icon tile → subject + academy line
+/// → priority and status [AppBadge]s with an "age" cue. The whole card taps
+/// through to the pushed [_TicketDetailPage].
+class _TicketCard extends StatelessWidget {
+  const _TicketCard({
+    required this.ticket,
+    required this.academyName,
+    required this.onTap,
+  });
+
+  final SupportTicketRow ticket;
+  final String? academyName;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = colorFromName(ticket.priority);
+    final academy = academyName ?? 'Academy';
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: AppListTile(
+        wrapLeading: false,
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Icon(
+            Icons.confirmation_number_outlined,
+            color: tint,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          ticket.subject,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                academy,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  AppBadge(
+                    text: _humanize(ticket.status),
+                    tone: _statusTone(ticket.status),
+                  ),
+                  AppBadge(
+                    text: _humanize(ticket.priority),
+                    tone: _priorityTone(ticket.priority),
+                  ),
+                  Text(
+                    _ageLabel(ticket.createdAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A compact "raised N ago" age cue derived from [createdAt].
+  String _ageLabel(DateTime createdAt) {
+    final diff = DateTime.now().difference(createdAt);
+    if (diff.inDays >= 1) return '${diff.inDays}d ago';
+    if (diff.inHours >= 1) return '${diff.inHours}h ago';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes}m ago';
+    return 'Just now';
   }
 }
 
@@ -230,242 +407,226 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
     final myId = ref.watch(currentUserIdProvider);
     final assignedToMe = _assignedTo != null && _assignedTo == myId;
+    final academies =
+        ref.watch(allAcademiesProvider).valueOrNull ?? const <AcademyRow>[];
+    final academyName =
+        academies.where((a) => a.id == widget.ticket.academyId).firstOrNull?.name;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.ticket.subject,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          // Status control that SHOWS the current state (badge), and on tap
-          // offers the transitions with the active one ticked.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: PopupMenuButton<String>(
-              tooltip: 'Change status',
-              onSelected: _setStatus,
-              itemBuilder: (_) => [
-                for (final s in _statusOptions)
-                  PopupMenuItem<String>(
-                    value: s,
-                    child: Row(
-                      children: [
-                        Icon(
-                          s == _status
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                          size: 18,
-                          color: s == _status
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(_humanize(s)),
-                      ],
-                    ),
-                  ),
-              ],
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppBadge(
-                    text: _humanize(_status),
-                    tone: _statusTone(_status),
-                  ),
-                  Icon(
-                    Icons.arrow_drop_down,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
       body: Column(
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: EdgeInsets.zero,
               children: [
-                const AppSectionHeader(title: 'Original ticket'),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: AppSpacing.xs,
-                        runSpacing: AppSpacing.xs,
-                        children: [
-                          AppBadge(
-                            text: _humanize(_status),
-                            tone: _statusTone(_status),
-                          ),
-                          AppBadge(
-                            text: _humanize(widget.ticket.priority),
-                            tone: _priorityTone(widget.ticket.priority),
-                          ),
-                          if (widget.ticket.category != null)
-                            AppBadge(text: _humanize(widget.ticket.category!)),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        widget.ticket.body,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        'Raised ${df.format(widget.ticket.createdAt)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
+                // Archetype-C entity hero: a navy band with the back button,
+                // the ticket subject + academy, and status/priority glass chips.
+                _Hero(
+                  subject: widget.ticket.subject,
+                  academyName: academyName,
+                  status: _status,
+                  priority: _priority,
+                  raisedLabel: 'Raised ${df.format(widget.ticket.createdAt)}',
+                  onBack: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                const AppSectionHeader(title: 'Manage'),
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Priority',
-                              style: theme.textTheme.bodyMedium,
-                            ),
+                // Body overlaps the hero band upward, v1-style.
+                Transform.translate(
+                  offset: const Offset(0, -AppSpacing.xl),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const AppSectionHeader(
+                          title: 'Original ticket',
+                          icon: Icons.subject_outlined,
+                        ),
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (widget.ticket.category != null) ...[
+                                AppBadge(
+                                  text: _humanize(widget.ticket.category!),
+                                ),
+                                const SizedBox(height: AppSpacing.sm),
+                              ],
+                              Text(
+                                widget.ticket.body,
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ],
                           ),
-                          PopupMenuButton<String>(
-                            tooltip: 'Change priority',
-                            onSelected: _setPriority,
-                            itemBuilder: (_) => [
-                              for (final p in _priorityOptions)
-                                PopupMenuItem<String>(
-                                  value: p,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        p == _priority
-                                            ? Icons.radio_button_checked
-                                            : Icons.radio_button_unchecked,
-                                        size: 18,
-                                        color: p == _priority
-                                            ? theme.colorScheme.primary
-                                            : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        const AppSectionHeader(
+                          title: 'Manage',
+                          icon: Icons.tune_outlined,
+                        ),
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Status control — shows current state (badge),
+                              // and on tap offers the transitions with the
+                              // active one ticked.
+                              _ControlRow(
+                                label: 'Status',
+                                child: PopupMenuButton<String>(
+                                  tooltip: 'Change status',
+                                  onSelected: _setStatus,
+                                  itemBuilder: (_) => [
+                                    for (final s in _statusOptions)
+                                      PopupMenuItem<String>(
+                                        value: s,
+                                        child: _MenuChoice(
+                                          label: _humanize(s),
+                                          selected: s == _status,
+                                        ),
                                       ),
-                                      const SizedBox(width: AppSpacing.sm),
-                                      Text(_humanize(p)),
-                                    ],
+                                  ],
+                                  child: _BadgeTrigger(
+                                    badge: AppBadge(
+                                      text: _humanize(_status),
+                                      tone: _statusTone(_status),
+                                    ),
                                   ),
                                 ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              const Divider(height: 1),
+                              const SizedBox(height: AppSpacing.sm),
+                              _ControlRow(
+                                label: 'Priority',
+                                child: PopupMenuButton<String>(
+                                  tooltip: 'Change priority',
+                                  onSelected: _setPriority,
+                                  itemBuilder: (_) => [
+                                    for (final p in _priorityOptions)
+                                      PopupMenuItem<String>(
+                                        value: p,
+                                        child: _MenuChoice(
+                                          label: _humanize(p),
+                                          selected: p == _priority,
+                                        ),
+                                      ),
+                                  ],
+                                  child: _BadgeTrigger(
+                                    badge: AppBadge(
+                                      text: _humanize(_priority),
+                                      tone: _priorityTone(_priority),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              const Divider(height: 1),
+                              const SizedBox(height: AppSpacing.sm),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.assignment_ind_outlined,
+                                    size: 18,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: Text(
+                                      assignedToMe
+                                          ? 'Assigned to you'
+                                          : (_assignedTo == null
+                                              ? 'Unassigned'
+                                              : 'Assigned to another staffer'),
+                                      style: theme.textTheme.bodyMedium,
+                                    ),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed:
+                                        myId == null ? null : _toggleAssign,
+                                    child: Text(
+                                      assignedToMe ? 'Unassign' : 'Assign to me',
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        const AppSectionHeader(
+                          title: 'Replies',
+                          icon: Icons.forum_outlined,
+                        ),
+                        msgsAsync.when(
+                          loading: () => const Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: AppSpacing.lg,
+                            ),
+                            child: AppLoading(),
+                          ),
+                          error: (e, _) => AppErrorView(
+                            message: friendlyError(e),
+                            onRetry: () => ref.invalidate(
+                              ticketMessagesProvider(widget.ticket.id),
+                            ),
+                          ),
+                          data: (msgs) {
+                            if (msgs.isEmpty) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: AppSpacing.md,
+                                ),
+                                child: AppEmptyState(
+                                  icon: Icons.chat_bubble_outline,
+                                  title: 'No replies yet',
+                                  subtitle:
+                                      'Your reply will start the conversation.',
+                                ),
+                              );
+                            }
+                            return Column(
                               children: [
-                                AppBadge(
-                                  text: _humanize(_priority),
-                                  tone: _priorityTone(_priority),
-                                ),
-                                Icon(
-                                  Icons.arrow_drop_down,
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                                for (final m in msgs)
+                                  _ReplyBubble(
+                                    body: m.body,
+                                    isStaff: m.isStaff,
+                                    timestamp: df.format(m.createdAt),
+                                  ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      const Divider(height: 1),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.assignment_ind_outlined,
-                            size: 18,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              assignedToMe
-                                  ? 'Assigned to you'
-                                  : (_assignedTo == null
-                                      ? 'Unassigned'
-                                      : 'Assigned to another staffer'),
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ),
-                          OutlinedButton(
-                            onPressed: myId == null ? null : _toggleAssign,
-                            child: Text(assignedToMe ? 'Unassign' : 'Assign to me'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                const AppSectionHeader(title: 'Replies'),
-                msgsAsync.when(
-                  loading: () => const Padding(
-                    padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                    child: AppLoading(),
-                  ),
-                  error: (e, _) => AppErrorView(
-                    message: friendlyError(e),
-                    onRetry: () => ref.invalidate(
-                      ticketMessagesProvider(widget.ticket.id),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
                     ),
                   ),
-                  data: (msgs) {
-                    if (msgs.isEmpty) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.md,
-                        ),
-                        child: Text(
-                          'No replies yet.',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      );
-                    }
-                    return Column(
-                      children: [
-                        for (final m in msgs)
-                          _ReplyBubble(
-                            body: m.body,
-                            isStaff: m.isStaff,
-                            timestamp: df.format(m.createdAt),
-                          ),
-                      ],
-                    );
-                  },
                 ),
               ],
             ),
           ),
+          // Pinned reply composer.
           SafeArea(
-            child: Padding(
+            top: false,
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(
+                  top: BorderSide(color: theme.dividerColor),
+                ),
+              ),
               padding: const EdgeInsets.all(AppSpacing.sm),
               child: Row(
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: AppFormField(
                       controller: _reply,
-                      decoration: const InputDecoration(
-                        hintText: 'Staff reply…',
-                      ),
-                      minLines: 1,
+                      hint: 'Staff reply…',
                       maxLines: 4,
                     ),
                   ),
+                  const SizedBox(width: AppSpacing.xs),
                   IconButton(
                     tooltip: 'Send reply',
                     icon: _busy
@@ -474,7 +635,7 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.send),
+                        : const Icon(Icons.send_rounded),
                     onPressed: _busy ? null : _send,
                   ),
                 ],
@@ -487,9 +648,167 @@ class _TicketDetailPageState extends ConsumerState<_TicketDetailPage> {
   }
 }
 
+/// Archetype-C navy hero for a ticket: back button, the subject + academy
+/// identity, and a row of glass chips summarising status · priority, plus the
+/// raised-at line.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.subject,
+    required this.academyName,
+    required this.status,
+    required this.priority,
+    required this.raisedLabel,
+    required this.onBack,
+  });
+
+  final String subject;
+  final String? academyName;
+  final String status;
+  final String priority;
+  final String raisedLabel;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            subject,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          if (academyName != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                Icon(
+                  Icons.school_outlined,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    academyName!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppGlassChip(_humanize(status), icon: Icons.flag_rounded),
+              AppGlassChip(
+                _humanize(priority),
+                icon: Icons.priority_high_rounded,
+              ),
+              AppGlassChip(raisedLabel, icon: Icons.schedule_rounded),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A labeled row in the Manage card: a leading label that fills the row, and a
+/// trailing interactive control (a badge-trigger popup).
+class _ControlRow extends StatelessWidget {
+  const _ControlRow({required this.label, required this.child});
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label, style: theme.textTheme.bodyMedium),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+/// The tappable trigger for a status/priority popup: the current-value badge
+/// plus a dropdown caret.
+class _BadgeTrigger extends StatelessWidget {
+  const _BadgeTrigger({required this.badge});
+  final Widget badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        badge,
+        Icon(
+          Icons.arrow_drop_down,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ],
+    );
+  }
+}
+
+/// A popup-menu choice with a radio glyph reflecting whether it's the active
+/// value.
+class _MenuChoice extends StatelessWidget {
+  const _MenuChoice({required this.label, required this.selected});
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(
+          selected
+              ? Icons.radio_button_checked
+              : Icons.radio_button_unchecked,
+          size: 18,
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(label),
+      ],
+    );
+  }
+}
+
 /// A single reply in the thread. Staff replies sit on the right with a brand
-/// tint; academy replies sit on the left. Each shows an author label + time so
-/// the conversation is unambiguous.
+/// tint; academy replies sit on the left. Each shows an author avatar + label +
+/// time so the conversation is unambiguous.
 class _ReplyBubble extends StatelessWidget {
   const _ReplyBubble({
     required this.body,
@@ -504,6 +823,7 @@ class _ReplyBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final author = isStaff ? 'Support staff' : 'Academy';
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Align(
@@ -521,8 +841,10 @@ class _ReplyBubble extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    AppAvatar(author, size: 22),
+                    const SizedBox(width: AppSpacing.sm),
                     Text(
-                      isStaff ? 'Support staff' : 'Academy',
+                      author,
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: AppType.semibold,
                         color: isStaff

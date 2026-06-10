@@ -29,19 +29,48 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     context.go(session == null ? '/login' : '/home');
   }
 
+  /// Fixed splash-progress dimension — a brand-lockup size, not a spacing-scale
+  /// value, so it lives here rather than in [AppSpacing].
+  static const double _progressSize = 24;
+
+  /// Diameter of the faint brand halo behind the lockup — a fixed decorative
+  /// dimension keyed to the brand mark, not a layout spacing value.
+  static const double _haloSize = 220;
+
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            BrandMark(),
-            SizedBox(height: AppSpacing.xxl),
+            // A faint orange halo lifts the centered lockup off the calm
+            // surface — a single soft brand touch, no hero band.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  colors: [
+                    AppPalette.brandPrimary.withValues(alpha: 0.10),
+                    AppPalette.brandPrimary.withValues(alpha: 0),
+                  ],
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(
+                width: _haloSize,
+                height: _haloSize,
+                child: Center(child: BrandMark()),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
             SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              width: _progressSize,
+              height: _progressSize,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.primary,
+              ),
             ),
           ],
         ),

@@ -7,6 +7,17 @@ import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/features/super_admin/presentation/academy_detail_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Academies list — v1 "Sports-Light", archetype B (list).
+///
+/// App-bar-less tab body inside the super-admin shell (the shell owns the one
+/// AppBar). A search field + an in-body header (title + result-count
+/// [AppBadge]) sit above a column of academy [AppCard] rows: gradient
+/// [AppAvatar] + name, a subscription-status [AppBadge], an active/inactive
+/// [AppBadge], and an enable/disable [Switch]. Tap a row → [AcademyDetailPage].
+///
+/// Super-admin-only (gated upstream by `is_super_admin` RLS — no in-screen
+/// capability gate). The [Switch] keeps its confirmation dialog +
+/// `setAcademyActive` call + `allAcademiesProvider` invalidate exactly.
 class AcademiesPage extends ConsumerStatefulWidget {
   const AcademiesPage({super.key});
 
@@ -69,7 +80,6 @@ class _AcademiesPageState extends ConsumerState<AcademiesPage> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(allAcademiesProvider);
-    final df = DateFormat('dd MMM yyyy');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -111,74 +121,147 @@ class _AcademiesPageState extends ConsumerState<AcademiesPage> {
                       : 'No academy name matches "$_query".',
                 );
               }
-              final theme = Theme.of(context);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      0,
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                    ),
-                    child: Text(
-                      list.length == 1 ? '1 academy' : '${list.length} academies',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+              return RefreshIndicator(
+                onRefresh: () async => ref.invalidate(allAcademiesProvider),
+                child: ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
                   ),
-                  Expanded(
-                    child: RefreshIndicator(
-                      onRefresh: () async =>
-                          ref.invalidate(allAcademiesProvider),
-                      child: ListView.separated(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                        itemCount: list.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final a = list[i];
-                          final badge = _statusBadge(a.subscriptionStatus);
-                          final isTrial = a.subscriptionStatus == 'trial';
-                          return AppListTile(
-                            leading: const Icon(Icons.school_outlined),
-                            title: Text(a.name),
-                            subtitle: Text(
-                              isTrial && a.trialEndsAt != null
-                                  ? 'Trial ends ${df.format(a.trialEndsAt!)}'
-                                  : 'Created ${df.format(a.createdAt)}',
-                            ),
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => AcademyDetailPage(
-                                  academyId: a.id,
-                                  initialName: a.name,
-                                ),
-                              ),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AppBadge(text: badge.label, tone: badge.tone),
-                                const SizedBox(width: AppSpacing.sm),
-                                Switch(
-                                  value: a.isActive,
-                                  onChanged: (v) => _confirmToggle(a, v),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
+                  itemCount: list.length + 1,
+                  separatorBuilder: (_, i) => i == 0
+                      ? const SizedBox.shrink()
+                      : const SizedBox(height: AppSpacing.sm),
+                  itemBuilder: (context, i) {
+                    if (i == 0) {
+                      return _ResultHeader(count: list.length);
+                    }
+                    final a = list[i - 1];
+                    return _AcademyCard(
+                      academy: a,
+                      statusBadge: _statusBadge(a.subscriptionStatus),
+                      onToggle: (v) => _confirmToggle(a, v),
+                    );
+                  },
+                ),
               );
             },
           ),
         ),
       ],
+    );
+  }
+}
+
+/// In-body list header: a navy section title with a brand-toned count badge.
+class _ResultHeader extends StatelessWidget {
+  const _ResultHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppSectionHeader(
+        title: 'Academies',
+        icon: Icons.school_outlined,
+        trailing: AppBadge(
+          text: count == 1 ? '1 academy' : '$count academies',
+          tone: AppBadgeTone.brand,
+        ),
+      ),
+    );
+  }
+}
+
+/// One academy row: gradient [AppAvatar] + name, a subscription-status badge,
+/// an active/inactive badge, the created/trial line, and an enable/disable
+/// [Switch]. The whole card taps through to [AcademyDetailPage].
+class _AcademyCard extends StatelessWidget {
+  const _AcademyCard({
+    required this.academy,
+    required this.statusBadge,
+    required this.onToggle,
+  });
+
+  final AcademyRow academy;
+  final ({String label, AppBadgeTone tone}) statusBadge;
+  final ValueChanged<bool> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final df = DateFormat('dd MMM yyyy');
+    final isTrial = academy.subscriptionStatus == 'trial';
+    final dateLine = isTrial && academy.trialEndsAt != null
+        ? 'Trial ends ${df.format(academy.trialEndsAt!)}'
+        : 'Created ${df.format(academy.createdAt)}';
+
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AcademyDetailPage(
+            academyId: academy.id,
+            initialName: academy.name,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              AppAvatar(academy.name),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      academy.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      dateLine,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: academy.isActive,
+                onChanged: onToggle,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              AppBadge(text: statusBadge.label, tone: statusBadge.tone),
+              AppBadge(
+                text: academy.isActive ? 'Active' : 'Inactive',
+                tone:
+                    academy.isActive ? AppBadgeTone.success : AppBadgeTone.danger,
+                icon: academy.isActive
+                    ? Icons.check_circle_outline
+                    : Icons.block_outlined,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

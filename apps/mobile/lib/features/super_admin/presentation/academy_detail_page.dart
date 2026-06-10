@@ -82,18 +82,17 @@ class AcademyDetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(academyDetailProvider(academyId));
     return Scaffold(
-      appBar: AppBar(title: Text(initialName)),
       body: async.when(
         loading: () => const AppLoading(),
-        error: (e, _) => AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(academyDetailProvider(academyId)),
+        error: (e, _) => SafeArea(
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(academyDetailProvider(academyId)),
+          ),
         ),
         data: (a) {
-          final theme = Theme.of(context);
           final sem = AppSemanticColors.of(context);
           final df = DateFormat('dd MMM yyyy');
-          final badge = _statusBadge(a.subscriptionStatus);
           return RefreshIndicator(
             onRefresh: () async {
               ref
@@ -101,118 +100,264 @@ class AcademyDetailPage extends ConsumerWidget {
                 ..invalidate(academyInvoicesProvider(academyId));
             },
             child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: EdgeInsets.zero,
               children: [
-                // Status + active toggle.
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(a.name, style: theme.textTheme.titleLarge),
-                          ),
-                          AppBadge(text: badge.label, tone: badge.tone),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        children: [
-                          Icon(
-                            a.isActive
-                                ? Icons.check_circle_outline
-                                : Icons.block_outlined,
-                            size: 18,
-                            color: a.isActive ? sem.success : sem.danger,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              a.isActive ? 'Active' : 'Disabled',
-                              style: theme.textTheme.bodyMedium,
+                _Hero(
+                  academy: a,
+                  badge: _statusBadge(a.subscriptionStatus),
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+                // Body overlaps the hero band upward, v1-style.
+                Transform.translate(
+                  offset: const Offset(0, -AppSpacing.xl),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.lg,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisSpacing: AppSpacing.md,
+                          mainAxisSpacing: AppSpacing.md,
+                          childAspectRatio: 1.5,
+                          children: [
+                            AppStatTile(
+                              icon: Icons.group_outlined,
+                              label: 'Members',
+                              value: '${a.memberCount}',
                             ),
-                          ),
-                          OutlinedButton(
-                            onPressed: () => _toggleActive(context, ref, a),
-                            child: Text(a.isActive ? 'Disable' : 'Enable'),
-                          ),
-                        ],
-                      ),
-                    ],
+                            AppStatTile(
+                              icon: Icons.school_outlined,
+                              label: 'Students',
+                              value: '${a.studentCount}',
+                            ),
+                            AppStatTile(
+                              icon: Icons.schedule_outlined,
+                              label: 'Trial ends',
+                              value: a.trialEndsAt == null
+                                  ? '—'
+                                  : df.format(a.trialEndsAt!),
+                              color: sem.info,
+                            ),
+                            AppStatTile(
+                              icon: Icons.calendar_today_outlined,
+                              label: 'Joined',
+                              value: df.format(a.createdAt),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        _AccessSection(
+                          academy: a,
+                          onToggle: () => _toggleActive(context, ref, a),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        _DetailsSection(academy: a),
+                        const SizedBox(height: AppSpacing.lg),
+                        const AppSectionHeader(
+                          title: 'SaaS invoices',
+                          icon: Icons.receipt_long_outlined,
+                        ),
+                        _InvoicesSection(academyId: academyId),
+                        const SizedBox(height: AppSpacing.xl),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisSpacing: AppSpacing.md,
-                  mainAxisSpacing: AppSpacing.md,
-                  childAspectRatio: 1.5,
-                  children: [
-                    AppStatTile(
-                      icon: Icons.group_outlined,
-                      label: 'Members',
-                      value: '${a.memberCount}',
-                    ),
-                    AppStatTile(
-                      icon: Icons.school_outlined,
-                      label: 'Students',
-                      value: '${a.studentCount}',
-                    ),
-                    AppStatTile(
-                      icon: Icons.schedule_outlined,
-                      label: 'Trial ends',
-                      value:
-                          a.trialEndsAt == null ? '—' : df.format(a.trialEndsAt!),
-                      color: sem.info,
-                    ),
-                    AppStatTile(
-                      icon: Icons.calendar_today_outlined,
-                      label: 'Joined',
-                      value: df.format(a.createdAt),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'Details'),
-                AppCard(
-                  child: Column(
-                    children: [
-                      _DetailRow(
-                        icon: Icons.person_outline,
-                        label: 'Owner',
-                        value: a.ownerName ?? '—',
-                      ),
-                      _DetailRow(
-                        icon: Icons.mail_outline,
-                        label: 'Owner email',
-                        value: a.ownerEmail ?? a.email ?? '—',
-                      ),
-                      _DetailRow(
-                        icon: Icons.phone_outlined,
-                        label: 'Phone',
-                        value: a.phone ?? '—',
-                      ),
-                      _DetailRow(
-                        icon: Icons.place_outlined,
-                        label: 'Location',
-                        value: a.location ?? '—',
-                        last: true,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'SaaS invoices'),
-                _InvoicesSection(academyId: academyId),
-                const SizedBox(height: AppSpacing.lg),
               ],
             ),
           );
         },
       ),
+    );
+  }
+}
+
+/// Archetype-C entity hero for an academy: a navy gradient band with the back
+/// button, the academy identity (avatar + name), status glass chips, and a
+/// translucent member/student summary strip.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.academy,
+    required this.badge,
+    required this.onBack,
+  });
+
+  final AcademyDetail academy;
+  final ({String label, AppBadgeTone tone}) badge;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppAvatar(academy.name, size: 56),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      academy.name,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: AppType.heavy,
+                      ),
+                    ),
+                    if (academy.location != null) ...[
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        academy.location!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppGlassChip(badge.label, icon: Icons.workspace_premium_outlined),
+              AppGlassChip(
+                academy.isActive ? 'Active' : 'Disabled',
+                icon: academy.isActive
+                    ? Icons.check_circle_outline
+                    : Icons.block_outlined,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AppHeroStatRow(
+            stats: [
+              ('${academy.memberCount}', 'Members'),
+              ('${academy.studentCount}', 'Students'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Subscription state plus the platform-access toggle (enable / disable the
+/// whole academy). The toggle keeps its confirm + RLS-gated write.
+class _AccessSection extends StatelessWidget {
+  const _AccessSection({required this.academy, required this.onToggle});
+
+  final AcademyDetail academy;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sem = AppSemanticColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: 'Platform access',
+          icon: Icons.toggle_on_outlined,
+        ),
+        AppCard(
+          child: Row(
+            children: [
+              Icon(
+                academy.isActive
+                    ? Icons.check_circle_outline
+                    : Icons.block_outlined,
+                size: 18,
+                color: academy.isActive ? sem.success : sem.danger,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  academy.isActive
+                      ? 'Active — members can sign in.'
+                      : 'Disabled — members are locked out.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+              OutlinedButton(
+                onPressed: onToggle,
+                child: Text(academy.isActive ? 'Disable' : 'Enable'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Owner + contact facts under a section header.
+class _DetailsSection extends StatelessWidget {
+  const _DetailsSection({required this.academy});
+  final AcademyDetail academy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: 'Details',
+          icon: Icons.business_outlined,
+        ),
+        AppCard(
+          child: Column(
+            children: [
+              _DetailRow(
+                icon: Icons.person_outline,
+                label: 'Owner',
+                value: academy.ownerName ?? '—',
+              ),
+              _DetailRow(
+                icon: Icons.mail_outline,
+                label: 'Owner email',
+                value: academy.ownerEmail ?? academy.email ?? '—',
+              ),
+              _DetailRow(
+                icon: Icons.phone_outlined,
+                label: 'Phone',
+                value: academy.phone ?? '—',
+              ),
+              _DetailRow(
+                icon: Icons.place_outlined,
+                label: 'Location',
+                value: academy.location ?? '—',
+                last: true,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -529,9 +674,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               enabled: !_saving,
             ),
             const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<String>(
-              initialValue: _method,
-              decoration: const InputDecoration(labelText: 'Method'),
+            AppDropdownField<String>(
+              label: 'Method',
+              value: _method,
               items: [
                 for (final m in _methods)
                   DropdownMenuItem(value: m.value, child: Text(m.label)),
@@ -550,10 +695,9 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 _error!,
-                style: TextStyle(
-                  color: AppSemanticColors.of(context).danger,
-                  fontSize: 13,
-                ),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppSemanticColors.of(context).danger,
+                    ),
               ),
             ],
             const SizedBox(height: AppSpacing.lg),

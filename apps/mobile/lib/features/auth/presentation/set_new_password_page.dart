@@ -26,7 +26,9 @@ class _SetNewPasswordPageState extends ConsumerState<SetNewPasswordPage> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   bool _busy = false;
+  // Independent visibility toggles so each password field reveals on its own.
   bool _obscure = true;
+  bool _obscureConfirm = true;
   String? _message;
   bool _isError = false;
 
@@ -117,10 +119,20 @@ class _SetNewPasswordPageState extends ConsumerState<SetNewPasswordPage> {
             AppFormField(
               controller: _confirm,
               label: 'Confirm new password',
-              obscureText: _obscure,
+              obscureText: _obscureConfirm,
               prefixIcon: const Icon(Icons.lock_outline),
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) => _busy ? null : _save(),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureConfirm
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+                tooltip: _obscureConfirm ? 'Show password' : 'Hide password',
+                onPressed: () =>
+                    setState(() => _obscureConfirm = !_obscureConfirm),
+              ),
             ),
           ],
         ),

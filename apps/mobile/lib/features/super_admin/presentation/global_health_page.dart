@@ -7,44 +7,159 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// System health + global revenue snapshot.
+/// System health + global revenue snapshot — v1 "Sports-Light", Archetype A.
 ///
 /// App-bar-less body of the super-admin shell (the shell owns the single,
-/// constant AppBar) — do not add a Scaffold/AppBar here.
+/// constant AppBar) — do not add a Scaffold/AppBar here. A navy analytics hero
+/// summarises the platform's top KPIs (academies · MRR · open tickets), then
+/// the body overlaps the band upward with the revenue callout, the academy
+/// status grid, and the 12-month revenue + signups trend charts.
 class GlobalHealthPage extends ConsumerWidget {
   const GlobalHealthPage({super.key});
+
+  void _refreshAll(WidgetRef ref) {
+    ref
+      ..invalidate(allAcademiesProvider)
+      ..invalidate(globalKpiProvider)
+      ..invalidate(revenueByMonthProvider)
+      ..invalidate(signupsByMonthProvider);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final kpiAsync = ref.watch(globalKpiProvider);
     return RefreshIndicator(
-      onRefresh: () async {
-        ref
-          ..invalidate(allAcademiesProvider)
-          ..invalidate(globalKpiProvider)
-          ..invalidate(revenueByMonthProvider)
-          ..invalidate(signupsByMonthProvider);
-      },
+      onRefresh: () async => _refreshAll(ref),
       child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.zero,
         children: [
-          kpiAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-              child: AppLoading(),
-            ),
-            error: (e, _) => AppErrorView(
-              message: friendlyError(e),
-              onRetry: () => ref.invalidate(globalKpiProvider),
-            ),
-            data: _HealthBody.new,
+          // Navy analytics hero — top-level platform stats pulled from the
+          // global KPI provider (falls back to a simple titled hero while it
+          // loads). Refresh circle button mirrors the shell's pull-to-refresh.
+          _HealthHero(
+            kpi: kpiAsync.valueOrNull,
+            onRefresh: () => _refreshAll(ref),
           ),
-          const SizedBox(height: AppSpacing.xl),
-          const AppSectionHeader(title: 'SaaS revenue · last 12 months'),
-          const _RevenueTrendCard(),
-          const SizedBox(height: AppSpacing.xl),
-          const AppSectionHeader(title: 'New academies · last 12 months'),
-          const _SignupsTrendCard(),
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  kpiAsync.when(
+                    loading: () => const AppCard(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: AppSpacing.xl,
+                        ),
+                        child: AppLoading(),
+                      ),
+                    ),
+                    error: (e, _) => AppCard(
+                      child: AppErrorView(
+                        message: friendlyError(e),
+                        onRetry: () => ref.invalidate(globalKpiProvider),
+                      ),
+                    ),
+                    data: _HealthBody.new,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'SaaS revenue · last 12 months',
+                    icon: Icons.show_chart_rounded,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const _RevenueTrendCard(),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'New academies · last 12 months',
+                    icon: Icons.bar_chart_rounded,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const _SignupsTrendCard(),
+                  const SizedBox(height: AppSpacing.xl),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Archetype-A analytics hero: a navy gradient band with a refresh circle
+/// button, the page title, and a translucent stat strip with the platform's
+/// headline figures (active academies · total revenue · open tickets) from
+/// [globalKpiProvider]. Falls back to the title + freshness cue only while the
+/// KPIs load.
+class _HealthHero extends StatelessWidget {
+  const _HealthHero({required this.kpi, required this.onRefresh});
+
+  final GlobalKpi? kpi;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final k = kpi;
+    final money = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: SizedBox.shrink()),
+              AppCircleIconButton(
+                icon: Icons.refresh_rounded,
+                tooltip: 'Refresh',
+                onTap: onRefresh,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Platform health',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Icon(
+                Icons.public_outlined,
+                size: 15,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  'Live across every academy · pull down to reload',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (k != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            AppHeroStatRow(
+              stats: [
+                ('${k.academiesActive}', 'Active'),
+                (money.format(k.totalRevenue), 'Revenue'),
+                ('${k.openTickets}', 'Open tickets'),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -62,19 +177,33 @@ class _HealthBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const AppSectionHeader(
+          title: 'Revenue',
+          icon: Icons.account_balance_wallet_rounded,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         _GlobalRevenueCard(
           totalRevenue: k.totalRevenue,
           outstandingAmount: k.outstandingAmount,
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.lg),
+        const AppSectionHeader(
+          title: 'Support',
+          icon: Icons.support_agent_rounded,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         AppStatTile(
           icon: Icons.confirmation_number_outlined,
           label: 'Open tickets',
           value: '${k.openTickets}',
           color: k.openTickets > 0 ? sem.warning : null,
         ),
-        const SizedBox(height: AppSpacing.xl),
-        const AppSectionHeader(title: 'Academies'),
+        const SizedBox(height: AppSpacing.lg),
+        const AppSectionHeader(
+          title: 'Academies',
+          icon: Icons.apartment_rounded,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         // "Active" (is_active) is a different axis from the four subscription
         // states below, so it leads as a full-width emphasis tile. That also
         // tidies the odd count: a clean 2×2 grid of the 4 states follows, with
@@ -119,8 +248,12 @@ class _HealthBody extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: AppSpacing.xl),
-        const AppSectionHeader(title: 'System'),
+        const SizedBox(height: AppSpacing.lg),
+        const AppSectionHeader(
+          title: 'System',
+          icon: Icons.dns_rounded,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         const _SystemHealthCard(),
       ],
     );
