@@ -182,7 +182,7 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.xl),
             // ---- Invoice preview -------------------------------------------
             const AppSectionHeader(title: 'Invoice preview'),
             const SizedBox(height: AppSpacing.xs),

@@ -18,13 +18,19 @@ class BillingDashboardPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Billing'),
-          bottom: const TabBar(
-            tabs: [
+          bottom: TabBar(
+            // Brand-orange selection: indicator + active label read on-theme
+            // against the navy app-bar foreground.
+            indicatorColor: colorScheme.primary,
+            labelColor: colorScheme.primary,
+            unselectedLabelColor: colorScheme.onSurfaceVariant,
+            tabs: const [
               Tab(text: 'Money'),
               Tab(text: 'Setup'),
               Tab(text: 'Reports'),
@@ -82,6 +88,7 @@ class _SegmentedSectionState extends State<_SegmentedSection> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         Padding(
@@ -94,6 +101,20 @@ class _SegmentedSectionState extends State<_SegmentedSection> {
           child: SizedBox(
             width: double.infinity,
             child: SegmentedButton<int>(
+              // Brand-orange selected pill (M3 default is the blue
+              // secondaryContainer); unselected sits on the inset track.
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  return states.contains(WidgetState.selected)
+                      ? colorScheme.primary
+                      : colorScheme.surface;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  return states.contains(WidgetState.selected)
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurfaceVariant;
+                }),
+              ),
               segments: [
                 for (var i = 0; i < widget.segments.length; i++)
                   ButtonSegment<int>(

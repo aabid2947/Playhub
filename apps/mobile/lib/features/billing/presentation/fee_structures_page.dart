@@ -2,12 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Fee structures list — v1 "Sports-Light", archetype B (list).
+///
+/// Renders inside the Billing dashboard's TabBarView, so it stays
+/// **app-bar-less**: a compact in-body header (title + count [AppBadge]) tops a
+/// column of [AppCard] fee rows ([_FeeTile]) showing amount + cadence. The
+/// create FAB is gated on [Capabilities.manageFinance] (RLS is the real gate —
+/// this just hides the entry point for roles that can't create).
 class FeeStructuresPage extends ConsumerWidget {
   const FeeStructuresPage({super.key});
 
@@ -22,6 +30,8 @@ class FeeStructuresPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final feesAsync = ref.watch(feeStructuresProvider);
+    final canManage = ref.watch(capabilitiesProvider).manageFinance;
+
     return Scaffold(
       body: feesAsync.when(
         loading: () => const AppSkeletonList(),
@@ -40,25 +50,17 @@ class FeeStructuresPage extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(feeStructuresProvider),
             child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                // Leave room so the last tile clears the FAB.
+                AppSpacing.xxl + AppSpacing.xl,
+              ),
               itemCount: fees.length + 1,
-              separatorBuilder: (_, index) =>
-                  index == 0 ? const SizedBox.shrink() : const Divider(height: 1),
+              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
               itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.md,
-                      AppSpacing.lg,
-                      0,
-                    ),
-                    child: AppSectionHeader(
-                      title: fees.length == 1
-                          ? '1 fee structure'
-                          : '${fees.length} fee structures',
-                    ),
-                  );
-                }
+                if (index == 0) return _ListHeader(count: fees.length);
                 return _FeeTile(
                   fee: fees[index - 1],
                   onTap: () => _openForm(context, existing: fees[index - 1]),
@@ -68,15 +70,47 @@ class FeeStructuresPage extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(context),
-        icon: const Icon(Icons.add),
-        label: const Text('New fee'),
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              onPressed: () => _openForm(context),
+              icon: const Icon(Icons.add),
+              label: const Text('New fee'),
+            )
+          : null,
+    );
+  }
+}
+
+/// Compact in-body header: title + a neutral count [AppBadge]. No hero band —
+/// this page lives under the Billing tab chrome.
+class _ListHeader extends StatelessWidget {
+  const _ListHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Row(
+        children: [
+          Text(
+            'Fee structures',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: AppType.bold,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          AppBadge(text: '$count'),
+        ],
       ),
     );
   }
 }
 
+/// A single fee structure row: a tinted receipt icon tile → name → one tight
+/// cadence · sport line, with the total ₹ amount and active/inactive status
+/// stacked on the trailing edge.
 class _FeeTile extends ConsumerWidget {
   const _FeeTile({required this.fee, required this.onTap});
 
@@ -85,26 +119,61 @@ class _FeeTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final sportLabel = ref.watch(sportDisplayProvider((sportId: fee.sportId)));
-    final terms = <String>[
+    final tint = colorFromName(fee.name);
+
+    final subtitle = <String>[
       fee.type.label,
       if (sportLabel != '—') sportLabel,
-      '₹${fee.baseAmount.toStringAsFixed(0)}'
-          '${fee.taxPct > 0 ? ' + ${fee.taxPct.toStringAsFixed(0)}% tax' : ''}',
-    ];
-    return AppListTile(
-      leading: const Icon(Icons.receipt_long_outlined),
-      title: Text(fee.name),
-      subtitle: Text(
-        terms.join(' • '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: AppBadge(
-        text: fee.isActive ? 'Active' : 'Inactive',
-        tone: fee.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
-      ),
+      if (fee.taxPct > 0) '+${fee.taxPct.toStringAsFixed(0)}% tax',
+    ].join('  •  ');
+
+    return AppCard(
+      padding: EdgeInsets.zero,
       onTap: onTap,
+      child: AppListTile(
+        wrapLeading: false,
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Icon(Icons.receipt_long_outlined, color: tint, size: 20),
+        ),
+        title: Text(
+          fee.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '₹${fee.totalAmount.toStringAsFixed(0)}',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: AppType.bold,
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            AppBadge(
+              text: fee.isActive ? 'Active' : 'Inactive',
+              tone: fee.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

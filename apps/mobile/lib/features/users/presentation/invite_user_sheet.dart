@@ -131,6 +131,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   Widget build(BuildContext context) {
     final preset = widget.preset;
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     // Role options mirror the DB provisioning ladder (capabilities.invitableRoles
     // → can_provision_role). Capabilities load with the profile, so the default
     // _role may not be invitable for this user — clamp it to a valid option so
@@ -142,162 +143,195 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         !roleOptions.contains(_role)) {
       _role = roleOptions.first;
     }
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.lg,
-          AppSpacing.md,
-          AppSpacing.lg,
-          AppSpacing.lg + MediaQuery.of(context).viewInsets.bottom,
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
-        // Scrollable + height-bounded so a tall (center field + keyboard)
-        // layout never clips behind the keyboard.
-        child: SingleChildScrollView(
-          child: Form(
-            key: _form,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: AppSpacing.xl,
-                    height: AppSpacing.xs,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _SheetHandle(),
+            _Header(title: preset?.title ?? 'Invite team member'),
+            const Divider(height: 1),
+            Flexible(
+              child: Form(
+                key: _form,
+                // Scrollable + height-bounded so a tall (center field +
+                // keyboard) layout never clips behind the keyboard.
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
                   ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                Text(
-                  preset?.title ?? 'Invite team member',
-                  style: theme.textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  "They'll get a magic-link email to set their password and "
-                  'sign in.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                // In preset mode the role is locked, so surface it as a clear
-                // labeled "Assigned role" row (badge, not a tiny inline label)
-                // before the editable fields.
-                if (preset != null) ...[
-                  _AssignedRoleRow(label: _roleLabel(_role)),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-                AppFormField(
-                  controller: _email,
-                  label: 'Email *',
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) => (v == null || !v.contains('@'))
-                      ? 'Valid email required'
-                      : null,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  shrinkWrap: true,
                   children: [
-                    Expanded(
-                      child: AppFormField(
-                        controller: _first,
-                        label: 'First name',
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: AppFormField(controller: _last, label: 'Last name'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                // Normal mode: the admin picks the role; preset mode locks it
-                // (shown above), so no picker.
-                if (preset == null)
-                  AppDropdownField<String>(
-                    label: 'Role',
-                    value: _role,
-                    items: [
-                      for (final r in roleOptions)
-                        DropdownMenuItem(value: r, child: Text(_roleLabel(r))),
+                    // In preset mode the role is locked, so surface it as a
+                    // clear labeled "Assigned role" row (badge, not a tiny
+                    // inline label) before the editable fields.
+                    if (preset != null) ...[
+                      _AssignedRoleRow(label: _roleLabel(_role)),
+                      const SizedBox(height: AppSpacing.lg),
                     ],
-                    onChanged: (v) => setState(() {
-                      _role = v ?? _role;
-                      if (!_centerScopedTargets.contains(_role)) {
-                        _centerId = null;
-                      }
-                    }),
-                  ),
-                // Center-scoped staff need a center. Admin-tier inviters pick it
-                // here (required for center_admin, optional for head_coach/coach/
-                // trainer). center-scoped inviters never see this — the
-                // invite-user fn forces their own center.
-                if (preset == null &&
-                    !caps.inviteScopedToOwnCenter &&
-                    _centerScopedTargets.contains(_role)) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  ref
-                      .watch(centersProvider)
-                      .when(
-                        loading: () =>
-                            const LinearProgressIndicator(minHeight: 2),
-                        error: (e, _) => Text(
-                          friendlyError(e),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppSemanticColors.of(context).danger,
+                    const AppSectionHeader(
+                      title: 'Details',
+                      icon: Icons.person_add_alt_1_outlined,
+                    ),
+                    AppFormField(
+                      controller: _email,
+                      label: 'Email *',
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) => (v == null || !v.contains('@'))
+                          ? 'Valid email required'
+                          : null,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: AppFormField(
+                            controller: _first,
+                            label: 'First name',
                           ),
                         ),
-                        data: (centres) {
-                          final active = centres
-                              .where((c) => c.isActive)
-                              .toList();
-                          if (active.isEmpty) {
-                            return Text(
-                              _role == 'center_admin'
-                                  ? 'Create a center first — a center admin must '
-                                      'be assigned to one.'
-                                  : 'No centers yet. This staffer will be '
-                                      'academy-wide until you assign a center.',
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: AppFormField(
+                            controller: _last,
+                            label: 'Last name',
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Normal mode: the admin picks the role; preset mode locks
+                    // it (shown above), so no picker.
+                    if (preset == null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      AppDropdownField<String>(
+                        label: 'Role',
+                        value: _role,
+                        items: [
+                          for (final r in roleOptions)
+                            DropdownMenuItem(
+                              value: r,
+                              child: Text(_roleLabel(r)),
+                            ),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _role = v ?? _role;
+                          if (!_centerScopedTargets.contains(_role)) {
+                            _centerId = null;
+                          }
+                        }),
+                      ),
+                    ],
+                    // Center-scoped staff need a center. Admin-tier inviters
+                    // pick it here (required for center_admin, optional for
+                    // head_coach/coach/trainer). center-scoped inviters never
+                    // see this — the invite-user fn forces their own center.
+                    if (preset == null &&
+                        !caps.inviteScopedToOwnCenter &&
+                        _centerScopedTargets.contains(_role)) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      ref
+                          .watch(centersProvider)
+                          .when(
+                            loading: () =>
+                                const LinearProgressIndicator(minHeight: 2),
+                            error: (e, _) => Text(
+                              friendlyError(e),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: AppSemanticColors.of(context).danger,
                               ),
-                            );
-                          }
-                          return AppDropdownField<String>(
-                            label:
-                                _role == 'center_admin' ? 'Center *' : 'Center',
-                            value: _centerId,
-                            items: [
-                              for (final c in active)
-                                DropdownMenuItem(
-                                  value: c.id,
-                                  child: Text(c.name),
-                                ),
-                            ],
-                            onChanged: (v) => setState(() => _centerId = v),
-                          );
-                        },
+                            ),
+                            data: (centres) {
+                              final active = centres
+                                  .where((c) => c.isActive)
+                                  .toList();
+                              if (active.isEmpty) {
+                                return Text(
+                                  _role == 'center_admin'
+                                      ? 'Create a center first — a center admin '
+                                            'must be assigned to one.'
+                                      : 'No centers yet. This staffer will be '
+                                            'academy-wide until you assign a '
+                                            'center.',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: AppSemanticColors.of(context).danger,
+                                  ),
+                                );
+                              }
+                              return AppDropdownField<String>(
+                                label: _role == 'center_admin'
+                                    ? 'Center *'
+                                    : 'Center',
+                                value: _centerId,
+                                items: [
+                                  for (final c in active)
+                                    DropdownMenuItem(
+                                      value: c.id,
+                                      child: Text(c.name),
+                                    ),
+                                ],
+                                onChanged: (v) =>
+                                    setState(() => _centerId = v),
+                              );
+                            },
+                          ),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      "They'll get a magic-link email to set their password "
+                      'and sign in.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
-                ],
-                const SizedBox(height: AppSpacing.xl),
-                FilledButton.icon(
-                  icon: _busy
-                      ? const SizedBox(
-                          width: AppSpacing.md,
-                          height: AppSpacing.md,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send),
-                  label: Text(_busy ? 'Sending…' : 'Send invite'),
-                  onPressed: _busy ? null : _submit,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+            // Pinned action bar with a floating lift so it reads as a
+            // deliberate commit, separate from the scrolling form above.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                boxShadow: AppShadows.floating,
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: _busy
+                          ? const SizedBox(
+                              width: AppSpacing.md,
+                              height: AppSpacing.md,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                      label: Text(_busy ? 'Sending…' : 'Send invite'),
+                      onPressed: _busy ? null : _submit,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -314,6 +348,59 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         'student': 'Student',
       }[r] ??
       r;
+}
+
+/// The rounded drag affordance at the top of the sheet.
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 36,
+        height: 4,
+        margin: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.outlineVariant,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+      ),
+    );
+  }
+}
+
+/// Title row: the task title plus a close button so the sheet reads as a
+/// deliberate action.
+class _Header extends StatelessWidget {
+  const _Header({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(title, style: theme.textTheme.titleLarge),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Labeled, read-only row that makes the locked invite role obvious in preset

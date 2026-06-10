@@ -34,8 +34,13 @@ final _allPaymentsProvider = FutureProvider<List<Payment>>((ref) async {
 final _dayHeaderFmt = DateFormat('EEEE, dd MMM yyyy');
 final _timeFmt = DateFormat('h:mm a');
 
+/// Payments list — v1 "Sports-Light", archetype B (list).
+///
 /// Tab body under the billing dashboard — the parent page owns the AppBar +
-/// TabBar, so this screen is intentionally app-bar-less.
+/// TabBar, so this screen is intentionally app-bar-less. A method chip filter
+/// sits above date-grouped payment [AppCard] rows (₹ amount + method + time),
+/// each tappable through to its invoice. The 200-row cap is surfaced honestly
+/// at the foot of the list rather than via a dead pagination button.
 class PaymentsListPage extends ConsumerStatefulWidget {
   const PaymentsListPage({super.key});
 
@@ -102,7 +107,12 @@ class _PaymentsListPageState extends ConsumerState<PaymentsListPage> {
                   onRefresh: () async =>
                       ref.invalidate(_allPaymentsProvider),
                   child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.xs,
+                      AppSpacing.lg,
+                      AppSpacing.xxl,
+                    ),
                     itemCount: groups.length + (atCap ? 2 : 1),
                     itemBuilder: (context, i) {
                       if (i == 0) {
@@ -149,7 +159,9 @@ class _DayGroup {
 }
 
 /// Unified single-row method filter: an "All" chip plus one chip per
-/// [PaymentMethod], in one coherent surface (mirrors the invoice list filter).
+/// [PaymentMethod], in one coherent [Material] surface (mirrors the events
+/// status chip bar). Six methods is too many for an equal-width [AppPillTabs],
+/// so this stays a horizontally scrolling brand-colored [ChoiceChip] row.
 class _MethodFilterBar extends StatelessWidget {
   const _MethodFilterBar({required this.selected, required this.onSelected});
 
@@ -161,29 +173,23 @@ class _MethodFilterBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surface,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
-          AppSpacing.sm,
-          AppSpacing.md,
-          AppSpacing.xs,
-        ),
-        child: Row(
+      child: SizedBox(
+        height: 56,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           children: [
             _MethodChip(
               label: 'All',
               selected: selected == null,
               onSelected: () => onSelected(null),
             ),
-            for (final m in PaymentMethod.values) ...[
-              const SizedBox(width: AppSpacing.sm),
+            for (final m in PaymentMethod.values)
               _MethodChip(
                 label: m.label,
                 selected: selected == m,
                 onSelected: () => onSelected(m),
               ),
-            ],
           ],
         ),
       ),
@@ -191,6 +197,8 @@ class _MethodFilterBar extends StatelessWidget {
   }
 }
 
+/// A single method filter pill, brand-colored when selected. Stays a real
+/// [ChoiceChip] so widget-type finders keep resolving.
 class _MethodChip extends StatelessWidget {
   const _MethodChip({
     required this.label,
@@ -203,41 +211,51 @@ class _MethodChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onSelected(),
-      visualDensity: VisualDensity.compact,
-    );
-  }
-}
-
-/// Visible result count above the list, e.g. "12 payments".
-class _ResultCount extends StatelessWidget {
-  const _ResultCount({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.sm,
-        AppSpacing.lg,
-        AppSpacing.xs,
-      ),
-      child: Text(
-        count == 1 ? '1 payment' : '$count payments',
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+      padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        showCheckmark: false,
+        onSelected: (_) => onSelected(),
+        backgroundColor: scheme.primary.withValues(alpha: 0.10),
+        selectedColor: scheme.primary,
+        side: BorderSide(
+          color: selected
+              ? scheme.primary
+              : scheme.primary.withValues(alpha: 0.20),
+        ),
+        labelStyle: TextStyle(
+          color: selected ? Colors.white : scheme.primary,
+          fontWeight: AppType.bold,
+          fontSize: 13,
         ),
       ),
     );
   }
 }
 
-/// One day's worth of payments under a date [AppSectionHeader].
+/// Compact in-body header: a count [AppBadge] so the filtered result size is
+/// always visible above the list (mirrors the invoice list header).
+class _ResultCount extends StatelessWidget {
+  const _ResultCount({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppSectionHeader(
+        title: 'Payments',
+        trailing: AppBadge(text: count == 1 ? '1' : '$count'),
+      ),
+    );
+  }
+}
+
+/// One day's worth of payments under a date [AppSectionHeader], each rendered as
+/// an [AppCard] row.
 class _DaySection extends StatelessWidget {
   const _DaySection({required this.group, required this.studentsById});
 
@@ -249,15 +267,11 @@ class _DaySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: AppSectionHeader(title: _dayLabel(group.day)),
-        ),
-        for (final p in group.payments)
-          _PaymentTile(
-            payment: p,
-            student: studentsById[p.studentId],
-          ),
+        AppSectionHeader(title: _dayLabel(group.day)),
+        for (final p in group.payments) ...[
+          _PaymentCard(payment: p, student: studentsById[p.studentId]),
+          const SizedBox(height: AppSpacing.sm),
+        ],
       ],
     );
   }
@@ -272,8 +286,11 @@ class _DaySection extends StatelessWidget {
   }
 }
 
-class _PaymentTile extends StatelessWidget {
-  const _PaymentTile({required this.payment, required this.student});
+/// One payment row as an [AppCard]: a status-toned method icon tile → student
+/// name → a tight method · time line → the ₹ amount with a status [AppBadge].
+/// Tapping the row opens the payment's invoice (payment/refund logic untouched).
+class _PaymentCard extends StatelessWidget {
+  const _PaymentCard({required this.payment, required this.student});
 
   final Payment payment;
   final Student? student;
@@ -281,38 +298,63 @@ class _PaymentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final sem = AppSemanticColors.of(context);
     final tone = _tone(payment.status);
+    final (fg, bg) = switch (tone) {
+      AppBadgeTone.warning => (sem.warning, sem.warningContainer),
+      AppBadgeTone.danger => (sem.danger, sem.dangerContainer),
+      AppBadgeTone.info => (sem.info, sem.infoContainer),
+      _ => (scheme.primary, scheme.primary.withValues(alpha: 0.12)),
+    };
 
     // Method + time of day are the two facts that matter on the row; the date
     // already lives in the day section header, so it isn't repeated here.
-    final subtitle = '${payment.method.label} · '
+    final subtitle = '${payment.method.label}  •  '
         '${_timeFmt.format(payment.paidAt.toLocal())}';
 
-    return AppListTile(
-      leading: Icon(_methodIcon(payment.method)),
-      title: Text(student?.fullName ?? 'Unknown student'),
-      subtitle: Text(
-        subtitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            '₹${payment.amount.toStringAsFixed(0)}',
-            style: theme.textTheme.titleMedium,
-          ),
-          if (tone != null) ...[
-            const SizedBox(height: AppSpacing.xs),
-            AppBadge(text: _statusLabel(payment.status), tone: tone),
-          ],
-        ],
-      ),
+    return AppCard(
+      padding: EdgeInsets.zero,
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => InvoiceDetailPage(invoiceId: payment.invoiceId),
+        ),
+      ),
+      child: AppListTile(
+        wrapLeading: false,
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Icon(_methodIcon(payment.method), color: fg, size: 20),
+        ),
+        title: Text(
+          student?.fullName ?? 'Unknown student',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '₹${payment.amount.toStringAsFixed(0)}',
+              style: theme.textTheme.titleMedium,
+            ),
+            if (tone != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              AppBadge(text: _statusLabel(payment.status), tone: tone),
+            ],
+          ],
         ),
       ),
     );
@@ -354,12 +396,7 @@ class _CapNotice extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.sm,
-      ),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Row(
         children: [
           Icon(

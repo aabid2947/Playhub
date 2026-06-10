@@ -33,9 +33,11 @@ class InvoiceDetailPage extends ConsumerWidget {
     return invoiceAsync.when(
       loading: () => const Scaffold(body: AppLoading()),
       error: (e, _) => Scaffold(
-        body: AppErrorView(
-          message: friendlyError(e),
-          onRetry: () => ref.invalidate(_invoiceProvider(invoiceId)),
+        body: SafeArea(
+          child: AppErrorView(
+            message: friendlyError(e),
+            onRetry: () => ref.invalidate(_invoiceProvider(invoiceId)),
+          ),
         ),
       ),
       data: (invoice) => _Body(invoice: invoice),
@@ -62,75 +64,92 @@ class _Body extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(invoice.invoiceNumber),
-        actions: [
-          IconButton(
-            tooltip: 'Download receipt',
-            icon: const Icon(Icons.file_download_outlined),
-            onPressed: () => _downloadReceipt(context, ref, invoice.id),
-          ),
-        ],
-      ),
       body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.zero,
         children: [
-          _SummaryCard(invoice: invoice, student: student),
-          const SizedBox(height: AppSpacing.xl),
-          const AppSectionHeader(title: 'Line items'),
-          lines.when(
-            loading: () => const AppSkeletonList(count: 3),
-            error: (e, _) => AppErrorView(
-              message: friendlyError(e),
-              onRetry: () =>
-                  ref.invalidate(invoiceLineItemsProvider(invoice.id)),
-            ),
-            data: (items) {
-              if (items.isEmpty) {
-                return const AppCard(
-                  child: Text('No line items on this invoice.'),
-                );
-              }
-              return AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    for (var i = 0; i < items.length; i++) ...[
-                      if (i > 0) const Divider(height: 1),
-                      _LineItemTile(item: items[i]),
-                    ],
-                  ],
-                ),
-              );
-            },
+          // Navy finance hero — invoice # + balance headline + status, with
+          // back and download-receipt circle buttons.
+          _Hero(
+            invoice: invoice,
+            student: student,
+            onBack: () => Navigator.of(context).pop(),
+            onDownload: () => _downloadReceipt(context, ref, invoice.id),
           ),
-          const SizedBox(height: AppSpacing.xl),
-          const AppSectionHeader(title: 'Payments'),
-          payments.when(
-            loading: () => const AppSkeletonList(count: 2),
-            error: (e, _) => AppErrorView(
-              message: friendlyError(e),
-              onRetry: () =>
-                  ref.invalidate(paymentsForInvoiceProvider(invoice.id)),
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _SummaryCard(invoice: invoice),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'Line items',
+                    icon: Icons.list_alt_outlined,
+                  ),
+                  lines.when(
+                    loading: () => const AppSkeletonList(count: 3),
+                    error: (e, _) => AppErrorView(
+                      message: friendlyError(e),
+                      onRetry: () =>
+                          ref.invalidate(invoiceLineItemsProvider(invoice.id)),
+                    ),
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return const AppCard(
+                          child: Text('No line items on this invoice.'),
+                        );
+                      }
+                      return AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            for (var i = 0; i < items.length; i++) ...[
+                              if (i > 0) const Divider(height: 1),
+                              _LineItemTile(item: items[i]),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'Payments',
+                    icon: Icons.receipt_long_outlined,
+                  ),
+                  payments.when(
+                    loading: () => const AppSkeletonList(count: 2),
+                    error: (e, _) => AppErrorView(
+                      message: friendlyError(e),
+                      onRetry: () => ref
+                          .invalidate(paymentsForInvoiceProvider(invoice.id)),
+                    ),
+                    data: (list) {
+                      if (list.isEmpty) {
+                        return const AppCard(
+                          child: Text('No payments recorded yet.'),
+                        );
+                      }
+                      return AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            for (var i = 0; i < list.length; i++) ...[
+                              if (i > 0) const Divider(height: 1),
+                              _PaymentTile(payment: list[i]),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                ],
+              ),
             ),
-            data: (list) {
-              if (list.isEmpty) {
-                return const AppCard(
-                  child: Text('No payments recorded yet.'),
-                );
-              }
-              return AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    for (var i = 0; i < list.length; i++) ...[
-                      if (i > 0) const Divider(height: 1),
-                      _PaymentTile(payment: list[i]),
-                    ],
-                  ],
-                ),
-              );
-            },
           ),
         ],
       ),
@@ -157,26 +176,48 @@ class _Body extends ConsumerWidget {
   }
 }
 
-/// Balance-forward header: the outstanding balance is the headline; total and
-/// paid are secondary facts. The primary "Record payment" action lives here
-/// when there's anything still owed.
-class _SummaryCard extends ConsumerWidget {
-  const _SummaryCard({required this.invoice, required this.student});
+/// Archetype-E finance hero: a navy gradient band leading with the outstanding
+/// balance (the number that matters), the student/invoice identity, a status
+/// badge, and translucent hero chips for total · paid. Carries the back button
+/// and the download-receipt action.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.invoice,
+    required this.student,
+    required this.onBack,
+    required this.onDownload,
+  });
+
   final Invoice invoice;
   final Student? student;
+  final VoidCallback onBack;
+  final VoidCallback onDownload;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final semantics = AppSemanticColors.of(context);
     final hasBalance = invoice.balance > 0;
-    final balanceColor = hasBalance ? semantics.danger : semantics.success;
-
-    return AppCard(
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
+              ),
+              const Spacer(),
+              AppCircleIconButton(
+                icon: Icons.file_download_outlined,
+                tooltip: 'Download receipt',
+                onTap: onDownload,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -185,19 +226,20 @@ class _SummaryCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      student?.fullName ?? 'Unknown student',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    if (student?.parentName != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xs),
-                        child: Text(
-                          'Parent: ${student!.parentName}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
+                      invoice.invoiceNumber,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontWeight: AppType.semibold,
                       ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      student?.fullName ?? 'Unknown student',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: AppType.heavy,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -209,22 +251,72 @@ class _SummaryCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          // Balance callout — the number that matters, full-width.
           Text(
             hasBalance ? 'Balance due' : 'Balance',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+              color: Colors.white.withValues(alpha: 0.85),
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
             _inr(invoice.balance),
-            style: theme.textTheme.headlineMedium?.copyWith(
-              color: balanceColor,
-              fontWeight: AppType.bold,
+            style: theme.textTheme.displaySmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppGlassChip(
+                'Total ${_inr(invoice.amount)}',
+                icon: Icons.receipt_outlined,
+              ),
+              AppGlassChip(
+                'Paid ${_inr(invoice.amountPaid)}',
+                icon: Icons.check_circle_outline,
+              ),
+              AppGlassChip(
+                'Due ${_date(invoice.dueDate)}',
+                icon: Icons.event_outlined,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The invoice's facts plus the primary money actions. The balance headline
+/// lives in the hero; here we surface period, parent, and the outstanding
+/// actions (Record payment + Create Razorpay order) when anything is owed.
+class _SummaryCard extends ConsumerWidget {
+  const _SummaryCard({required this.invoice});
+  final Invoice invoice;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final semantics = AppSemanticColors.of(context);
+    final hasBalance = invoice.balance > 0;
+    final students =
+        ref.watch(studentsProvider).valueOrNull ?? const <Student>[];
+    Student? student;
+    for (final s in students) {
+      if (s.id == invoice.studentId) {
+        student = s;
+        break;
+      }
+    }
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
               Expanded(
@@ -240,27 +332,28 @@ class _SummaryCard extends ConsumerWidget {
                   color: invoice.amountPaid > 0 ? semantics.success : null,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Icon(
-                Icons.event_outlined,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: AppSpacing.xs),
               Expanded(
-                child: Text(
-                  'Due ${_date(invoice.dueDate)}'
-                  '${_period(invoice)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+                child: _Fact(
+                  label: 'Balance',
+                  value: _inr(invoice.balance),
+                  color: hasBalance ? semantics.danger : semantics.success,
                 ),
               ),
             ],
+          ),
+          if (student?.parentName != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            _MetaRow(
+              icon: Icons.person_outline,
+              label: 'Parent',
+              value: student!.parentName,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          _MetaRow(
+            icon: Icons.event_outlined,
+            label: 'Due',
+            value: '${_date(invoice.dueDate)}${_period(invoice)}',
           ),
           if (hasBalance) ...[
             const SizedBox(height: AppSpacing.lg),
@@ -287,6 +380,26 @@ class _SummaryCard extends ConsumerWidget {
               ),
             ),
           ],
+          if (!hasBalance)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.md),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 18,
+                    color: semantics.success,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    'Fully settled',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -357,12 +470,55 @@ class _Fact extends StatelessWidget {
       children: [
         Text(
           value,
-          style: theme.textTheme.titleMedium?.copyWith(color: color),
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: color,
+            fontWeight: AppType.bold,
+          ),
         ),
         Text(
           label,
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One labeled fact line: leading icon · fixed-width label · value.
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: muted),
+        const SizedBox(width: AppSpacing.sm),
+        SizedBox(
+          width: 60,
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: AppType.semibold,
+            ),
           ),
         ),
       ],
@@ -391,7 +547,9 @@ class _LineItemTile extends StatelessWidget {
       ),
       trailing: Text(
         _inr(item.totalAmount),
-        style: theme.textTheme.titleMedium,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: AppType.bold,
+        ),
       ),
     );
   }

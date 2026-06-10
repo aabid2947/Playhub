@@ -6,6 +6,13 @@ import 'package:playhub/features/billing/data/discount.dart';
 import 'package:playhub/features/billing/data/discount_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Discount structure create/edit form — v1 "Sports-Light", archetype D (form,
+/// pushed). A plain [AppBar] tops a [Form] → padded [ListView] of
+/// [AppSectionHeader]-titled [AppCard] groups (details · type & value ·
+/// stacking explainer · status), closed by a full-width [FilledButton] that
+/// shows a spinner while saving. Presentation only — the save path, providers,
+/// and `ref.invalidate` after the write are untouched; the create/edit entry
+/// point is gated on `Capabilities.manageFinance` by the calling list page.
 class DiscountStructureFormPage extends ConsumerStatefulWidget {
   const DiscountStructureFormPage({super.key, this.existing});
 
@@ -171,8 +178,8 @@ class _DiscountStructureFormPageState
               onPressed: _busy ? null : _save,
               child: _busy
                   ? const SizedBox(
-                      width: 18,
                       height: 18,
+                      width: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Text(isEdit ? 'Save changes' : 'Create discount'),

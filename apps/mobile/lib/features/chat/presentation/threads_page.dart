@@ -8,9 +8,10 @@ import 'package:playhub/features/chat/data/chat.dart';
 import 'package:playhub/features/chat/data/chat_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Inbox of message threads the user can see. Direct threads resolve the other
-/// participant's name via [userDisplayNameProvider]; batch threads use their
-/// title. Tapping a row opens the thread at `/threads/:id`.
+/// Inbox of message threads the user can see — v1 "Sports-Light". Direct
+/// threads resolve the other participant's name via [userDisplayNameProvider];
+/// batch threads use their title. Tapping a row opens the thread at
+/// `/threads/:id`.
 class ThreadsPage extends ConsumerWidget {
   const ThreadsPage({super.key, this.embedded = false});
 
@@ -53,9 +54,13 @@ class ThreadsPage extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(myThreadsProvider),
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.md,
+              ),
               itemCount: list.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: AppSpacing.sm),
               itemBuilder: (_, i) => _ThreadTile(thread: list[i], me: me),
             ),
           );
@@ -65,8 +70,9 @@ class ThreadsPage extends ConsumerWidget {
   }
 }
 
-/// A single inbox row: a tinted kind avatar → the thread name → the last
-/// message preview → the relative time of the last activity.
+/// A single inbox row: a gradient-initials avatar → the thread name → the last
+/// message preview with its relative time. Batch threads carry a title; direct
+/// threads resolve the counterpart's name asynchronously.
 class _ThreadTile extends ConsumerWidget {
   const _ThreadTile({required this.thread, required this.me});
 
@@ -117,39 +123,60 @@ class _ThreadRow extends StatelessWidget {
 
     final preview = thread.lastMessagePreview;
     final hasPreview = preview != null && preview.trim().isNotEmpty;
-    final subtitle = Text(
-      hasPreview ? preview : 'No messages yet',
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.bodySmall?.copyWith(
-        color: scheme.onSurfaceVariant,
-        fontStyle: hasPreview ? FontStyle.normal : FontStyle.italic,
-      ),
-    );
 
     final lastAt = thread.lastMessageAt;
-    final trailing = lastAt == null
-        ? null
-        : Text(
-            _relativeTime(lastAt),
+    final time = lastAt == null ? null : _relativeTime(lastAt);
+
+    // One tight subtitle: the last-message preview, with the relative time
+    // appended as a faint trailing token.
+    final subtitle = Row(
+      children: [
+        Expanded(
+          child: Text(
+            hasPreview ? preview : 'No messages yet',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontStyle: hasPreview ? FontStyle.normal : FontStyle.italic,
+            ),
+          ),
+        ),
+        if (time != null) ...[
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            time,
             style: theme.textTheme.labelSmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
-          );
+          ),
+        ],
+      ],
+    );
 
-    return AppListTile(
-      wrapLeading: false,
-      leading: CircleAvatar(
-        backgroundColor: scheme.primaryContainer,
-        child: Icon(
-          isBatch ? Icons.groups_outlined : Icons.person_outline,
-          color: scheme.onPrimaryContainer,
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: AppListTile(
+        wrapLeading: false,
+        leading: AppAvatar(name),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            if (isBatch) ...[
+              const SizedBox(width: AppSpacing.sm),
+              const AppBadge(
+                text: 'Group',
+                tone: AppBadgeTone.brand,
+                icon: Icons.groups_outlined,
+              ),
+            ],
+          ],
         ),
+        subtitle: subtitle,
+        onTap: () => context.push('/threads/${thread.id}'),
       ),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: subtitle,
-      trailing: trailing,
-      onTap: () => context.push('/threads/${thread.id}'),
     );
   }
 

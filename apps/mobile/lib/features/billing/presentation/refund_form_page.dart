@@ -242,6 +242,7 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
           // ---- Amount -----------------------------------------------------
           AppSectionHeader(
             title: 'Refund amount',
+            icon: Icons.currency_rupee_rounded,
             trailing: TextButton(
               onPressed: _busy ? null : _refundFullAmount,
               child: const Text('Refund full amount'),
@@ -255,7 +256,7 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
             enabled: !_busy,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              FilteringTextInputFormatter.allow(RegExp('[0-9.]')),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -277,7 +278,10 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
           const SizedBox(height: AppSpacing.lg),
 
           // ---- Reason -----------------------------------------------------
-          const AppSectionHeader(title: 'Reason'),
+          const AppSectionHeader(
+            title: 'Reason',
+            icon: Icons.notes_rounded,
+          ),
           const SizedBox(height: AppSpacing.sm),
           AppFormField(
             controller: _reason,
@@ -286,20 +290,25 @@ class _RefundFormPageState extends ConsumerState<RefundFormPage> {
             enabled: !_busy,
             maxLines: 3,
           ),
-          const SizedBox(height: AppSpacing.xl),
-
-          // ---- Primary action: opens the confirmation step ----------------
-          FilledButton(
-            onPressed: _busy ? null : _review,
-            child: _busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
+        ],
+      ),
+      // Pinned, full-width primary action — opens the confirmation step;
+      // inline spinner while the refund write is in flight.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(AppSpacing.lg),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            icon: _busy
+                ? const SizedBox.square(
+                    dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Review refund'),
+                : const Icon(Icons.undo_rounded),
+            label: Text(_busy ? 'Processing…' : 'Review refund'),
+            onPressed: _busy ? null : _review,
           ),
-        ],
+        ),
       ),
     );
   }

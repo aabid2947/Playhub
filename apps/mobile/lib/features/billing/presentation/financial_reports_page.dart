@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/invoice.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Tab body under the billing dashboard — the parent page owns the AppBar +
-/// TabBar, so this screen is intentionally app-bar-less.
+/// Reports tab body under the billing dashboard — v1 "Sports-Light",
+/// archetype E (finance). The parent page owns the AppBar + TabBar, so this
+/// screen is intentionally app-bar-less: it leads with an in-body NAVY gradient
+/// stat banner (collected / outstanding / overdue) and lets the body overlap it
+/// upward, rather than fighting the tab chrome with its own app bar.
 ///
 /// All figures derive from [allInvoicesProvider] — the academy-wide, *unfiltered*
 /// invoice list — so the report's totals are never re-scoped by the invoice-list
@@ -40,57 +44,43 @@ class FinancialReportsPage extends ConsumerWidget {
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(allInvoicesProvider),
           child: ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: EdgeInsets.zero,
             children: [
-              const AppSectionHeader(title: 'Last 30 days'),
-              const SizedBox(height: AppSpacing.sm),
-              _StatGrid(
-                tiles: [
-                  _StatData(
-                    icon: Icons.payments_outlined,
-                    label: 'Collected (30d)',
-                    value: _inr(report.revenue30d),
-                    tone: AppBadgeTone.success,
-                  ),
-                  _StatData(
-                    icon: Icons.account_balance_wallet_outlined,
-                    label: 'Outstanding',
-                    value: _inr(report.outstanding),
-                    tone: report.outstanding > 0
-                        ? AppBadgeTone.warning
-                        : null,
-                  ),
-                  _StatData(
-                    icon: Icons.warning_amber_outlined,
-                    label: 'Overdue invoices',
-                    value: '${report.overdueCount}',
-                    tone:
-                        report.overdueCount > 0 ? AppBadgeTone.danger : null,
-                  ),
-                  _StatData(
-                    icon: Icons.receipt_long_outlined,
-                    label: 'Total invoices',
-                    value: '${invoices.length}',
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'By status'),
-              const SizedBox(height: AppSpacing.sm),
-              AppCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    for (final s in InvoiceStatus.values)
-                      _StatusRow(
-                        status: s,
-                        count: report.byStatus[s] ?? 0,
-                        // Tapping pivots the shared invoice filter to this
-                        // status and jumps to the Money tab, where the invoice
-                        // list watches `invoiceFilterProvider`.
-                        onTap: () => _openFiltered(context, ref, s),
+              _ReportHero(report: report, invoiceCount: invoices.length),
+              // Body overlaps the navy band upward, v1-style.
+              Transform.translate(
+                offset: const Offset(0, -AppSpacing.xl),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const AppSectionHeader(
+                        title: 'By status',
+                        icon: Icons.receipt_long_outlined,
                       ),
-                  ],
+                      const SizedBox(height: AppSpacing.sm),
+                      AppCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            for (final s in InvoiceStatus.values)
+                              _StatusRow(
+                                status: s,
+                                count: report.byStatus[s] ?? 0,
+                                // Tapping pivots the shared invoice filter to
+                                // this status and jumps to the Money tab, where
+                                // the invoice list watches
+                                // `invoiceFilterProvider`.
+                                onTap: () => _openFiltered(context, ref, s),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -107,7 +97,109 @@ class FinancialReportsPage extends ConsumerWidget {
   }
 }
 
-String _inr(double v) => '₹${v.toStringAsFixed(0)}';
+/// Compact INR for the big hero figures (e.g. `₹3.1L`).
+final _compactInr =
+    NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
+
+/// Archetype-E finance hero: an in-body NAVY gradient band leading with the
+/// three headline money figures (collected · outstanding · overdue) as big
+/// [_BigStat]s, plus a translucent [AppHeroStatRow] summary strip. No back
+/// button — this renders inside the Reports tab, not as a pushed page.
+class _ReportHero extends StatelessWidget {
+  const _ReportHero({required this.report, required this.invoiceCount});
+
+  final _Report report;
+  final int invoiceCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Last 30 days',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Icon(
+                Icons.payments_outlined,
+                size: 15,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  'Collected this month · pull down to reload',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _BigStat(
+            label: 'Collected (30d)',
+            value: _compactInr.format(report.revenue30d),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppHeroStatRow(
+            stats: [
+              (_compactInr.format(report.outstanding), 'Outstanding'),
+              ('${report.overdueCount}', 'Overdue'),
+              ('$invoiceCount', 'Invoices'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The single dominant rupee figure in the navy hero — white-on-gradient, so it
+/// reads as the headline number the rest of the strip supports.
+class _BigStat extends StatelessWidget {
+  const _BigStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: theme.textTheme.displaySmall?.copyWith(
+            color: Colors.white,
+            fontWeight: AppType.heavy,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.white.withValues(alpha: 0.85),
+            fontWeight: AppType.semibold,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// KPI figures derived once from the invoice list.
 class _Report {
@@ -144,65 +236,6 @@ class _Report {
   final double outstanding;
   final int overdueCount;
   final Map<InvoiceStatus, int> byStatus;
-}
-
-/// Immutable data backing one [AppStatTile] in the KPI grid.
-class _StatData {
-  const _StatData({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.tone,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final AppBadgeTone? tone;
-}
-
-/// Responsive 2-up grid of KPI tiles (§3.4). Wraps so tiles stack on narrow
-/// widths rather than crushing.
-class _StatGrid extends StatelessWidget {
-  const _StatGrid({required this.tiles});
-
-  final List<_StatData> tiles;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final twoUp = (constraints.maxWidth - AppSpacing.md) / 2;
-        return Wrap(
-          spacing: AppSpacing.md,
-          runSpacing: AppSpacing.md,
-          children: [
-            for (final t in tiles)
-              SizedBox(
-                width: twoUp,
-                child: AppStatTile(
-                  icon: t.icon,
-                  label: t.label,
-                  value: t.value,
-                  color: _accent(context, t.tone),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Color? _accent(BuildContext context, AppBadgeTone? tone) {
-    final sem = AppSemanticColors.of(context);
-    return switch (tone) {
-      AppBadgeTone.success => sem.success,
-      AppBadgeTone.warning => sem.warning,
-      AppBadgeTone.danger => sem.danger,
-      AppBadgeTone.info => sem.info,
-      _ => null,
-    };
-  }
 }
 
 /// A single "by status" row: the status label and a tone-coloured count badge;

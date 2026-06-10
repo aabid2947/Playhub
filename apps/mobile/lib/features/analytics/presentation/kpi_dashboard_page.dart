@@ -34,38 +34,48 @@ class KpiDashboardPage extends ConsumerWidget {
     final isHeadCoach = role == 'head_coach';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('KPI dashboard'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () => _refreshAll(ref),
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         onRefresh: () async => _refreshAll(ref),
         child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.zero,
           children: [
-            const _FreshnessHeader(),
-            const SizedBox(height: AppSpacing.lg),
-            if (isOwner || isAdmin) ...const [
-              _CollectionSummarySection(),
-              SizedBox(height: AppSpacing.xl),
-              _RevenueTrendCard(),
-              SizedBox(height: AppSpacing.md),
-            ],
-            if (isOwner || isAdmin || isHeadCoach) ...const [
-              _EnrollmentTrendCard(),
-              SizedBox(height: AppSpacing.md),
-              _SportBreakdownCard(),
-              SizedBox(height: AppSpacing.md),
-              _BatchUtilizationCard(),
-              SizedBox(height: AppSpacing.md),
-            ],
-            if (isOwner || isAdmin) const _LeadFunnelCard(),
+            // Navy analytics hero. Owners/admins get a top-level collected /
+            // outstanding stat strip pulled from the existing collection
+            // summary provider; everyone else gets a simple titled hero.
+            _AnalyticsHero(
+              showFinanceStats: isOwner || isAdmin,
+              onBack: () => Navigator.of(context).maybePop(),
+              onRefresh: () => _refreshAll(ref),
+            ),
+            // Body overlaps the hero band upward, v1-style.
+            Transform.translate(
+              offset: const Offset(0, -AppSpacing.xl),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (isOwner || isAdmin) ...const [
+                      _CollectionSummarySection(),
+                      SizedBox(height: AppSpacing.lg),
+                      _RevenueTrendCard(),
+                      SizedBox(height: AppSpacing.lg),
+                    ],
+                    if (isOwner || isAdmin || isHeadCoach) ...const [
+                      _EnrollmentTrendCard(),
+                      SizedBox(height: AppSpacing.lg),
+                      _SportBreakdownCard(),
+                      SizedBox(height: AppSpacing.lg),
+                      _BatchUtilizationCard(),
+                      SizedBox(height: AppSpacing.lg),
+                    ],
+                    if (isOwner || isAdmin) const _LeadFunnelCard(),
+                    const SizedBox(height: AppSpacing.xl),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -73,45 +83,104 @@ class KpiDashboardPage extends ConsumerWidget {
   }
 }
 
-/// Page-level data-freshness cue. The analytics_* views are refreshed hourly
-/// by the analytics-aggregations Edge Function; none of the providers return a
-/// per-view `refreshed_at`, so we surface the cadence rather than inventing a
-/// timestamp. (Flag: a true "updated at HH:MM" needs a new query/column.)
-class _FreshnessHeader extends StatelessWidget {
-  const _FreshnessHeader();
+/// Archetype-A analytics hero: a navy gradient band with a back + refresh
+/// circle button, the page title, the hourly-refresh freshness cue, and — for
+/// finance-visible roles — a translucent stat strip with collected /
+/// outstanding / overdue figures from [collectionSummaryProvider]. Falls back
+/// to a simple titled hero while loading, on error, or for coaching roles.
+class _AnalyticsHero extends ConsumerWidget {
+  const _AnalyticsHero({
+    required this.showFinanceStats,
+    required this.onBack,
+    required this.onRefresh,
+  });
+
+  final bool showFinanceStats;
+  final VoidCallback onBack;
+  final VoidCallback onRefresh;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Row(
-      children: [
-        Icon(
-          Icons.schedule_outlined,
-          size: 16,
-          color: scheme.onSurfaceVariant,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            'Figures refresh hourly. Pull down to reload.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+    final summary =
+        showFinanceStats ? ref.watch(collectionSummaryProvider) : null;
+    final stats = summary?.valueOrNull;
+    final money = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
+
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
+              ),
+              const Spacer(),
+              AppCircleIconButton(
+                icon: Icons.refresh_rounded,
+                tooltip: 'Refresh',
+                onTap: onRefresh,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            'Analytics',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: AppType.heavy,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Icon(
+                Icons.schedule_outlined,
+                size: 15,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  'Figures refresh hourly · pull down to reload',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (stats != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            AppHeroStatRow(
+              stats: [
+                (money.format(stats.collectedTotal), 'Collected'),
+                (money.format(stats.outstandingAmount), 'Outstanding'),
+                ('${stats.overdueCount}', 'Overdue'),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
 /// Thin wrapper that gives every chart/breakdown section the same anatomy:
-/// a labeled [AppSectionHeader] inside an [AppCard], with consistent async
-/// states (loading / error+retry / empty handled by the caller's [child]).
+/// a labeled [AppSectionHeader] (with a leading brand-tinted glyph) inside an
+/// [AppCard], with consistent async states (loading / error+retry / empty
+/// handled by the caller's [child]).
 class _ChartSection extends StatelessWidget {
-  const _ChartSection({required this.title, required this.child});
+  const _ChartSection({required this.title, required this.icon, required this.child});
 
   final String title;
+  final IconData icon;
   final Widget child;
 
   @override
@@ -120,7 +189,7 @@ class _ChartSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppSectionHeader(title: title),
+          AppSectionHeader(title: title, icon: icon),
           const SizedBox(height: AppSpacing.sm),
           child,
         ],
@@ -138,7 +207,10 @@ class _CollectionSummarySection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const AppSectionHeader(title: 'Collection summary'),
+        const AppSectionHeader(
+          title: 'Collection summary',
+          icon: Icons.account_balance_wallet_rounded,
+        ),
         const SizedBox(height: AppSpacing.sm),
         async.when(
           loading: () => const AppCard(child: AppLoading()),
@@ -237,6 +309,7 @@ class _RevenueTrendCard extends ConsumerWidget {
     final theme = Theme.of(context);
     return _ChartSection(
       title: 'Revenue trend',
+      icon: Icons.bar_chart_rounded,
       child: async.when(
         loading: () => const SizedBox(height: 180, child: AppLoading()),
         error: (e, _) => AppErrorView(
@@ -368,6 +441,7 @@ class _EnrollmentTrendCard extends ConsumerWidget {
     final theme = Theme.of(context);
     return _ChartSection(
       title: 'New enrollments / month',
+      icon: Icons.show_chart_rounded,
       child: async.when(
         loading: () => const SizedBox(height: 160, child: AppLoading()),
         error: (e, _) => AppErrorView(
@@ -478,13 +552,16 @@ class _BatchUtilizationCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(batchUtilizationProvider);
     final theme = Theme.of(context);
+    const icon = Icons.donut_large_rounded;
     return async.when(
       loading: () => const _ChartSection(
         title: 'Batch utilization',
+        icon: icon,
         child: AppLoading(),
       ),
       error: (e, _) => _ChartSection(
         title: 'Batch utilization',
+        icon: icon,
         child: AppErrorView(
           message: friendlyError(e),
           onRetry: () => ref.invalidate(batchUtilizationProvider),
@@ -494,6 +571,7 @@ class _BatchUtilizationCard extends ConsumerWidget {
         if (rows.isEmpty) {
           return const _ChartSection(
             title: 'Batch utilization',
+            icon: icon,
             child: AppEmptyState(
               icon: Icons.groups_outlined,
               title: 'No active batches',
@@ -512,49 +590,43 @@ class _BatchUtilizationCard extends ConsumerWidget {
         final hiddenCount = sorted.length - shown.length;
         return _ChartSection(
           title: 'Batch utilization',
+          icon: icon,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final r in shown)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              r.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                  // Capacity-less batches can't show a fill rate — render the
+                  // name + headcount only, no meter.
+                  child: r.capacity == null
+                      ? Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                r.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: AppType.semibold,
+                                ),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text(
-                            r.capacity == null
-                                ? '${r.enrolled}'
-                                : '${r.enrolled}/${r.capacity}'
-                                    '  ${((r.utilization ?? 0) * 100).toStringAsFixed(0)}%',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                      if (r.capacity != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          child: LinearProgressIndicator(
-                            value: (r.utilization ?? 0.0).clamp(0.0, 1.0),
-                            minHeight: 6,
-                            backgroundColor: scheme.surfaceContainerHighest,
-                            color: _utilColor(semantics, r.utilization ?? 0.0),
-                          ),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text(
+                              '${r.enrolled}',
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        )
+                      : AppLabeledProgress(
+                          label: r.name,
+                          value: (r.utilization ?? 0.0).clamp(0.0, 1.0),
+                          color: _utilColor(semantics, r.utilization ?? 0.0),
+                          trailing: '${r.enrolled}/${r.capacity}'
+                              '  ${((r.utilization ?? 0) * 100).toStringAsFixed(0)}%',
                         ),
-                      ],
-                    ],
-                  ),
                 ),
               if (hiddenCount > 0)
                 Text(
@@ -578,13 +650,16 @@ class _SportBreakdownCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(sportBreakdownProvider);
     final theme = Theme.of(context);
+    const icon = Icons.sports_soccer_rounded;
     return async.when(
       loading: () => const _ChartSection(
         title: 'By sport',
+        icon: icon,
         child: AppLoading(),
       ),
       error: (e, _) => _ChartSection(
         title: 'By sport',
+        icon: icon,
         child: AppErrorView(
           message: friendlyError(e),
           onRetry: () => ref.invalidate(sportBreakdownProvider),
@@ -594,6 +669,7 @@ class _SportBreakdownCard extends ConsumerWidget {
         if (rows.isEmpty) {
           return const _ChartSection(
             title: 'By sport',
+            icon: icon,
             child: AppEmptyState(
               icon: Icons.sports_outlined,
               title: 'No sports configured',
@@ -605,6 +681,7 @@ class _SportBreakdownCard extends ConsumerWidget {
         final scheme = theme.colorScheme;
         return _ChartSection(
           title: 'By sport',
+          icon: icon,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -643,6 +720,19 @@ class _SportBreakdownCard extends ConsumerWidget {
                       const EdgeInsets.symmetric(vertical: AppSpacing.xs),
                   child: Row(
                     children: [
+                      // Deterministic per-sport accent dot; the unassigned
+                      // bucket (null sport) reads as a muted, hollow marker.
+                      Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(right: AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: r.sportId == null
+                              ? scheme.outlineVariant
+                              : colorFromName(r.sportName),
+                        ),
+                      ),
                       Expanded(
                         child: Text(
                           r.sportName,
@@ -696,13 +786,16 @@ class _LeadFunnelCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(leadFunnelProvider);
+    const icon = Icons.filter_alt_rounded;
     return async.when(
       loading: () => const _ChartSection(
         title: 'Lead funnel',
+        icon: icon,
         child: AppLoading(),
       ),
       error: (e, _) => _ChartSection(
         title: 'Lead funnel',
+        icon: icon,
         child: AppErrorView(
           message: friendlyError(e),
           onRetry: () => ref.invalidate(leadFunnelProvider),
@@ -716,6 +809,7 @@ class _LeadFunnelCard extends ConsumerWidget {
         if (byStatus.isEmpty) {
           return const _ChartSection(
             title: 'Lead funnel',
+            icon: icon,
             child: AppEmptyState(
               icon: Icons.filter_alt_outlined,
               title: 'No leads yet',
@@ -736,6 +830,7 @@ class _LeadFunnelCard extends ConsumerWidget {
             .clamp(1, 1 << 30);
         return _ChartSection(
           title: 'Lead funnel',
+          icon: icon,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

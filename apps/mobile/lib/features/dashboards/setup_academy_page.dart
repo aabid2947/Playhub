@@ -95,20 +95,21 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xxl),
-                      if (_error != null) ...[
-                        AuthMessage(message: _error!, isError: true),
-                        const SizedBox(height: AppSpacing.md),
-                      ],
                       AppFormField(
                         controller: _name,
                         label: 'Academy name',
                         hint: 'e.g. Elite Cricket Academy',
                         autofocus: true,
+                        prefixIcon: const Icon(Icons.sports_outlined),
                         textInputAction: TextInputAction.done,
                         onFieldSubmitted: (_) {
                           if (!_busy) _go();
                         },
                       ),
+                      if (_error != null) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        AuthMessage(message: _error!, isError: true),
+                      ],
                       const SizedBox(height: AppSpacing.xl),
                       FilledButton(
                         onPressed: _busy ? null : _go,

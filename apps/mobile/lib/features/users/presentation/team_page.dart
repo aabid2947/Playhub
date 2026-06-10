@@ -8,6 +8,15 @@ import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Team roster — v1 "Sports-Light", archetype B (list, pushed page).
+///
+/// An in-body header (title + member-count [AppBadge]) and a pinned search sit
+/// above role-grouped sections: each [AppSectionHeader] names a role + its
+/// count, then a tight run of member [AppCard] tiles ([AppAvatar] + name + role
+/// [AppBadge]). The Invite FAB is gated on [Capabilities.canProvisionAnyone];
+/// per-member removal is gated on [Capabilities.canInvite] for that rung. RLS
+/// (`can_provision_role` / `users_admin_delete`) is the real gate — these gates
+/// only hide entry points roles can't act on.
 class TeamPage extends ConsumerStatefulWidget {
   const TeamPage({super.key});
 
@@ -41,14 +50,28 @@ class _TeamPageState extends ConsumerState<TeamPage> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(teamMembersProvider);
+    final canInviteAnyone = ref.watch(capabilitiesProvider).canProvisionAnyone;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Team')),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'fab-team',
-        icon: const Icon(Icons.person_add),
-        label: const Text('Invite'),
-        onPressed: _openInvite,
+      // Pushed/standalone page — keeps its own AppBar (not a shell body tab).
+      appBar: AppBar(
+        title: const Text('Team'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+            onPressed: () => ref.invalidate(teamMembersProvider),
+          ),
+        ],
       ),
+      floatingActionButton: canInviteAnyone
+          ? FloatingActionButton.extended(
+              heroTag: 'fab-team',
+              icon: const Icon(Icons.person_add),
+              label: const Text('Invite'),
+              onPressed: _openInvite,
+            )
+          : null,
       body: async.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
@@ -91,14 +114,25 @@ class _TeamPageState extends ConsumerState<TeamPage> {
                           ],
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.only(
-                            bottom: AppSpacing.xxxl,
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.lg,
+                            AppSpacing.sm,
+                            AppSpacing.lg,
+                            // Leave room so the last tile clears the FAB.
+                            AppSpacing.xxl + AppSpacing.xl,
                           ),
-                          itemCount: groups.length,
-                          itemBuilder: (context, i) => _RoleSection(
-                            label: groups[i].label,
-                            members: groups[i].members,
-                          ),
+                          itemCount: groups.length + 1,
+                          itemBuilder: (context, i) {
+                            if (i == 0) {
+                              return _ResultHeader(count: filtered.length);
+                            }
+                            final g = groups[i - 1];
+                            return _RoleSection(
+                              role: g.role,
+                              label: g.label,
+                              members: g.members,
+                            );
+                          },
                         ),
                 ),
               ),
@@ -121,6 +155,7 @@ class _TeamPageState extends ConsumerState<TeamPage> {
     return _roleOrder
         .map(
           (role) => _RoleGroup(
+            role: role,
             label: _groupLabels[role]!,
             members: members.where((m) => m.role == role).toList(),
           ),
@@ -148,13 +183,88 @@ class _TeamPageState extends ConsumerState<TeamPage> {
   };
 }
 
+/// Singular, human role label for a member's badge.
+String _roleLabel(String role) {
+  switch (role) {
+    case 'academy_owner':
+      return 'Owner';
+    case 'academy_admin':
+      return 'Admin';
+    case 'center_admin':
+      return 'Center admin';
+    case 'head_coach':
+      return 'Head coach';
+    case 'coach':
+      return 'Coach';
+    case 'trainer':
+      return 'Trainer';
+    default:
+      return role;
+  }
+}
+
+/// A leading glyph per role for the section header.
+IconData _roleIcon(String role) {
+  switch (role) {
+    case 'academy_owner':
+      return Icons.workspace_premium_outlined;
+    case 'academy_admin':
+      return Icons.admin_panel_settings_outlined;
+    case 'center_admin':
+      return Icons.business_outlined;
+    case 'head_coach':
+      return Icons.sports_outlined;
+    case 'coach':
+      return Icons.sports_handball_outlined;
+    case 'trainer':
+      return Icons.fitness_center_outlined;
+    default:
+      return Icons.person_outline;
+  }
+}
+
 class _RoleGroup {
-  const _RoleGroup({required this.label, required this.members});
+  const _RoleGroup({
+    required this.role,
+    required this.label,
+    required this.members,
+  });
+  final String role;
   final String label;
   final List<TeamMember> members;
 }
 
-/// Pinned client-side search over name + email.
+/// In-body archetype-B header: a section title with the total member count as a
+/// brand [AppBadge].
+class _ResultHeader extends StatelessWidget {
+  const _ResultHeader({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Team members',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: AppType.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ),
+          AppBadge(text: '$count', tone: AppBadgeTone.brand),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pinned client-side search over name + email. Stays a real [TextField] so
+/// widget-type finders keep resolving.
 class _SearchBar extends StatelessWidget {
   const _SearchBar({required this.controller, required this.onChanged});
 
@@ -168,9 +278,9 @@ class _SearchBar extends StatelessWidget {
       color: scheme.surface,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md,
+          AppSpacing.lg,
           AppSpacing.sm,
-          AppSpacing.md,
+          AppSpacing.lg,
           AppSpacing.xs,
         ),
         child: TextField(
@@ -179,7 +289,6 @@ class _SearchBar extends StatelessWidget {
           decoration: InputDecoration(
             hintText: 'Search name or email…',
             prefixIcon: const Icon(Icons.search),
-            border: const OutlineInputBorder(),
             isDense: true,
             suffixIcon: controller.text.isEmpty
                 ? null
@@ -198,11 +307,16 @@ class _SearchBar extends StatelessWidget {
   }
 }
 
-/// One role group: an [AppSectionHeader] with a member count, then a tight
-/// run of member tiles.
+/// One role group: an [AppSectionHeader] (role icon + label + count) above a
+/// tight run of member tiles.
 class _RoleSection extends StatelessWidget {
-  const _RoleSection({required this.label, required this.members});
+  const _RoleSection({
+    required this.role,
+    required this.label,
+    required this.members,
+  });
 
+  final String role;
   final String label;
   final List<TeamMember> members;
 
@@ -211,16 +325,16 @@ class _RoleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.sm,
-            AppSpacing.lg,
-            0,
-          ),
-          child: AppSectionHeader(title: '$label · ${members.length}'),
+        AppSectionHeader(
+          title: label,
+          icon: _roleIcon(role),
+          trailing: AppBadge(text: '${members.length}'),
         ),
-        for (final m in members) _MemberTile(member: m),
+        for (final m in members) ...[
+          _MemberTile(member: m),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        const SizedBox(height: AppSpacing.xs),
       ],
     );
   }
@@ -238,39 +352,46 @@ class _MemberTile extends ConsumerWidget {
     // RLS (users_admin_delete) is the real gate and also enforces center scope.
     final canRemove = member.id != ref.watch(currentUserIdProvider) &&
         ref.watch(capabilitiesProvider).canInvite(member.role);
-    final badge = AppBadge(
-      text: member.isActive ? 'Active' : 'Inactive',
-      tone: member.isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
-    );
-    return AppListTile(
-      wrapLeading: false,
-      leading: CircleAvatar(child: Text(_initials(member.displayName))),
-      title: Text(member.displayName),
-      subtitle: Text(
-        member.email,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: AppListTile(
+        wrapLeading: false,
+        leading: AppAvatar(member.displayName, size: 40),
+        title: Text(
+          member.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          member.email,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!member.isActive) ...[
+              const AppBadge(text: 'Inactive'),
+              const SizedBox(width: AppSpacing.xs),
+            ],
+            AppBadge(text: _roleLabel(member.role), tone: AppBadgeTone.brand),
+            if (canRemove)
+              PopupMenuButton<String>(
+                tooltip: 'Member actions',
+                onSelected: (v) {
+                  if (v == 'remove') _confirmRemove(context, ref);
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem<String>(
+                    value: 'remove',
+                    child: Text('Remove from academy'),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ),
-      trailing: canRemove
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                badge,
-                PopupMenuButton<String>(
-                  tooltip: 'Member actions',
-                  onSelected: (v) {
-                    if (v == 'remove') _confirmRemove(context, ref);
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem<String>(
-                      value: 'remove',
-                      child: Text('Remove from academy'),
-                    ),
-                  ],
-                ),
-              ],
-            )
-          : badge,
     );
   }
 
@@ -293,12 +414,5 @@ class _MemberTile extends ConsumerWidget {
     } on Object catch (e) {
       if (context.mounted) AppSnackbar.error(context, friendlyError(e));
     }
-  }
-
-  static String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts[0].isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return (parts[0][0] + parts.last[0]).toUpperCase();
   }
 }

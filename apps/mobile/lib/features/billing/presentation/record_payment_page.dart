@@ -205,121 +205,148 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
         : (invoice.balance - amount).clamp(0.0, double.infinity);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Record payment')),
+      // NAVY finance hero (pushed page) with its own back button.
       body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.zero,
         children: [
-          // ---- Header: "you're paying ₹X against invoice Y" ----------------
-          AppCard(
+          AppGradientHeader(
+            colors: AppPalette.navyGradient,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
+                    AppCircleIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: 'Back',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Text(
-                        invoice.invoiceNumber,
-                        style: theme.textTheme.titleMedium,
+                        'Record payment',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: AppType.heavy,
+                        ),
                       ),
                     ),
                     AppBadge(text: badge.label, tone: badge.tone),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                Text(
-                  'Balance due',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+                Row(
+                  children: [
+                    AppGlassChip(invoice.invoiceNumber, icon: Icons.receipt_long),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _money(invoice.balance),
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: AppType.bold,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Total ${_money(invoice.amount)} · '
-                  'Paid ${_money(invoice.amountPaid)}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+                const SizedBox(height: AppSpacing.lg),
+                AppHeroStatRow(
+                  stats: [
+                    (_money(invoice.balance), 'Balance due'),
+                    (_money(invoice.amount), 'Total'),
+                    (_money(invoice.amountPaid), 'Paid'),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.xl),
 
-          // ---- Amount ------------------------------------------------------
-          AppSectionHeader(
-            title: 'Amount',
-            trailing: TextButton(
-              onPressed: _busy ? null : _payFullBalance,
-              child: const Text('Pay full balance'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppFormField(
-            controller: _amount,
-            label: 'Amount (INR ₹)',
-            hint: '0.00',
-            enabled: !_busy,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          // Reserved space: live "remaining after this payment" cue.
-          SizedBox(
-            height: 20,
-            child: amount == null
-                ? null
-                : Text(
-                    'Remaining after this payment: ${_money(remaining!)}',
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ---- Amount ----------------------------------------------
+                  AppSectionHeader(
+                    title: 'Amount',
+                    icon: Icons.payments_outlined,
+                    trailing: TextButton(
+                      onPressed: _busy ? null : _payFullBalance,
+                      child: const Text('Pay full balance'),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppFormField(
+                    controller: _amount,
+                    label: 'Amount (INR ₹)',
+                    hint: '0.00',
+                    enabled: !_busy,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp('[0-9.]')),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  // Reserved space: live "remaining after this payment" cue.
+                  SizedBox(
+                    height: 20,
+                    child: amount == null
+                        ? null
+                        : Text(
+                            'Remaining after this payment: '
+                            '${_money(remaining!)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // ---- Method & notes --------------------------------------
+                  const AppSectionHeader(
+                    title: 'Payment details',
+                    icon: Icons.account_balance_wallet_outlined,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppDropdownField<PaymentMethod>(
+                    label: 'Method',
+                    value: _method,
+                    items: PaymentMethod.values
+                        .where((m) => m != PaymentMethod.razorpay)
+                        .map(
+                          (m) =>
+                              DropdownMenuItem(value: m, child: Text(m.label)),
+                        )
+                        .toList(),
+                    onChanged: _busy
+                        ? null
+                        : (v) =>
+                            setState(() => _method = v ?? PaymentMethod.cash),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Online (Razorpay) payments are recorded automatically — '
+                    'only manual methods are entered here.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // ---- Method & notes ---------------------------------------------
-          const AppSectionHeader(title: 'Payment details'),
-          const SizedBox(height: AppSpacing.sm),
-          AppDropdownField<PaymentMethod>(
-            label: 'Method',
-            value: _method,
-            items: PaymentMethod.values
-                .where((m) => m != PaymentMethod.razorpay)
-                .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
-                .toList(),
-            onChanged: _busy
-                ? null
-                : (v) => setState(() => _method = v ?? PaymentMethod.cash),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Online (Razorpay) payments are recorded automatically — only '
-            'manual methods are entered here.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _notes,
+                    label: 'Notes (optional)',
+                    hint: 'Cheque #, transaction ID, …',
+                    enabled: !_busy,
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          AppFormField(
-            controller: _notes,
-            label: 'Notes (optional)',
-            hint: 'Cheque #, transaction ID, …',
-            enabled: !_busy,
-            maxLines: 2,
-          ),
-          const SizedBox(height: AppSpacing.xl),
-
-          // ---- Primary action: opens the confirmation step ----------------
-          FilledButton(
+        ],
+      ),
+      // ---- Pinned primary action: opens the confirmation step ------------
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(AppSpacing.lg),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
             onPressed: _busy ? null : _review,
             child: _busy
                 ? const SizedBox(
@@ -329,7 +356,7 @@ class _RecordPaymentPageState extends ConsumerState<RecordPaymentPage> {
                   )
                 : const Text('Review payment'),
           ),
-        ],
+        ),
       ),
     );
   }

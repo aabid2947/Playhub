@@ -50,13 +50,16 @@ String _humanize(String token) {
   return spaced[0].toUpperCase() + spaced.substring(1);
 }
 
+/// Support tickets — v1 "Sports-Light", archetype B (list). Pushed/standalone
+/// page, so it keeps its own [AppBar]. A column of ticket [AppCard] rows (each a
+/// brand-tinted icon tile → subject → priority · date → status badge) sits over
+/// a visible result count; the create FAB opens the v1 [_NewTicketSheet].
 class SupportPage extends ConsumerWidget {
   const SupportPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(myAcademyTicketsProvider);
-    final df = DateFormat('dd MMM · HH:mm');
     return Scaffold(
       appBar: AppBar(
         title: const Text('Support'),
@@ -94,37 +97,22 @@ class SupportPage extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(myAcademyTicketsProvider),
             child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.sm,
+                AppSpacing.lg,
+                // Leave room so the last card clears the FAB.
+                AppSpacing.xxl + AppSpacing.xl,
+              ),
+              itemCount: rows.length + 1,
+              separatorBuilder: (_, i) => i == 0
+                  ? const SizedBox.shrink()
+                  : const SizedBox(height: AppSpacing.sm),
               itemBuilder: (_, i) {
-                final t = rows[i];
-                return AppListTile(
-                  leading: const Icon(Icons.confirmation_number_outlined),
-                  title: Text(
-                    t.subject,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: AppSpacing.xs),
-                    child: Wrap(
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        AppBadge(
-                          text: _humanize(t.priority),
-                          tone: _priorityTone(t.priority),
-                        ),
-                        Text(df.format(t.createdAt)),
-                      ],
-                    ),
-                  ),
-                  trailing: AppBadge(
-                    text: _humanize(t.status),
-                    tone: _statusTone(t.status),
-                  ),
+                if (i == 0) return _ResultCount(count: rows.length);
+                final t = rows[i - 1];
+                return _TicketCard(
+                  ticket: t,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => _TicketThreadPage(ticket: t),
@@ -135,6 +123,87 @@ class SupportPage extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Visible result count above the list, e.g. "12 tickets".
+class _ResultCount extends StatelessWidget {
+  const _ResultCount({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        count == 1 ? '1 ticket' : '$count tickets',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// One ticket row: a brand-tinted icon tile → subject → priority · date line →
+/// status [AppBadge]. Fixed-height single-line subtitle so the card height never
+/// varies; tones come from the shared [_priorityTone] / [_statusTone] mappers.
+class _TicketCard extends StatelessWidget {
+  const _TicketCard({required this.ticket, required this.onTap});
+  final SupportTicketRow ticket;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final df = DateFormat('dd MMM · HH:mm');
+    final tint = theme.colorScheme.primary;
+    return AppCard(
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      child: AppListTile(
+        wrapLeading: false,
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Icon(
+            Icons.confirmation_number_outlined,
+            color: tint,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          ticket.subject,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              AppBadge(
+                text: _humanize(ticket.priority),
+                tone: _priorityTone(ticket.priority),
+              ),
+              Text(df.format(ticket.createdAt)),
+            ],
+          ),
+        ),
+        trailing: AppBadge(
+          text: _humanize(ticket.status),
+          tone: _statusTone(ticket.status),
+        ),
       ),
     );
   }
@@ -203,10 +272,22 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // v1 grab handle so the sheet reads as a draggable surface.
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.lg,
-                  AppSpacing.lg,
+                  AppSpacing.md,
                   AppSpacing.lg,
                   AppSpacing.sm,
                 ),

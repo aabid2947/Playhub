@@ -8,6 +8,11 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// Lightweight ad-hoc report builder. The user works top-to-bottom — pick an
 /// entity, choose columns, add filters, set group/order — then runs the report
 /// and reads the result rows below.
+///
+/// v1 "Sports-Light", archetype C (pushed builder): a navy analytics hero with
+/// a back button anchors the top, the builder body overlaps it upward, and each
+/// step is an [AppCard] section under an [AppSectionHeader]. The field / filter /
+/// group-by logic and the [reportRunnerProvider] run are unchanged.
 class ReportBuilderPage extends ConsumerStatefulWidget {
   const ReportBuilderPage({super.key});
 
@@ -75,187 +80,267 @@ class _ReportBuilderPageState extends ConsumerState<ReportBuilderPage> {
     final selectedCount = _selectedColumns.length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Custom report')),
       body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.zero,
         children: [
-          // 1. Entity ----------------------------------------------------
-          const AppSectionHeader(title: 'Report on'),
-          AppCard(
-            child: AppDropdownField<ReportEntity>(
-              label: 'Entity',
-              value: _entity,
-              items: [
-                for (final e in ReportEntity.values)
-                  DropdownMenuItem(value: e, child: Text(e.label)),
-              ],
-              onChanged: (v) => v == null ? null : _resetForEntity(v),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // 2. Columns ---------------------------------------------------
-          AppSectionHeader(
-            title: 'Columns',
-            trailing: Text(
-              '$selectedCount of ${cols.length} selected',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          AppCard(
+          // Navy analytics hero with the back button + a live summary chip.
+          AppGradientHeader(
+            colors: AppPalette.navyGradient,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    AppCircleIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Back',
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Custom report',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: AppType.heavy,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Pick an entity, choose columns, add filters, then run.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 Wrap(
                   spacing: AppSpacing.sm,
                   runSpacing: AppSpacing.sm,
                   children: [
-                    for (final c in cols)
-                      FilterChip(
-                        label: Text(c.label),
-                        selected: _selectedColumns.contains(c.dbName),
-                        onSelected: (sel) => setState(() {
-                          if (sel) {
-                            _selectedColumns.add(c.dbName);
-                          } else {
-                            _selectedColumns.remove(c.dbName);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () => setState(
-                        () => _selectedColumns =
-                            cols.map((c) => c.dbName).toSet(),
-                      ),
-                      child: const Text('Select all'),
+                    AppGlassChip(_entity.label, icon: Icons.dataset_outlined),
+                    AppGlassChip(
+                      '$selectedCount of ${cols.length} columns',
+                      icon: Icons.view_column_outlined,
                     ),
-                    TextButton(
-                      onPressed: selectedCount == 0
-                          ? null
-                          : () => setState(_selectedColumns.clear),
-                      child: const Text('Clear'),
-                    ),
+                    if (_filters.isNotEmpty)
+                      AppGlassChip(
+                        '${_filters.length} '
+                        '${_filters.length == 1 ? 'filter' : 'filters'}',
+                        icon: Icons.filter_alt_outlined,
+                      ),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Entity ------------------------------------------------
+                  const AppSectionHeader(
+                    title: 'Report on',
+                    icon: Icons.dataset_outlined,
+                  ),
+                  AppCard(
+                    child: AppDropdownField<ReportEntity>(
+                      label: 'Entity',
+                      value: _entity,
+                      items: [
+                        for (final e in ReportEntity.values)
+                          DropdownMenuItem(value: e, child: Text(e.label)),
+                      ],
+                      onChanged: (v) => v == null ? null : _resetForEntity(v),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
 
-          // 3. Filters ---------------------------------------------------
-          const AppSectionHeader(title: 'Filters'),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_filters.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: Text(
-                      'No filters — the report returns all rows you can access.',
+                  // 2. Columns -----------------------------------------------
+                  AppSectionHeader(
+                    title: 'Columns',
+                    icon: Icons.view_column_outlined,
+                    trailing: Text(
+                      '$selectedCount of ${cols.length} selected',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ),
-                for (final f in _filters)
-                  _FilterEditor(
-                    row: f,
-                    columns: cols,
-                    onRemove: () => setState(() => _filters.remove(f)),
-                    onChanged: () => setState(() {}),
-                  ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add filter'),
-                    onPressed: () => setState(
-                      () => _filters.add(_FilterRow(column: cols.first.dbName)),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
+                          children: [
+                            for (final c in cols)
+                              FilterChip(
+                                label: Text(c.label),
+                                selected: _selectedColumns.contains(c.dbName),
+                                onSelected: (sel) => setState(() {
+                                  if (sel) {
+                                    _selectedColumns.add(c.dbName);
+                                  } else {
+                                    _selectedColumns.remove(c.dbName);
+                                  }
+                                }),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () => setState(
+                                () => _selectedColumns =
+                                    cols.map((c) => c.dbName).toSet(),
+                              ),
+                              child: const Text('Select all'),
+                            ),
+                            TextButton(
+                              onPressed: selectedCount == 0
+                                  ? null
+                                  : () => setState(_selectedColumns.clear),
+                              child: const Text('Clear'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: AppSpacing.lg),
 
-          // 4. Group / Order ---------------------------------------------
-          const AppSectionHeader(title: 'Group & order'),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppDropdownField<String?>(
-                  label: 'Group by',
-                  hint: '— None —',
-                  value: _groupBy,
-                  items: [
-                    const DropdownMenuItem<String?>(child: Text('— None —')),
-                    for (final c in cols)
-                      DropdownMenuItem<String?>(
-                        value: c.dbName,
-                        child: Text(c.label),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => _groupBy = v),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppDropdownField<String?>(
-                  label: 'Order by',
-                  hint: '— Default —',
-                  value: _orderBy,
-                  items: [
-                    const DropdownMenuItem<String?>(child: Text('— Default —')),
-                    for (final c in cols)
-                      DropdownMenuItem<String?>(
-                        value: c.dbName,
-                        child: Text(c.label),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => _orderBy = v),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Descending order'),
-                  value: _descending,
-                  onChanged: (v) => setState(() => _descending = v),
-                ),
-                Text(
-                  _groupBy == null
-                      ? 'Rows are sorted by the order-by column.'
-                      : 'Grouping by ${_labelFor(_groupBy!)} returns a count '
-                          'per distinct value.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  // 3. Filters -----------------------------------------------
+                  const AppSectionHeader(
+                    title: 'Filters',
+                    icon: Icons.filter_alt_outlined,
                   ),
-                ),
-              ],
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_filters.isEmpty)
+                          Padding(
+                            padding:
+                                const EdgeInsets.only(bottom: AppSpacing.sm),
+                            child: Text(
+                              'No filters — the report returns all rows you '
+                              'can access.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        for (final f in _filters)
+                          _FilterEditor(
+                            row: f,
+                            columns: cols,
+                            onRemove: () => setState(() => _filters.remove(f)),
+                            onChanged: () => setState(() {}),
+                          ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.add),
+                            label: const Text('Add filter'),
+                            onPressed: () => setState(
+                              () => _filters
+                                  .add(_FilterRow(column: cols.first.dbName)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // 4. Group / Order -----------------------------------------
+                  const AppSectionHeader(
+                    title: 'Group & order',
+                    icon: Icons.sort_rounded,
+                  ),
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppDropdownField<String?>(
+                          label: 'Group by',
+                          hint: '— None —',
+                          value: _groupBy,
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              child: Text('— None —'),
+                            ),
+                            for (final c in cols)
+                              DropdownMenuItem<String?>(
+                                value: c.dbName,
+                                child: Text(c.label),
+                              ),
+                          ],
+                          onChanged: (v) => setState(() => _groupBy = v),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        AppDropdownField<String?>(
+                          label: 'Order by',
+                          hint: '— Default —',
+                          value: _orderBy,
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              child: Text('— Default —'),
+                            ),
+                            for (final c in cols)
+                              DropdownMenuItem<String?>(
+                                value: c.dbName,
+                                child: Text(c.label),
+                              ),
+                          ],
+                          onChanged: (v) => setState(() => _orderBy = v),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Descending order'),
+                          value: _descending,
+                          onChanged: (v) => setState(() => _descending = v),
+                        ),
+                        Text(
+                          _groupBy == null
+                              ? 'Rows are sorted by the order-by column.'
+                              : 'Grouping by ${_labelFor(_groupBy!)} returns a '
+                                  'count per distinct value.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // 5. Run ---------------------------------------------------
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Run report'),
+                      onPressed: _selectedColumns.isEmpty ? null : _run,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // 6. Results -----------------------------------------------
+                  if (_spec != null)
+                    _ResultsView(spec: _spec!, labelFor: _labelFor),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: AppSpacing.xl),
-
-          // 5. Run -------------------------------------------------------
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Run report'),
-              onPressed: _selectedColumns.isEmpty ? null : _run,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-
-          // 6. Results ---------------------------------------------------
-          if (_spec != null) _ResultsView(spec: _spec!, labelFor: _labelFor),
         ],
       ),
     );
@@ -411,11 +496,10 @@ class _ResultsView extends ConsumerWidget {
           children: [
             AppSectionHeader(
               title: 'Results',
-              trailing: Text(
-                '${rows.length} ${rows.length == 1 ? 'row' : 'rows'}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+              icon: Icons.table_chart_outlined,
+              trailing: AppBadge(
+                text: '${rows.length} ${rows.length == 1 ? 'row' : 'rows'}',
+                tone: AppBadgeTone.info,
               ),
             ),
             for (final r in rows) ...[
@@ -424,27 +508,36 @@ class _ResultsView extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final c in cols)
-                      Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              labelFor(c),
+                    for (var i = 0; i < cols.length; i++) ...[
+                      if (i != 0)
+                        Divider(
+                          height: AppSpacing.md,
+                          color: theme.colorScheme.outlineVariant
+                              .withValues(alpha: 0.5),
+                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 120,
+                            child: Text(
+                              labelFor(cols[i]),
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                                 letterSpacing: AppType.trackingWide,
                               ),
                             ),
-                            Text(
-                              '${r[c] ?? '—'}',
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              '${r[cols[i]] ?? '—'}',
                               style: theme.textTheme.bodyMedium,
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ],
                   ],
                 ),
               ),

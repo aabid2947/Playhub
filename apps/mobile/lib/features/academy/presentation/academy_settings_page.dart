@@ -4,9 +4,18 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/academy/data/academy.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Academy settings — v1 "Sports-Light", archetype H (pushed).
+///
+/// A navy hero carries the academy identity (logo picker + name/city chips),
+/// then four grouped [AppCard] sections under [AppSectionHeader]s: Profile,
+/// Operating hours, Holidays, Invoicing. Editing the academy record is
+/// owner-only at the RLS layer, so the Save action is gated on
+/// [Capabilities.manageAcademySettings] (RLS is the real gate; this flag only
+/// hides the affordance).
 class AcademySettingsPage extends ConsumerStatefulWidget {
   const AcademySettingsPage({super.key});
 
@@ -140,17 +149,17 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
 
   void _removeHoliday(DateTime d) {
     setState(() {
-      _holidays =
-          _holidays.where((x) => _fmtDate(x) != _fmtDate(d)).toList();
+      _holidays = _holidays.where((x) => _fmtDate(x) != _fmtDate(d)).toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final academyAsync = ref.watch(myAcademyProvider);
+    // Owner-only at the RLS layer — this flag only hides the Save affordance.
+    final canManage = ref.watch(capabilitiesProvider).manageAcademySettings;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Academy settings')),
       body: academyAsync.when(
         loading: () => const AppLoading(),
         error: (e, _) => AppErrorView(
@@ -167,54 +176,80 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
           _hydrate(academy);
           final initials = _name.text.isNotEmpty ? _name.text[0] : 'A';
           return ListView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: EdgeInsets.zero,
             children: [
-              _ProfileSection(
+              // Navy identity hero — back, logo picker, name + contact chips.
+              _AcademyHero(
                 logo: _logo,
                 initials: initials,
+                name: _name.text.isEmpty ? 'Academy' : _name.text,
+                city: _city.text.trim(),
+                email: _email.text.trim(),
+                onBack: () => Navigator.of(context).maybePop(),
                 onLogoUploaded: (url) => setState(() => _logo = url),
-                name: _name,
-                email: _email,
-                phone: _phone,
-                address: _address,
-                city: _city,
-                website: _website,
               ),
-              const SizedBox(height: AppSpacing.xl),
-              _HoursSection(
-                open: _open,
-                close: _close,
-                valid: _hoursValid,
-                onPickOpen: () => _pickTime(open: true),
-                onPickClose: () => _pickTime(open: false),
-                onClear: () => setState(() {
-                  _open = null;
-                  _close = null;
-                }),
+              // Body overlaps the hero band upward, v1-style.
+              Transform.translate(
+                offset: const Offset(0, -AppSpacing.lg),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ProfileSection(
+                        name: _name,
+                        email: _email,
+                        phone: _phone,
+                        address: _address,
+                        city: _city,
+                        website: _website,
+                        onChanged: () => setState(() {}),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _HoursSection(
+                        open: _open,
+                        close: _close,
+                        valid: _hoursValid,
+                        onPickOpen: () => _pickTime(open: true),
+                        onPickClose: () => _pickTime(open: false),
+                        onClear: () => setState(() {
+                          _open = null;
+                          _close = null;
+                        }),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _HolidaysSection(
+                        holidays: _holidays,
+                        onAdd: _addHoliday,
+                        onRemove: _removeHoliday,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      _InvoicingSection(
+                        prefix: _prefix,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      if (canManage) ...[
+                        const SizedBox(height: AppSpacing.xl),
+                        FilledButton(
+                          onPressed: _busy ? null : _save,
+                          child: _busy
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Save changes'),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.xxl),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: AppSpacing.xl),
-              _HolidaysSection(
-                holidays: _holidays,
-                onAdd: _addHoliday,
-                onRemove: _removeHoliday,
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              _InvoicingSection(
-                prefix: _prefix,
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save changes'),
-              ),
-              const SizedBox(height: AppSpacing.xxl),
             ],
           );
         },
@@ -223,55 +258,138 @@ class _AcademySettingsPageState extends ConsumerState<AcademySettingsPage> {
   }
 }
 
-/// Logo + the academy's identity/contact details, grouped into one card.
-class _ProfileSection extends StatelessWidget {
-  const _ProfileSection({
+/// Navy identity hero — back affordance, the academy logo (via [AvatarPicker])
+/// and the academy name plus contact glass chips, all white-on-navy.
+class _AcademyHero extends StatelessWidget {
+  const _AcademyHero({
     required this.logo,
     required this.initials,
+    required this.name,
+    required this.city,
+    required this.email,
+    required this.onBack,
     required this.onLogoUploaded,
+  });
+
+  final String? logo;
+  final String initials;
+  final String name;
+  final String city;
+  final String email;
+  final VoidCallback onBack;
+  final ValueChanged<String> onLogoUploaded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppGradientHeader(
+      colors: AppPalette.navyGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppCircleIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Back',
+                onTap: onBack,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Text(
+                'Academy settings',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: AppType.heavy,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Center(
+            child: AvatarPicker(
+              entity: 'academy',
+              url: logo,
+              fallbackInitials: initials,
+              onUploaded: onLogoUploaded,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Center(
+            child: Text(
+              name,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: AppType.heavy,
+              ),
+            ),
+          ),
+          if (city.isNotEmpty || email.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                if (city.isNotEmpty)
+                  AppGlassChip(city, icon: Icons.location_on_outlined),
+                if (email.isNotEmpty)
+                  AppGlassChip(email, icon: Icons.mail_outline_rounded),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The academy's identity/contact details, grouped into one card.
+class _ProfileSection extends StatelessWidget {
+  const _ProfileSection({
     required this.name,
     required this.email,
     required this.phone,
     required this.address,
     required this.city,
     required this.website,
+    required this.onChanged,
   });
 
-  final String? logo;
-  final String initials;
-  final ValueChanged<String> onLogoUploaded;
   final TextEditingController name;
   final TextEditingController email;
   final TextEditingController phone;
   final TextEditingController address;
   final TextEditingController city;
   final TextEditingController website;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppSectionHeader(title: 'Profile'),
+        const AppSectionHeader(
+          title: 'Profile',
+          icon: Icons.business_outlined,
+        ),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: AvatarPicker(
-                  entity: 'academy',
-                  url: logo,
-                  fallbackInitials: initials,
-                  onUploaded: onLogoUploaded,
-                ),
+              AppFormField(
+                controller: name,
+                label: 'Name',
+                onChanged: (_) => onChanged(),
               ),
-              const SizedBox(height: AppSpacing.lg),
-              AppFormField(controller: name, label: 'Name'),
               const SizedBox(height: AppSpacing.md),
               AppFormField(
                 controller: email,
                 label: 'Email',
                 keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => onChanged(),
               ),
               const SizedBox(height: AppSpacing.md),
               AppFormField(
@@ -286,7 +404,11 @@ class _ProfileSection extends StatelessWidget {
                 maxLines: 2,
               ),
               const SizedBox(height: AppSpacing.md),
-              AppFormField(controller: city, label: 'City'),
+              AppFormField(
+                controller: city,
+                label: 'City',
+                onChanged: (_) => onChanged(),
+              ),
               const SizedBox(height: AppSpacing.md),
               AppFormField(
                 controller: website,
@@ -333,12 +455,9 @@ class _HoursSection extends StatelessWidget {
       children: [
         AppSectionHeader(
           title: 'Operating hours',
-          trailing: hasAny
-              ? TextButton(
-                  onPressed: onClear,
-                  child: const Text('Clear'),
-                )
-              : null,
+          icon: Icons.schedule_outlined,
+          actionLabel: hasAny ? 'Clear' : null,
+          onAction: hasAny ? onClear : null,
         ),
         AppCard(
           child: Column(
@@ -467,13 +586,11 @@ class _HolidaysSection extends StatelessWidget {
       children: [
         AppSectionHeader(
           title: 'Holidays',
+          icon: Icons.event_busy_outlined,
           trailing: holidays.isEmpty
               ? null
-              : Text(
-                  '${holidays.length}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+              : AppBadge(
+                  text: '${holidays.length}',
                 ),
         ),
         AppCard(
@@ -531,12 +648,14 @@ class _InvoicingSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final effective =
-        prefix.text.trim().isEmpty ? 'INV' : prefix.text.trim();
+    final effective = prefix.text.trim().isEmpty ? 'INV' : prefix.text.trim();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const AppSectionHeader(title: 'Invoicing'),
+        const AppSectionHeader(
+          title: 'Invoicing',
+          icon: Icons.receipt_long_outlined,
+        ),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

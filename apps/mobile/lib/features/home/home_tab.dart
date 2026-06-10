@@ -7,6 +7,7 @@ import 'package:playhub/features/announcements/presentation/announcements_page.d
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/attendance/presentation/admin_attendance_overview.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/billing/presentation/billing_dashboard_page.dart';
@@ -22,22 +23,148 @@ import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Owner-shell Home-tab body. App-bar-less by contract: [OwnerHomeShell]
-/// provides the single persistent AppBar (brand wordmark + account menu), so
-/// this returns a scrolling body only — adding a Scaffold/AppBar here would
-/// double the shell bar.
+/// Owner-shell Home-tab body — v1 "Sports-Light" dashboard (archetype A).
+///
+/// App-bar-less by contract: [OwnerHomeShell] provides the single persistent
+/// AppBar (brand wordmark + account menu), so this returns a scrolling body
+/// only — adding a Scaffold/AppBar here would double the shell bar.
+///
+/// Management entry points stay gated by the capability mirror even though the
+/// owner holds them all (defensive + RLS is the real gate); a coat of paint
+/// never widens access.
 class HomeTab extends ConsumerWidget {
   const HomeTab({super.key});
 
+  void _push(BuildContext context, Widget page) {
+    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final caps = ref.watch(capabilitiesProvider);
     final profile = ref.watch(currentProfileProvider).valueOrNull;
     final academy = ref.watch(myAcademyProvider).valueOrNull;
-    final centers = ref.watch(centersProvider).valueOrNull ?? [];
-    final students = ref.watch(studentsProvider).valueOrNull ?? [];
-    final coaches = ref.watch(coachesProvider).valueOrNull ?? [];
-    final batches = ref.watch(batchesProvider).valueOrNull ?? [];
-    final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? [];
+    final centers = ref.watch(centersProvider).valueOrNull ?? const [];
+    final students = ref.watch(studentsProvider).valueOrNull ?? const [];
+    final coaches = ref.watch(coachesProvider).valueOrNull ?? const [];
+    final batches = ref.watch(batchesProvider).valueOrNull ?? const [];
+    final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? const [];
+    final lowStock = ref.watch(lowStockItemsProvider).length;
+
+    final firstName =
+        (profile?.displayName ?? '').split(' ').firstOrNull ?? 'there';
+    final academyName = academy?.name;
+
+    // High-traffic quick actions — colorful feature cards, each gated. The
+    // navigation targets and capability gates mirror the action rows below;
+    // RLS is the authoritative gate (these flags only hide the entry point).
+    final quickActions = <Widget>[
+      if (caps.markAttendance)
+        AppFeatureCard(
+          title: "Today's sessions",
+          subtitle: todays.isEmpty
+              ? 'Nothing scheduled today'
+              : '${todays.length} to mark',
+          icon: Icons.fact_check_rounded,
+          tint: AppPalette.brandPrimary,
+          badge: todays.isEmpty ? null : '${todays.length}',
+          onTap: () => _push(context, const TodaysSessionsPage()),
+        ),
+      if (caps.markAttendance)
+        AppFeatureCard(
+          title: 'Live attendance',
+          subtitle: 'Realtime across all batches',
+          icon: Icons.dashboard_rounded,
+          tint: AppPalette.accent,
+          onTap: () => _push(context, const AdminAttendanceOverview()),
+        ),
+      if (caps.manageFinance)
+        AppFeatureCard(
+          title: 'Billing',
+          subtitle: 'Invoices, fees, payments',
+          icon: Icons.account_balance_wallet_rounded,
+          tint: AppPalette.success,
+          onTap: () => _push(context, const BillingDashboardPage()),
+        ),
+      if (caps.viewRevenue)
+        AppFeatureCard(
+          title: 'KPI dashboard',
+          subtitle: 'Revenue, enrollment, utilization',
+          icon: Icons.insights_rounded,
+          tint: AppPalette.categorySwatch[3],
+          onTap: () => _push(context, const KpiDashboardPage()),
+        ),
+      if (caps.composeAnnouncements)
+        AppFeatureCard(
+          title: 'Announcements',
+          subtitle: 'Compose + send to families',
+          icon: Icons.campaign_rounded,
+          tint: AppPalette.categorySwatch[5],
+          onTap: () => _push(context, const AnnouncementsPage()),
+        ),
+      if (caps.manageLeads)
+        AppFeatureCard(
+          title: 'Leads',
+          subtitle: 'Funnel kanban + intake',
+          icon: Icons.person_search_rounded,
+          tint: AppPalette.categorySwatch[1],
+          onTap: () => _push(context, const LeadsKanbanPage()),
+        ),
+    ];
+
+    // Secondary destinations — grouped list rows, each gated. Money / Growth /
+    // Comms groups preserve the original menu's remaining targets.
+    final moneyRows = <Widget>[
+      if (caps.viewRevenue)
+        _ActionTile(
+          icon: Icons.table_chart_outlined,
+          tint: AppPalette.categorySwatch[3],
+          title: 'Custom report',
+          subtitle: 'Pick fields, filters, group by',
+          onTap: () => _push(context, const ReportBuilderPage()),
+        ),
+    ];
+
+    final growthRows = <Widget>[
+      if (caps.manageEvents)
+        _ActionTile(
+          icon: Icons.emoji_events_outlined,
+          tint: AppPalette.categorySwatch[4],
+          title: 'Events',
+          subtitle: 'Tournaments, workshops, certificates',
+          onTap: () => _push(context, const EventsPage()),
+        ),
+      if (caps.manageInventory)
+        _ActionTile(
+          icon: Icons.inventory_2_outlined,
+          tint: AppPalette.categorySwatch[5],
+          title: 'Inventory',
+          subtitle: lowStock == 0
+              ? 'Equipment + low-stock alerts'
+              : '$lowStock item${lowStock == 1 ? '' : 's'} below threshold',
+          onTap: () => _push(context, const InventoryPage()),
+        ),
+    ];
+
+    // Comms — messaging is participant-scoped and notifications are personal,
+    // so these stay ungated (available to every owner/admin reaching this body).
+    final commsRows = <Widget>[
+      _ActionTile(
+        icon: Icons.chat_outlined,
+        tint: AppPalette.accent,
+        title: 'Messages',
+        subtitle: '1:1 + batch group chat',
+        onTap: () => _push(context, const ThreadsPage()),
+      ),
+      _ActionTile(
+        icon: Icons.notifications_outlined,
+        tint: AppPalette.brandPrimary,
+        title: 'Notifications',
+        subtitle: 'In-app feed',
+        onTap: () => _push(context, const NotificationCenterPage()),
+      ),
+    ];
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -48,257 +175,171 @@ class HomeTab extends ConsumerWidget {
           ..invalidate(centersProvider);
       },
       child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        children: <Widget>[
-          _HeroCard(
-            greeting: profile?.displayName ?? '...',
-            role: profile?.role ?? '',
-            academyName: academy?.name,
-            academyLocation: academy == null
-                ? null
-                : [academy.address, academy.city]
-                    .whereType<String>()
-                    .where((s) => s.isNotEmpty)
-                    .join(', '),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // KPIs — students / coaches / batches / centers together.
-          Row(
-            children: [
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.group_outlined,
-                  label: 'Students',
-                  value: '${students.length}',
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.sports_outlined,
-                  label: 'Coaches',
-                  value: '${coaches.length}',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.schedule_outlined,
-                  label: 'Batches',
-                  value: '${batches.length}',
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.location_on_outlined,
-                  label: 'Centers',
-                  value: '${centers.length}',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // Daily ops — the things touched every day, primary above tertiary.
-          const AppSectionHeader(title: 'Daily ops'),
-          _ActionGroup(
-            children: [
-              _ActionTile(
-                icon: Icons.event_available_outlined,
-                title: "Today's sessions",
-                subtitle: todays.isEmpty
-                    ? 'No batches scheduled today'
-                    : '${todays.length} '
-                        '${todays.length == 1 ? 'batch' : 'batches'} to mark',
-                builder: (_) => const TodaysSessionsPage(),
-              ),
-              const _ActionTile(
-                icon: Icons.dashboard_outlined,
-                title: 'Live attendance overview',
-                subtitle: 'Realtime view across all batches',
-                builder: _buildAttendanceOverview,
-              ),
-              const _InventoryActionTile(),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // Money — billing, reporting, financial insight.
-          const AppSectionHeader(title: 'Money'),
-          const _ActionGroup(
-            children: [
-              _ActionTile(
-                icon: Icons.account_balance_wallet_outlined,
-                title: 'Billing',
-                subtitle: 'Invoices, fees, payments, reports',
-                builder: _buildBilling,
-              ),
-              _ActionTile(
-                icon: Icons.insights_outlined,
-                title: 'KPI dashboard',
-                subtitle: 'Revenue, enrollment, batch utilization',
-                builder: _buildKpiDashboard,
-              ),
-              _ActionTile(
-                icon: Icons.table_chart_outlined,
-                title: 'Custom report',
-                subtitle: 'Pick fields, filters, group by',
-                builder: _buildReportBuilder,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // Growth — pipeline and events.
-          const AppSectionHeader(title: 'Growth'),
-          const _ActionGroup(
-            children: [
-              _ActionTile(
-                icon: Icons.person_search_outlined,
-                title: 'Leads',
-                subtitle: 'Funnel kanban + new lead intake',
-                builder: _buildLeads,
-              ),
-              _ActionTile(
-                icon: Icons.emoji_events_outlined,
-                title: 'Events',
-                subtitle: 'Tournaments, workshops, certificates',
-                builder: _buildEvents,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-
-          // Comms — outbound + inbound messaging.
-          const AppSectionHeader(title: 'Comms'),
-          const _ActionGroup(
-            children: [
-              _ActionTile(
-                icon: Icons.campaign_outlined,
-                title: 'Announcements',
-                subtitle: 'Compose + send to roles, batches, centers',
-                builder: _buildAnnouncements,
-              ),
-              _ActionTile(
-                icon: Icons.chat_outlined,
-                title: 'Messages',
-                subtitle: '1:1 + batch group chat',
-                builder: _buildMessages,
-              ),
-              _ActionTile(
-                icon: Icons.notifications_outlined,
-                title: 'Notifications',
-                subtitle: 'In-app feed',
-                builder: _buildNotifications,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Greeting hero that folds the user identity and the academy context into a
-/// single card (they used to be two stacked cards).
-class _HeroCard extends StatelessWidget {
-  const _HeroCard({
-    required this.greeting,
-    required this.role,
-    required this.academyName,
-    required this.academyLocation,
-  });
-
-  final String greeting;
-  final String role;
-  final String? academyName;
-  final String? academyLocation;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.zero,
         children: [
-          Row(
-            children: [
-              const AppUserAvatar(size: 48),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Hello, $greeting',
-                      style: theme.textTheme.titleLarge,
-                    ),
-                    if (role.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        role,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (academyName != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            const Divider(height: 1),
-            const SizedBox(height: AppSpacing.md),
-            Row(
+          // Greeting hero: identity + academy context + headline stat strip.
+          AppGradientHeader(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.business_outlined,
-                  size: 20,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        academyName!,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      if (academyLocation != null &&
-                          academyLocation!.isNotEmpty) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          academyLocation!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hello, $firstName 👋',
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(color: Colors.white),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
+                          if (academyName != null) ...[
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.business_rounded,
+                                  size: 15,
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    academyName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        theme.textTheme.bodyMedium?.copyWith(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.85),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    const AppUserAvatar(size: 44, onGradient: true),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                AppHeroStatRow(
+                  stats: [
+                    ('${students.length}', 'Students'),
+                    ('${coaches.length}', 'Coaches'),
+                    ('${batches.length}', 'Batches'),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // KPI grid — students / coaches / batches / centers.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppStatTile(
+                          icon: Icons.group_outlined,
+                          label: 'Students',
+                          value: '${students.length}',
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: AppStatTile(
+                          icon: Icons.sports_outlined,
+                          label: 'Coaches',
+                          value: '${coaches.length}',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppStatTile(
+                          icon: Icons.schedule_outlined,
+                          label: 'Batches',
+                          value: '${batches.length}',
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: AppStatTile(
+                          icon: Icons.location_on_outlined,
+                          label: 'Centers',
+                          value: '${centers.length}',
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Quick actions — colorful gated feature cards.
+                  if (quickActions.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    const AppSectionHeader(
+                      title: 'Quick actions',
+                      icon: Icons.bolt_rounded,
+                    ),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: AppSpacing.md,
+                      crossAxisSpacing: AppSpacing.md,
+                      childAspectRatio: 1.5,
+                      children: quickActions,
+                    ),
+                  ],
+
+                  if (moneyRows.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    const AppSectionHeader(
+                      title: 'Money',
+                      icon: Icons.payments_outlined,
+                    ),
+                    _ActionGroup(children: moneyRows),
+                  ],
+
+                  if (growthRows.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    const AppSectionHeader(
+                      title: 'Growth',
+                      icon: Icons.trending_up_rounded,
+                    ),
+                    _ActionGroup(children: growthRows),
+                  ],
+
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'Comms',
+                    icon: Icons.forum_outlined,
+                  ),
+                  _ActionGroup(children: commsRows),
+
+                  const SizedBox(height: AppSpacing.xl),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// Groups action tiles into one divider-separated card. Each child is an
-/// [_ActionTile] (static destination) or the reactive [_InventoryActionTile].
+/// Groups action tiles into one divider-separated [AppCard].
 class _ActionGroup extends StatelessWidget {
   const _ActionGroup({required this.children});
 
@@ -306,75 +347,54 @@ class _ActionGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
-    for (var i = 0; i < children.length; i++) {
-      if (i > 0) rows.add(const Divider(height: 1));
-      rows.add(children[i]);
-    }
     return AppCard(
       padding: EdgeInsets.zero,
-      child: Column(children: rows),
+      child: Column(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i != children.length - 1) const Divider(height: 1),
+          ],
+        ],
+      ),
     );
   }
 }
 
-/// One navigation action: a tinted-icon list tile that pushes [builder].
+/// One navigation action: a tinted-icon list tile that pushes [onTap].
+/// Renders a real [AppListTile] so widget-type finders resolve.
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
     required this.icon,
+    required this.tint,
     required this.title,
     required this.subtitle,
-    required this.builder,
+    required this.onTap,
   });
 
   final IconData icon;
+  final Color tint;
   final String title;
   final String subtitle;
-  final WidgetBuilder builder;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return AppListTile(
-      leading: Icon(icon),
+      wrapLeading: false,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(icon, color: tint, size: 20),
+      ),
       title: Text(title),
       subtitle: Text(subtitle),
-      onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: builder),
-      ),
-    );
-  }
-}
-
-// Top-level page builders so the action tiles above can be `const`.
-Widget _buildAttendanceOverview(BuildContext _) =>
-    const AdminAttendanceOverview();
-Widget _buildBilling(BuildContext _) => const BillingDashboardPage();
-Widget _buildKpiDashboard(BuildContext _) => const KpiDashboardPage();
-Widget _buildReportBuilder(BuildContext _) => const ReportBuilderPage();
-Widget _buildLeads(BuildContext _) => const LeadsKanbanPage();
-Widget _buildEvents(BuildContext _) => const EventsPage();
-Widget _buildAnnouncements(BuildContext _) => const AnnouncementsPage();
-Widget _buildMessages(BuildContext _) => const ThreadsPage();
-Widget _buildNotifications(BuildContext _) => const NotificationCenterPage();
-
-/// Inventory action tile with a reactive low-stock subtitle.
-class _InventoryActionTile extends ConsumerWidget {
-  const _InventoryActionTile();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final low = ref.watch(lowStockItemsProvider).length;
-    return AppListTile(
-      leading: const Icon(Icons.inventory_2_outlined),
-      title: const Text('Inventory'),
-      subtitle: Text(
-        low == 0
-            ? 'Equipment + low-stock alerts'
-            : '$low item${low == 1 ? '' : 's'} below threshold',
-      ),
-      onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => const InventoryPage()),
-      ),
+      onTap: onTap,
     );
   }
 }

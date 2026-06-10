@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,13 @@ import 'package:playhub/features/notifications/data/notification.dart';
 import 'package:playhub/features/notifications/data/notification_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
+/// Notification center — v1 "Sports-Light", archetype B (list), date-grouped.
+///
+/// Rows are tinted-icon [AppCard]/[AppListTile]s grouped under
+/// [AppSectionHeader] date buckets (Today / Yesterday / Earlier); unread rows
+/// carry a subtle brand tint and a "New" badge. Presentation only — every
+/// provider read, the mark-read / mark-all-read mutations, and the preferences
+/// entry point are preserved exactly.
 class NotificationCenterPage extends ConsumerWidget {
   const NotificationCenterPage({super.key, this.embedded = false});
 
@@ -35,23 +44,28 @@ class NotificationCenterPage extends ConsumerWidget {
         }
         final sections = _groupByDate(list);
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.xl,
+          ),
           itemCount: sections.length,
           itemBuilder: (_, i) {
             final section = sections[i];
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.md,
-                    AppSpacing.lg,
-                    0,
-                  ),
-                  child: AppSectionHeader(title: section.label),
+                AppSectionHeader(
+                  title: section.label,
+                  icon: Icons.notifications_active_outlined,
                 ),
-                for (final n in section.items) _Tile(n: n),
+                for (final n in section.items)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: _Tile(n: n),
+                  ),
+                const SizedBox(height: AppSpacing.sm),
               ],
             );
           },
@@ -140,18 +154,22 @@ class NotificationCenterPage extends ConsumerWidget {
     }
   }
 
-  /// Splits the (already newest-first) list into Today / Earlier sections,
-  /// preserving order and dropping empty groups.
+  /// Splits the (already newest-first) list into Today / Yesterday / Earlier
+  /// sections, preserving order and dropping empty groups.
   static List<_NotificationSection> _groupByDate(List<AppNotification> list) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
     final todayItems = <AppNotification>[];
+    final yesterdayItems = <AppNotification>[];
     final earlierItems = <AppNotification>[];
     for (final n in list) {
       final created = n.createdAt;
       final createdDay = DateTime(created.year, created.month, created.day);
       if (!createdDay.isBefore(today)) {
         todayItems.add(n);
+      } else if (createdDay == yesterday) {
+        yesterdayItems.add(n);
       } else {
         earlierItems.add(n);
       }
@@ -159,6 +177,8 @@ class NotificationCenterPage extends ConsumerWidget {
     return [
       if (todayItems.isNotEmpty)
         _NotificationSection(label: 'Today', items: todayItems),
+      if (yesterdayItems.isNotEmpty)
+        _NotificationSection(label: 'Yesterday', items: yesterdayItems),
       if (earlierItems.isNotEmpty)
         _NotificationSection(label: 'Earlier', items: earlierItems),
     ];
@@ -171,83 +191,119 @@ class _NotificationSection {
   final List<AppNotification> items;
 }
 
+/// Per-category icon + accent tint. Status-flavoured categories (invoice,
+/// payment, lead) borrow the semantic tones; the rest pull a stable accent
+/// from the shared category swatch so each type reads with a consistent tile.
+({IconData icon, Color tint}) _styleFor(
+  String category,
+  AppSemanticColors semantics,
+) {
+  switch (category) {
+    case 'announcement':
+      return (icon: Icons.campaign_outlined, tint: AppPalette.brandPrimary);
+    case 'message':
+      return (icon: Icons.chat_bubble_outline, tint: AppPalette.accent);
+    case 'attendance':
+      return (
+        icon: Icons.event_available_outlined,
+        tint: semantics.success,
+      );
+    case 'performance':
+      return (icon: Icons.insights_outlined, tint: AppPalette.categorySwatch[3]);
+    case 'invoice':
+      return (icon: Icons.receipt_long_outlined, tint: semantics.warning);
+    case 'payment':
+      return (icon: Icons.payments_outlined, tint: semantics.success);
+    case 'lead':
+      return (icon: Icons.person_search_outlined, tint: AppPalette.accent);
+    default:
+      return (
+        icon: Icons.notifications_outlined,
+        tint: AppPalette.categorySwatch[1],
+      );
+  }
+}
+
 class _Tile extends ConsumerWidget {
   const _Tile({required this.n});
   final AppNotification n;
-
-  IconData _iconFor(String category) {
-    switch (category) {
-      case 'announcement':
-        return Icons.campaign_outlined;
-      case 'message':
-        return Icons.chat_outlined;
-      case 'attendance':
-        return Icons.event_available_outlined;
-      case 'performance':
-        return Icons.bar_chart;
-      case 'invoice':
-        return Icons.receipt_long_outlined;
-      case 'payment':
-        return Icons.payments_outlined;
-      case 'lead':
-        return Icons.person_search_outlined;
-      default:
-        return Icons.notifications_outlined;
-    }
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    return AppListTile(
-      leading: _LeadingIcon(
-        icon: _iconFor(n.category),
-        unread: n.isUnread,
-      ),
-      title: Text(
-        n.title,
-        style: n.isUnread
-            ? null
-            : theme.textTheme.bodyLarge?.copyWith(
-                color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.normal,
-              ),
-      ),
-      subtitle: n.body == null
-          ? null
-          : Text(
-              n.body!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            _relative(n.createdAt),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            _absolute(n.createdAt),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+    final semantics = AppSemanticColors.of(context);
+    final style = _styleFor(n.category, semantics);
+    final unread = n.isUnread;
+
+    return AppCard(
+      padding: EdgeInsets.zero,
+      // Unread rows lift with a soft brand tint; read rows stay on surface.
+      color: unread
+          ? scheme.primary.withValues(alpha: 0.06)
+          : scheme.surface,
       onTap: () async {
         if (n.isUnread) {
           await ref.read(notificationsRepoProvider).markRead(n.id);
         }
         if (n.deepLink != null && context.mounted) {
-          context.push(n.deepLink!);
+          unawaited(context.push(n.deepLink!));
         }
       },
+      child: AppListTile(
+        wrapLeading: false,
+        leading: Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: style.tint.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Icon(style.icon, color: style.tint, size: 20),
+        ),
+        title: Text(
+          n.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: unread
+              ? null
+              : theme.textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: AppType.regular,
+                ),
+        ),
+        subtitle: n.body == null
+            ? null
+            : Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text(
+                  n.body!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _relative(n.createdAt),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            if (unread) ...[
+              const SizedBox(height: AppSpacing.xs),
+              const AppBadge(text: 'New', tone: AppBadgeTone.brand),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -257,48 +313,5 @@ class _Tile extends ConsumerWidget {
     if (diff.inHours > 0) return '${diff.inHours}h ago';
     if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
     return 'Just now';
-  }
-
-  static String _absolute(DateTime d) {
-    final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
-    final minute = d.minute.toString().padLeft(2, '0');
-    final period = d.hour < 12 ? 'AM' : 'PM';
-    return '$hour:$minute $period';
-  }
-}
-
-/// Category icon with an unread dot affordance overlaid on the top-right.
-class _LeadingIcon extends StatelessWidget {
-  const _LeadingIcon({required this.icon, required this.unread});
-
-  final IconData icon;
-  final bool unread;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon),
-        if (unread)
-          Positioned(
-            top: -AppSpacing.xs,
-            right: -AppSpacing.xs,
-            child: Container(
-              width: AppSpacing.sm,
-              height: AppSpacing.sm,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: scheme.surface,
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
   }
 }

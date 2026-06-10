@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -151,6 +153,16 @@ class _AnnouncementComposerPageState
     final isAdmin = caps.announcementTargetsByRole;
     return Scaffold(
       appBar: AppBar(title: const Text('New announcement')),
+      // v1 archetype D: the send action is pinned to a soft-floating bottom bar
+      // so it stays reachable above the long compose form. Hidden until the
+      // profile/academy resolve (nothing to send to otherwise).
+      bottomNavigationBar: profileAsync.valueOrNull?.academyId == null
+          ? null
+          : _SendBar(
+              busy: _busy,
+              onPressed:
+                  _busy ? null : () => _send(emailAllowed: emailAllowed),
+            ),
       body: profileAsync.when(
         loading: () => const AppLoading(),
         error: (e, _) => AppErrorView(
@@ -177,7 +189,11 @@ class _AnnouncementComposerPageState
                 AppSpacing.xxxl,
               ),
               children: [
-                const AppSectionHeader(title: 'Message'),
+                const AppSectionHeader(
+                  title: 'Message',
+                  icon: Icons.campaign_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 AppFormField(
                   controller: _subject,
                   label: 'Subject *',
@@ -199,7 +215,11 @@ class _AnnouncementComposerPageState
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 // 'Photos' (not 'Photos & videos') while video upload is off.
-                const AppSectionHeader(title: 'Photos'),
+                const AppSectionHeader(
+                  title: 'Photos',
+                  icon: Icons.photo_library_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 _MediaSection(
                   media: _media,
                   enabled: !_busy && !_pickingMedia,
@@ -209,10 +229,14 @@ class _AnnouncementComposerPageState
                   // Video upload temporarily disabled — re-enable by restoring
                   // the Video button in _MediaSection and passing:
                   //   onAddVideo: () => _pickMedia(academyId: academyId, video: true),
-                  onRemove: _removeMedia,
+                  onRemove: (m) => unawaited(_removeMedia(m)),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'Audience'),
+                const AppSectionHeader(
+                  title: 'Audience',
+                  icon: Icons.groups_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 _AudienceHint(isAdmin: isAdmin),
                 const SizedBox(height: AppSpacing.md),
                 audienceAsync.when(
@@ -224,6 +248,7 @@ class _AnnouncementComposerPageState
                       if (audience.canTargetRoles) ...[
                         _AudienceGroup(
                           label: 'Roles',
+                          icon: Icons.badge_outlined,
                           child: _RoleChips(
                             selected: _selectedRoles,
                             enabled: !_busy,
@@ -234,6 +259,7 @@ class _AnnouncementComposerPageState
                       if (audience.centers.isNotEmpty) ...[
                         _AudienceGroup(
                           label: 'Centers',
+                          icon: Icons.apartment_outlined,
                           child: _OptionChips(
                             options: audience.centers,
                             selected: _selectedCenters,
@@ -246,6 +272,7 @@ class _AnnouncementComposerPageState
                       if (audience.canTargetSports) ...[
                         _AudienceGroup(
                           label: 'Sports',
+                          icon: Icons.sports_outlined,
                           child: _OptionChips(
                             options: audience.sports,
                             selected: _selectedSports,
@@ -257,6 +284,7 @@ class _AnnouncementComposerPageState
                       ],
                       _AudienceGroup(
                         label: 'Batches',
+                        icon: Icons.grid_view_outlined,
                         child: _OptionChips(
                           options: audience.batches,
                           selected: _selectedBatches,
@@ -268,7 +296,11 @@ class _AnnouncementComposerPageState
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                const AppSectionHeader(title: 'Channels'),
+                const AppSectionHeader(
+                  title: 'Channels',
+                  icon: Icons.send_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 AppCard(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm,
@@ -279,6 +311,7 @@ class _AnnouncementComposerPageState
                       SwitchListTile(
                         title: const Text('Push notification'),
                         subtitle: const Text('Device alert via FCM'),
+                        secondary: const Icon(Icons.notifications_outlined),
                         value: _viaPush,
                         onChanged:
                             _busy ? null : (v) => setState(() => _viaPush = v),
@@ -286,6 +319,7 @@ class _AnnouncementComposerPageState
                       SwitchListTile(
                         title: const Text('In-app feed'),
                         subtitle: const Text('Shows in the announcements feed'),
+                        secondary: const Icon(Icons.feed_outlined),
                         value: _viaInApp,
                         onChanged:
                             _busy ? null : (v) => setState(() => _viaInApp = v),
@@ -295,6 +329,7 @@ class _AnnouncementComposerPageState
                           title: const Text('Email'),
                           subtitle:
                               const Text('Sent to recipients with an email'),
+                          secondary: const Icon(Icons.mail_outline),
                           value: _viaEmail,
                           onChanged: _busy
                               ? null
@@ -307,26 +342,53 @@ class _AnnouncementComposerPageState
                   const SizedBox(height: AppSpacing.md),
                   _ErrorBanner(message: _error!),
                 ],
-                const SizedBox(height: AppSpacing.xl),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send_outlined),
-                    label: Text(_busy ? 'Sending…' : 'Send announcement'),
-                    onPressed:
-                        _busy ? null : () => _send(emailAllowed: emailAllowed),
-                  ),
-                ),
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Pinned bottom action bar for the composer (v1 archetype D). A full-width
+/// primary [FilledButton] on a soft-floating surface bar; swaps to an inline
+/// spinner while [busy].
+class _SendBar extends StatelessWidget {
+  const _SendBar({required this.busy, required this.onPressed});
+
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        boxShadow: AppShadows.floating,
+      ),
+      child: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.md,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            icon: busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.send_outlined),
+            label: Text(busy ? 'Sending…' : 'Send announcement'),
+            onPressed: onPressed,
+          ),
+        ),
       ),
     );
   }
@@ -352,7 +414,7 @@ class _AudienceHint extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.groups_outlined, size: 20, color: semantics.info),
+          Icon(Icons.info_outline, size: 20, color: semantics.info),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
@@ -373,7 +435,7 @@ class _AudienceHint extends StatelessWidget {
   }
 }
 
-/// Photo attachments: add button + a thumbnail strip with remove, plus an
+/// Photo attachments: an add button + a thumbnail strip with remove, plus an
 /// "Uploading…" indicator while a pick is being uploaded.
 class _MediaSection extends StatelessWidget {
   const _MediaSection({
@@ -404,7 +466,7 @@ class _MediaSection extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: enabled ? onAddPhoto : null,
               icon: const Icon(Icons.add_photo_alternate_outlined),
-              label: const Text('Photo'),
+              label: const Text('Add photo'),
             ),
             // Video upload temporarily disabled. To restore: add an
             // `onAddVideo` field back, pass it from the composer, and re-add:
@@ -461,12 +523,19 @@ class _MediaThumb extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final fill = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final scheme = Theme.of(context).colorScheme;
+    final fill = scheme.surfaceContainerHighest;
     Widget inner;
     if (media.isVideo) {
       inner = ColoredBox(
         color: fill,
-        child: const Center(child: Icon(Icons.play_circle_outline, size: 28)),
+        child: Center(
+          child: Icon(
+            Icons.play_circle_outline,
+            size: 28,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
       );
     } else {
       inner = FutureBuilder<String>(
@@ -481,7 +550,10 @@ class _MediaThumb extends ConsumerWidget {
             placeholder: (_, __) => ColoredBox(color: fill),
             errorWidget: (_, __, ___) => ColoredBox(
               color: fill,
-              child: const Icon(Icons.broken_image_outlined),
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           );
         },
@@ -495,14 +567,24 @@ class _MediaThumb extends ConsumerWidget {
         ),
         if (onRemove != null)
           Positioned(
-            top: 2,
-            right: 2,
+            top: AppSpacing.xs,
+            right: AppSpacing.xs,
             child: GestureDetector(
               onTap: onRemove,
-              child: const CircleAvatar(
-                radius: 11,
-                backgroundColor: Colors.black54,
-                child: Icon(Icons.close, size: 14, color: Colors.white),
+              child: Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  shape: BoxShape.circle,
+                  boxShadow: AppShadows.card,
+                ),
+                child: Icon(
+                  Icons.close,
+                  size: 14,
+                  color: scheme.onSurface,
+                ),
               ),
             ),
           ),
@@ -511,11 +593,17 @@ class _MediaThumb extends ConsumerWidget {
   }
 }
 
-/// A labeled wrapper for one audience selector.
+/// A labeled wrapper for one audience selector — a small icon · label header
+/// over its chip group.
 class _AudienceGroup extends StatelessWidget {
-  const _AudienceGroup({required this.label, required this.child});
+  const _AudienceGroup({
+    required this.label,
+    required this.icon,
+    required this.child,
+  });
 
   final String label;
+  final IconData icon;
   final Widget child;
 
   @override
@@ -524,11 +612,18 @@ class _AudienceGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.onSurface,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: AppType.semibold,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AppSpacing.sm),
         child,
