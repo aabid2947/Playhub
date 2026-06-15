@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:paytm_allinone_sdk/paytm_allinone_sdk.dart';
+import 'package:paytm_allinonesdk/paytm_allinonesdk.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -137,6 +137,9 @@ class PaymentCheckout {
     final isStaging = body['is_staging'] as bool? ?? false;
 
     try {
+      // paytm_allinonesdk 1.2.x: startTransaction(mid, orderId, amount,
+      // txnToken, callbackUrl, isStaging, restrictAppInvoke). Returns a Map on
+      // completion; throws (often PlatformException) on cancel/error.
       final response = await AllInOneSdk.startTransaction(
         mid,
         orderId,
@@ -144,10 +147,7 @@ class PaymentCheckout {
         txnToken,
         callbackUrl,
         isStaging,
-        // restrictAppInvoke=false → allow the Paytm app; enableAssist=true →
-        // in-SDK assist screen.
-        false,
-        true,
+        false, // restrictAppInvoke=false → allow the Paytm app if installed
       );
       final status = response?['STATUS']?.toString() ?? '';
       if (status == 'TXN_SUCCESS') {

@@ -27,7 +27,7 @@ dependencies:
   image_picker: ^1.1.2
   intl: any
   json_annotation: ^4.9.0
-  paytm_allinone_sdk: ^1.2.1
+  paytm_allinonesdk: ^1.2.8
   razorpay_flutter: ^1.4.1
   riverpod_annotation: ^2.6.1
   supabase_flutter: ^2.8.0
