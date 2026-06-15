@@ -1,22 +1,29 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:paytm_allinonesdk/paytm_allinonesdk.dart';
+import 'package:flutter/material.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 /// Provider-agnostic invoice checkout. Calls the `create-payment-order` Edge
 /// Function, which picks the academy's enabled gateway (Razorpay or Paytm), then
-/// opens the matching SDK. The server (webhook / status confirmation) remains the
-/// source of truth for the recorded payment — a [CheckoutSuccess] only means the
-/// SDK reported success; the invoice updates once the webhook lands.
+/// opens the matching checkout — the Razorpay native sheet, or Paytm's hosted
+/// payment page in a WebView. The server (webhook + `verify-paytm-payment` for
+/// Paytm; webhook for Razorpay) remains the source of truth for the recorded
+/// payment.
 ///
 /// Reuses the [CheckoutResult] hierarchy from [RazorpayCheckout].
 class PaymentCheckout {
   PaymentCheckout(this._client);
   final SupabaseClient _client;
 
+  /// [context] is required to present Paytm's WebView; it is unused for the
+  /// Razorpay native flow.
   Future<CheckoutResult> payInvoice({
+    required BuildContext context,
     required String invoiceId,
     required String academyName,
     String? prefillEmail,
@@ -51,7 +58,10 @@ class PaymentCheckout {
     final provider = body['provider'] as String? ?? 'razorpay';
     switch (provider) {
       case 'paytm':
-        return _payPaytm(body);
+        if (!context.mounted) {
+          return const CheckoutFailure(code: -2, message: 'Could not open payment.');
+        }
+        return _payPaytm(context, body);
       case 'razorpay':
       default:
         return _payRazorpay(
@@ -63,7 +73,7 @@ class PaymentCheckout {
     }
   }
 
-  // --- Razorpay ---------------------------------------------------------------
+  // --- Razorpay (native sheet) ------------------------------------------------
 
   Future<CheckoutResult> _payRazorpay(
     Map<String, dynamic> body, {
@@ -126,45 +136,142 @@ class PaymentCheckout {
     }
   }
 
-  // --- Paytm ------------------------------------------------------------------
+  // --- Paytm (hosted page in a WebView) --------------------------------------
 
-  Future<CheckoutResult> _payPaytm(Map<String, dynamic> body) async {
+  Future<CheckoutResult> _payPaytm(
+    BuildContext context,
+    Map<String, dynamic> body,
+  ) async {
     final mid = body['mid'] as String;
     final orderId = body['order_id'] as String;
     final txnToken = body['txn_token'] as String;
-    final amount = body['amount'] as String; // rupees, e.g. "500.00"
     final callbackUrl = body['callback_url'] as String;
     final isStaging = body['is_staging'] as bool? ?? false;
 
-    try {
-      // paytm_allinonesdk 1.2.x: startTransaction(mid, orderId, amount,
-      // txnToken, callbackUrl, isStaging, restrictAppInvoke). Returns a Map on
-      // completion; throws (often PlatformException) on cancel/error.
-      final response = await AllInOneSdk.startTransaction(
-        mid,
-        orderId,
-        amount,
-        txnToken,
-        callbackUrl,
-        isStaging,
-        false, // restrictAppInvoke=false → allow the Paytm app if installed
-      );
-      final status = response?['STATUS']?.toString() ?? '';
-      if (status == 'TXN_SUCCESS') {
-        return CheckoutSuccess(
-          paymentId: response?['TXNID']?.toString() ?? '',
-          orderId: response?['ORDERID']?.toString() ?? orderId,
-          signature: null,
+    final host = isStaging
+        ? 'https://securegw-stage.paytm.in'
+        : 'https://securegw.paytm.in';
+    final payPageUrl =
+        '$host/theia/api/v1/showPaymentPage?mid=$mid&orderId=$orderId';
+
+    // Open Paytm's hosted page; it POSTs the result back to our callbackUrl,
+    // which we detect to close the WebView. (The query is stripped so we match
+    // regardless of the params Paytm appends.)
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _PaytmWebView(
+          payPageUrl: payPageUrl,
+          mid: mid,
+          orderId: orderId,
+          txnToken: txnToken,
+          callbackUrlPrefix: callbackUrl.split('?').first,
+        ),
+      ),
+    );
+
+    // Whether the user completed or backed out, the server is authoritative.
+    final status = await _verifyPaytm(orderId);
+    switch (status) {
+      case 'TXN_SUCCESS':
+        return CheckoutSuccess(paymentId: '', orderId: orderId, signature: null);
+      case 'PENDING':
+        return const CheckoutFailure(
+          code: -5,
+          message: "Payment is processing — we'll update once it's confirmed.",
         );
-      }
-      return CheckoutFailure(
-        code: -1,
-        message: response?['RESPMSG']?.toString() ?? 'Payment failed',
-      );
-    } on Object catch (e) {
-      // The SDK throws on cancellation / errors (often a PlatformException).
-      return CheckoutFailure(code: -1, message: _humanizePaytmError(e));
+      default:
+        return const CheckoutFailure(
+          code: -1,
+          message: 'Payment was not completed.',
+        );
     }
+  }
+
+  /// Asks the server to confirm a Paytm order against the Transaction-Status
+  /// API and record it if paid. Returns the authoritative status string.
+  Future<String> _verifyPaytm(String orderId) async {
+    try {
+      final res = await _client.functions
+          .invoke('verify-paytm-payment', body: {'order_id': orderId});
+      final data = res.data;
+      if (data is Map<String, dynamic>) {
+        return data['status']?.toString() ?? 'UNKNOWN';
+      }
+    } on Object {
+      // Fall through — treat as unknown; the webhook still reconciles.
+    }
+    return 'UNKNOWN';
+  }
+}
+
+/// Hosts Paytm's hosted payment page. POSTs `mid`/`orderId`/`txnToken` to the
+/// `showPaymentPage` endpoint, and pops when Paytm redirects to our callback.
+class _PaytmWebView extends StatefulWidget {
+  const _PaytmWebView({
+    required this.payPageUrl,
+    required this.mid,
+    required this.orderId,
+    required this.txnToken,
+    required this.callbackUrlPrefix,
+  });
+
+  final String payPageUrl;
+  final String mid;
+  final String orderId;
+  final String txnToken;
+  final String callbackUrlPrefix;
+
+  @override
+  State<_PaytmWebView> createState() => _PaytmWebViewState();
+}
+
+class _PaytmWebViewState extends State<_PaytmWebView> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onNavigationRequest: (request) {
+            if (request.url.startsWith(widget.callbackUrlPrefix)) {
+              // Payment flow finished — close before loading the callback JSON.
+              if (mounted) Navigator.of(context).maybePop(true);
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(
+        Uri.parse(widget.payPageUrl),
+        method: LoadRequestMethod.post,
+        headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: Uint8List.fromList(
+          utf8.encode(
+            'mid=${Uri.encodeQueryComponent(widget.mid)}'
+            '&orderId=${Uri.encodeQueryComponent(widget.orderId)}'
+            '&txnToken=${Uri.encodeQueryComponent(widget.txnToken)}',
+          ),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Paytm'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).maybePop(false),
+        ),
+      ),
+      body: WebViewWidget(controller: _controller),
+    );
   }
 }
 
@@ -179,11 +286,4 @@ String _humanizeOrderError(Object e) {
     return 'The request timed out. Please try again.';
   }
   return 'Could not start payment. Please try again.';
-}
-
-String _humanizePaytmError(Object e) {
-  final s = e.toString().toLowerCase();
-  if (s.contains('cancel')) return 'Payment cancelled.';
-  if (s.contains('network')) return 'Network error. Please check your connection.';
-  return 'Payment could not be completed.';
 }

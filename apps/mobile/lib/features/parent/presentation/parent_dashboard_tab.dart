@@ -1139,6 +1139,7 @@ class _OutstandingCard extends ConsumerWidget {
     final checkout = PaymentCheckout(client);
     try {
       final result = await checkout.payInvoice(
+        context: context,
         invoiceId: r.invoiceId,
         academyName: academy?.name ?? 'PlayHub',
         prefillEmail: profile?.email,
