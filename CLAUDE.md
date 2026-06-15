@@ -223,6 +223,53 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-15 — per-academy payment gateways (bring-your-own Razorpay/Paytm)
+Owners can now configure their **own** Razorpay/Paytm merchant credentials; payments
+in that academy route through their account (fallback to platform `Deno.env` keys when
+none is enabled). **Secret handling (invariant #4):** secrets live in **Supabase Vault**,
+NOT in a column; they are **write-only** — no client read path (table RLS, the
+`academy_payment_gateway_status` view, or any RPC) ever returns a secret. Owners write via
+the SECURITY DEFINER RPCs `set_payment_gateway` / `clear_payment_gateway` (owner-only,
+own-academy); edge functions decrypt via `get_payment_gateway_credentials` (EXECUTE granted
+to **service_role only**). At most one provider is `is_enabled` per academy.
+([20260615000000](supabase/migrations/20260615000000_academy_payment_gateways.sql) +
+[rls_payment_gateway_scope.sql](supabase/tests/rls_payment_gateway_scope.sql)).
+**Edge fns now take explicit creds:** `_shared/razorpay.ts` helpers accept a `creds` arg
+(no longer read `Deno.env` directly); `_shared/payment_gateway.ts` resolves academy-or-platform.
+create-razorpay-order/process-refund use the invoice/payment's academy keys.
+**Webhook routing:** per-academy Razorpay webhooks must use
+`…/razorpay-webhook?academy=<academy_id>` (the platform URL with no param keeps using
+`RAZORPAY_WEBHOOK_SECRET`); the param is a routing hint only — a wrong id fails signature
+verification. Mobile: owner-only [payment_gateways](apps/mobile/lib/features/payment_gateways/)
+feature + Settings entry; `Capabilities.managePaymentGateways` (owner-only). **Owed:** web-admin
+`npm run gen:types` (new view/table; needs local DB — not run here).
+
+### 2026-06-15 — Paytm charge flow built end-to-end (both gateways now wired)
+Completes the deferred Paytm half. **Order creation is now provider-agnostic:**
+new [create-payment-order](supabase/functions/create-payment-order/index.ts) resolves the
+academy's enabled gateway (`resolveEnabledProvider`) and returns a `provider`-tagged payload;
+the mobile [PaymentCheckout](apps/mobile/lib/features/billing/data/payment_checkout.dart)
+dispatcher opens Razorpay (`razorpay_flutter`) **or** Paytm (`paytm_allinone_sdk`, **new dep**)
+accordingly. The parent dues "Pay" button now calls `PaymentCheckout` (was `RazorpayCheckout`);
+**`create-razorpay-order` + `RazorpayCheckout` are kept but superseded** by the unified path —
+don't add new callers to them. Paytm crypto + APIs in
+[_shared/paytm.ts](supabase/functions/_shared/paytm.ts) (proprietary checksum =
+AES-128-CBC+SHA-256 with static IV `@@@@&&&&####$$$$`; merchant key MUST be 16 bytes).
+**Paytm recording is authoritative-only (invariant #6):** [paytm-webhook](supabase/functions/paytm-webhook/index.ts)
+(the `callbackUrl`, `?academy=<id>`) ignores the posted body, re-confirms via the Transaction-Status
+API with the academy's key, and only records when a matching `payment_attempts` row exists; idempotent
+via `payments.unique_event_id = 'paytm:<orderId>'`. **No platform Paytm fallback** — an academy must
+bring its own; Paytm also needs `config={website,environment(stage|prod)}` (jsonb column added to
+`academy_payment_gateways`; `set_payment_gateway` gained `p_config` + validates it on enable).
+Schema: [20260615000100](supabase/migrations/20260615000100_paytm_payments.sql) adds `paytm` to the
+`payments.method` check, `payments.paytm_order_id/paytm_txn_id`, and `payment_attempts.provider` +
+nullable `razorpay_order_id` + `paytm_order_id`. **Deploy note:** `paytm-webhook` must be deployed
+`--no-verify-jwt` (like `razorpay-webhook`); `create-payment-order` keeps JWT on. **Paytm refunds
+are NOT built** — `process-refund` now returns 422 for `method='paytm'` (refund via Paytm dashboard)
+rather than mis-recording a manual refund; building Paytm's refund API is a follow-up. **Unverified here:**
+the `paytm_allinone_sdk` plugin (run `flutter pub get` + a real-device test — its API signature/native
+config couldn't be built in this env) and the Paytm checksum against live Paytm (needs sandbox creds).
+
 ### 2026-06-14 — self-signup defaults to academy_owner (was student)
 `handle_new_auth_user` now defaults an **untrusted self-signup to `academy_owner`** (no academy),
 not `student` ([20260614000500](supabase/migrations/20260614000500_signup_default_owner.sql)).

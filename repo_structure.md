@@ -183,14 +183,16 @@ Desktop console for **platform super-admins only**. RLS-respecting by default
 
 ### `functions/` — Deno edge functions
 
-**Shared** ([functions/_shared/](supabase/functions/_shared/)): `cors.ts` (CORS + `authoriseCron`), `razorpay.ts` (HMAC verify), `billing.ts`, `schedule.ts`, `email.ts` (Gmail SMTP), `fcm.ts` (push), `pdf.ts`. Several have co-located `*.test.ts` (Deno tests).
+**Shared** ([functions/_shared/](supabase/functions/_shared/)): `cors.ts` (CORS + `authoriseCron`), `razorpay.ts` (REST + HMAC verify, explicit creds), `paytm.ts` (checksum + initiate/status APIs), `payment_gateway.ts` (per-academy-or-platform credential resolver), `billing.ts`, `schedule.ts`, `email.ts` (Gmail SMTP), `fcm.ts` (push), `pdf.ts`. Several have co-located `*.test.ts` (Deno tests).
 
 | Function | Trigger | Description |
 |---|---|---|
 | [invite-user](supabase/functions/invite-user/index.ts) | client | Creates an auth user + profile (must-change-password). |
-| [create-razorpay-order](supabase/functions/create-razorpay-order/index.ts) | client | Creates a Razorpay order, returns key + order id. |
-| [razorpay-webhook](supabase/functions/razorpay-webhook/index.ts) | webhook | Verifies HMAC, records `payment.captured/failed`, idempotent via unique event id. |
-| [process-refund](supabase/functions/process-refund/index.ts) | client | Razorpay refund API. |
+| [create-payment-order](supabase/functions/create-payment-order/index.ts) | client | Unified order creation: picks the academy's gateway (Razorpay/Paytm), returns a provider-tagged payload. Supersedes create-razorpay-order. |
+| [create-razorpay-order](supabase/functions/create-razorpay-order/index.ts) | client | (Superseded) Creates a Razorpay order, returns key + order id. |
+| [razorpay-webhook](supabase/functions/razorpay-webhook/index.ts) | webhook | Verifies HMAC (per-academy via `?academy=`), records `payment.captured/failed`, idempotent. |
+| [paytm-webhook](supabase/functions/paytm-webhook/index.ts) | webhook | Paytm `callbackUrl`; confirms via Transaction-Status API, records, idempotent via `paytm:<orderId>`. |
+| [process-refund](supabase/functions/process-refund/index.ts) | client | Razorpay refund API (Paytm refunds return 422 — not yet built). |
 | [public-lead-form](supabase/functions/public-lead-form/index.ts) | public (no auth) | Website-embed lead capture. |
 | [convert-lead-to-student](supabase/functions/convert-lead-to-student/index.ts) | client | Atomic lead→student conversion. |
 | [send-announcement](supabase/functions/send-announcement/index.ts) | client | Fan-out to FCM + email + in-app. |

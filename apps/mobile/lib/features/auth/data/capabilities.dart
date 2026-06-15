@@ -19,6 +19,12 @@ class Capabilities {
   bool get manageAcademySettings => role == 'academy_owner';
   bool get manageSubscription => role == 'academy_owner';
 
+  // Owner-exclusive: the academy's own payment-gateway credentials (Razorpay /
+  // Paytm keys). RLS + the set_payment_gateway RPC are the real gate
+  // (20260615000000_academy_payment_gateways.sql) — money-moving secrets, so
+  // owner-only, never even academy_admin.
+  bool get managePaymentGateways => role == 'academy_owner';
+
   // Admin tier (owner/admin). NOTE: manageTeam is also the gate for the
   // academy-wide org surfaces (sports settings, centers CRUD) whose RLS is
   // has_admin_or_higher() — so it must stay admin-only. The invite/provision

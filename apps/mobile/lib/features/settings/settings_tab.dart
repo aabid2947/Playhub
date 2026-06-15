@@ -6,6 +6,7 @@ import 'package:playhub/features/audit/presentation/audit_log_page.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
+import 'package:playhub/features/payment_gateways/presentation/payment_gateways_page.dart';
 import 'package:playhub/features/sports/presentation/sports_settings_page.dart';
 import 'package:playhub/features/support/presentation/support_page.dart';
 import 'package:playhub/features/users/presentation/team_page.dart';
@@ -91,7 +92,7 @@ class SettingsTab extends ConsumerWidget {
                 ),
                 _SettingsGroup(
                   tiles: [
-                    if (isOwner)
+                    if (isOwner) ...[
                       const _SettingsDestination(
                         icon: Icons.business_outlined,
                         tint: AppPalette.brandPrimary,
@@ -99,6 +100,14 @@ class SettingsTab extends ConsumerWidget {
                         subtitle: 'Name, contact, address, branding',
                         builder: _academySettingsPageBuilder,
                       ),
+                      const _SettingsDestination(
+                        icon: Icons.account_balance_wallet_outlined,
+                        tint: AppPalette.brandSecondary,
+                        title: 'Payment gateways',
+                        subtitle: 'Your Razorpay / Paytm keys for fee payments',
+                        builder: _paymentGatewaysPageBuilder,
+                      ),
+                    ],
                     const _SettingsDestination(
                       icon: Icons.location_on_outlined,
                       tint: AppPalette.accent,
@@ -230,6 +239,7 @@ String _roleLabel(String role) {
 
 // Page builders kept as top-level consts so destination tiles can be `const`.
 Widget _academySettingsPageBuilder(BuildContext _) => const AcademySettingsPage();
+Widget _paymentGatewaysPageBuilder(BuildContext _) => const PaymentGatewaysPage();
 Widget _centersPageBuilder(BuildContext _) => const CentersPage();
 Widget _sportsPageBuilder(BuildContext _) => const SportsSettingsPage();
 Widget _teamPageBuilder(BuildContext _) => const TeamPage();

@@ -8,6 +8,7 @@ import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
+import 'package:playhub/features/billing/data/payment_checkout.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/insights/presentation/student_insights_page.dart';
@@ -1135,7 +1136,7 @@ class _OutstandingCard extends ConsumerWidget {
     final client = ref.read(supabaseClientProvider);
     final profile = ref.read(currentProfileProvider).valueOrNull;
     final academy = ref.read(myAcademyProvider).valueOrNull;
-    final checkout = RazorpayCheckout(client);
+    final checkout = PaymentCheckout(client);
     try {
       final result = await checkout.payInvoice(
         invoiceId: r.invoiceId,

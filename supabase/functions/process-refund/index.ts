@@ -8,6 +8,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
 import { refundRazorpayPayment } from '../_shared/razorpay.ts';
+import { resolveRazorpayCreds } from '../_shared/payment_gateway.ts';
 
 interface Body { payment_id: string; amount: number; reason?: string }
 
@@ -54,6 +55,16 @@ Deno.serve(async (req) => {
   if (Number(body.amount) > Number(payment.amount)) {
     return j({ error: 'refund amount exceeds payment' }, 400);
   }
+  // Paytm online refunds aren't wired yet — refuse rather than silently record
+  // a "manual" refund (which would mark the invoice refunded without returning
+  // money). Issue it from the Paytm dashboard until the refund API is built.
+  if (payment.method === 'paytm') {
+    return j({
+      error:
+        'Online Paytm refunds are not supported yet. Refund from your Paytm ' +
+        'dashboard, then adjust the invoice manually.',
+    }, 422);
+  }
 
   const refundRow: Record<string, unknown> = {
     academy_id: payment.academy_id,
@@ -66,10 +77,12 @@ Deno.serve(async (req) => {
 
   if (payment.method === 'razorpay' && payment.razorpay_payment_id) {
     try {
+      // Refund through the same merchant account that captured the payment.
+      const creds = await resolveRazorpayCreds(admin, payment.academy_id);
       const r = await refundRazorpayPayment({
         razorpay_payment_id: payment.razorpay_payment_id,
         amount_paise: Math.round(Number(body.amount) * 100),
-      });
+      }, creds);
       refundRow.razorpay_refund_id = r.id;
       refundRow.status = r.status === 'processed' ? 'processed' : 'pending';
       refundRow.processed_at = r.status === 'processed'
