@@ -304,7 +304,9 @@ declare
   v_invited constant uuid   := '00000000-0b00-0000-0000-0000000000a3';
 begin
   -- (1) Self-signup with crafted USER metadata, no invited_at, no app_metadata:
-  --     privileged fields ignored → plain student, no academy. Names still kept.
+  --     privileged fields ignored → the safe default academy_owner with NO
+  --     academy (powerless until they bootstrap their own). The crafted
+  --     'academy_admin' role and the academy_id must BOTH be dropped. Names kept.
   insert into auth.users (id, instance_id, email, role, aud,
                           email_confirmed_at, created_at, updated_at,
                           raw_user_meta_data)
@@ -314,11 +316,11 @@ begin
           jsonb_build_object('role', 'academy_admin',
                              'academy_id', v_academy::text,
                              'first_name', 'Eve'));
-  if (select role from public.users where id = v_attacker) <> 'student' then
-    raise exception 'FAIL: self-signup user_metadata role was honoured (escalation!)';
+  if (select role from public.users where id = v_attacker) <> 'academy_owner' then
+    raise exception 'FAIL: self-signup crafted role was honoured (escalation!)';
   end if;
   if (select academy_id from public.users where id = v_attacker) is not null then
-    raise exception 'FAIL: self-signup attached itself to an academy';
+    raise exception 'FAIL: self-signup attached itself to an academy (escalation!)';
   end if;
   if (select first_name from public.users where id = v_attacker) <> 'Eve' then
     raise exception 'FAIL: non-privileged first_name was dropped';

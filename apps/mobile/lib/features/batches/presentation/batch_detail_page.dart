@@ -43,8 +43,12 @@ class BatchDetailPage extends ConsumerWidget {
     // letting the action fail under RLS. Admins are academy-wide; coach/trainer
     // only ever reach their own batches, so they're unaffected.
     final isCenterScoped = role == 'center_admin' || role == 'head_coach';
+    // center_admin may manage MULTIPLE centers (user_centers) — check the batch
+    // against the full grant set, not just the primary center.
+    final myCenters =
+        ref.watch(myCenterIdsProvider).valueOrNull ?? const <String>{};
     final inMyCenter =
-        batch.centerId == null || batch.centerId == profile?.centerId;
+        batch.centerId == null || myCenters.contains(batch.centerId);
     final scopeOk = !isCenterScoped || inMyCenter;
     final canManageEnroll = caps.manageBatches && scopeOk;
     final canMarkAttendance = caps.markAttendance && scopeOk;

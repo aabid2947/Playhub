@@ -7,7 +7,6 @@ import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
 import 'package:playhub/features/sports/presentation/sports_settings_page.dart';
-import 'package:playhub/features/subscription/presentation/subscription_page.dart';
 import 'package:playhub/features/support/presentation/support_page.dart';
 import 'package:playhub/features/users/presentation/team_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -122,9 +121,13 @@ class SettingsTab extends ConsumerWidget {
                 if (isOwnerOrAdmin) ...[
                   const SizedBox(height: AppSpacing.lg),
                   const AppSectionHeader(
-                    title: 'Team & billing',
+                    title: 'Team & support',
                     icon: Icons.group_outlined,
                   ),
+                  // Subscription is intentionally NOT surfaced here — the SaaS
+                  // plan/billing is managed by PlayHub (super_admin), not the
+                  // academy. (Per-student fees/invoices live under Billing on
+                  // the home dashboard, which is separate.)
                   _SettingsGroup(
                     tiles: [
                       const _SettingsDestination(
@@ -133,13 +136,6 @@ class SettingsTab extends ConsumerWidget {
                         title: 'Team',
                         subtitle: 'Invite admins, coaches, and trainers',
                         builder: _teamPageBuilder,
-                      ),
-                      const _SettingsDestination(
-                        icon: Icons.workspace_premium_outlined,
-                        tint: AppPalette.brandPrimary,
-                        title: 'Subscription',
-                        subtitle: 'Plan, billing cycle, past invoices',
-                        builder: _subscriptionPageBuilder,
                       ),
                       _SettingsDestination(
                         icon: Icons.support_agent_outlined,
@@ -170,6 +166,28 @@ class SettingsTab extends ConsumerWidget {
                         title: 'Team',
                         subtitle: 'Invite the staff you manage',
                         builder: _teamPageBuilder,
+                      ),
+                    ],
+                  ),
+                ],
+
+                // Support — center_admin gets their own in-app channel to raise
+                // issues to the academy's owner/admin (who can mark them
+                // resolved). Owners/admins reach Support inside "Team & billing".
+                if (role == 'center_admin') ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  const AppSectionHeader(
+                    title: 'Support',
+                    icon: Icons.support_agent_outlined,
+                  ),
+                  _SettingsGroup(
+                    tiles: [
+                      _SettingsDestination(
+                        icon: Icons.support_agent_outlined,
+                        tint: AppPalette.categorySwatch[3],
+                        title: 'Support',
+                        subtitle: 'Raise an issue to your admin',
+                        builder: _supportPageBuilder,
                       ),
                     ],
                   ),
@@ -215,7 +233,6 @@ Widget _academySettingsPageBuilder(BuildContext _) => const AcademySettingsPage(
 Widget _centersPageBuilder(BuildContext _) => const CentersPage();
 Widget _sportsPageBuilder(BuildContext _) => const SportsSettingsPage();
 Widget _teamPageBuilder(BuildContext _) => const TeamPage();
-Widget _subscriptionPageBuilder(BuildContext _) => const SubscriptionPage();
 Widget _supportPageBuilder(BuildContext _) => const SupportPage();
 Widget _auditLogPageBuilder(BuildContext _) => const AuditLogPage();
 

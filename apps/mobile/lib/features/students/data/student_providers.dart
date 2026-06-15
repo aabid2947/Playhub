@@ -74,10 +74,15 @@ final studentsProvider = FutureProvider<List<Student>>((ref) async {
   // them — let RLS do the scoping.
   final role = profile!.role;
   if (role == 'center_admin') {
-    final myCenter = profile.centerId;
-    query = myCenter == null
-        ? query.isFilter('center_id', null)
-        : query.or('center_id.eq.$myCenter,center_id.is.null');
+    // A center_admin may manage MULTIPLE centers (user_centers) — scope the
+    // list to all of them (+ null-center), mirroring current_user_in_center.
+    final myCenters = await ref.watch(myCenterIdsProvider.future);
+    if (myCenters.isEmpty) {
+      query = query.isFilter('center_id', null);
+    } else {
+      final inList = myCenters.map((c) => '"$c"').join(',');
+      query = query.or('center_id.in.($inList),center_id.is.null');
+    }
   }
 
   if (filter.status != null && filter.status!.isNotEmpty) {

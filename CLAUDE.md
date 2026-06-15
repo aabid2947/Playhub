@@ -223,6 +223,131 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-14 — self-signup defaults to academy_owner (was student)
+`handle_new_auth_user` now defaults an **untrusted self-signup to `academy_owner`** (no academy),
+not `student` ([20260614000500](supabase/migrations/20260614000500_signup_default_owner.sql)).
+Why: a self-signup is someone creating their own academy; the old `student` default left
+email-confirmed signups stuck (no inline bootstrap). **Security is unchanged** — privileged fields
+(academy_id/center_id/non-default role/links) are STILL honoured only from a trusted source
+(app_metadata, or user_metadata when `invited_at` is set), so a self-signup gets owner **with
+`academy_id = NULL`** = powerless until `bootstrap_owner_academy()` runs; the forged-academy_id
+escalation stays closed. RoleDashboard routes owner+null-academy → SetupAcademyPage. pgTAP
+`rls_provisioning.sql` part C updated (crafted role still dropped; safe default now owner+no-academy).
+Invited parents/coaches/etc. are unaffected (their role rides the invite path).
+
+### 2026-06-14 — Subscription removed from owner UI; in-app change-password
+The **Subscription** tile was removed from owner/admin Settings (was under "Team & billing",
+now "Team & support") — the SaaS plan is PlayHub/super_admin's concern, not the academy's.
+`SubscriptionPage` still exists but is no longer reachable from the academy UI; per-student
+billing (invoices/fees/payments) is unaffected (separate "Billing" on the home dashboard).
+Also added an in-app **Change password** action on
+[profile_page.dart](apps/mobile/lib/features/auth/presentation/profile_page.dart) (Account section)
+via `supabase.auth.updateUser` — the forgot-password flow already covered signed-OUT users; this
+covers signed-IN ones.
+
+### 2026-06-14 — sports: academy-scoped CUSTOM sports (center_admin can create)
+`sports` gained a nullable `academy_id`: NULL = global catalog (super_admin curated, seen by all),
+set = that academy's private custom sport
+([20260614000400](supabase/migrations/20260614000400_academy_custom_sports.sql)). The read policy
+is **tightened** from `using(true)` to global + own-academy (+ super_admin) so customs don't leak
+across tenants; the global `UNIQUE(code)` is relaxed to two partial unique indexes (global vs
+per-academy). owner/admin/center_admin may INSERT/UPDATE **their academy's** sports only (never the
+global catalog); deletes stay super_admin. Mobile: `Sport.academyId`/`isCustom`,
+`SportsRepo.createCustomSport`, and the Settings → Sports "Add a sport" sheet now offers
+**Create "<name>"** when the typed name isn't in the catalog (creates the custom sport + enables it
+at the center). **Owed:** web-admin `npm run gen:types` (new column).
+
+### 2026-06-14 — support tickets: center_admin can raise; owner/admin resolve
+center_admin now has an in-app support channel. RLS opened `support_tickets` +
+`support_ticket_messages` **INSERT** to center_admin (was owner/admin only); they already had
+READ ([20260614000300](supabase/migrations/20260614000300_support_center_admin_raise.sql)).
+**UPDATE stays owner/admin (+ super_admin)** — they triage and mark resolved. Mobile: center_admin
+gets a **Support** entry in Settings; the academy thread page
+([support_page.dart](apps/mobile/lib/features/support/presentation/support_page.dart)) now has a
+**Resolve / Reopen** action visible only to owner/admin (via `SupportRepo.setStatus`, which stamps
+resolved_at/closed_at). Note: the support read policy is academy-wide for owner/admin/center_admin,
+so a center_admin sees all the academy's tickets (not just their own) — per-center ticket scoping
+would be a separate refinement if needed.
+
+### 2026-06-14 — support tickets: one-field raise + human ticket number
+The raise flow was too heavy for non-technical academy users. The "Raise a ticket" sheet is now a
+single "What's the problem?" field + an optional "This is urgent" toggle (subject derived from the
+first line; staff triage category/priority). Added a sequential `support_tickets.ticket_number`
+(global sequence, [20260614000200](supabase/migrations/20260614000200_support_ticket_number.sql))
+surfaced via `SupportTicketRow.reference` (`#1042`) on submit + the ticket cards/thread (both the
+academy [support_page.dart](apps/mobile/lib/features/support/presentation/support_page.dart) and the
+super-admin views). **Owed:** web-admin `npm run gen:types` (new column).
+
+### 2026-06-14 — inventory: per-location stock + inter-location transfers
+Inventory is now **per-location**. New `inventory_stock(item_id, center_id, on_hand)` table
+(`center_id IS NULL` = HO/academy pool) holds the balance of an item at each location;
+`inventory_movements` gained `center_id` (location the entry affects / transfer source),
+`to_center_id` (transfer dest), and a new `kind='transfer'`
+([20260614000100](supabase/migrations/20260614000100_inventory_per_location_stock.sql)). The sync
+trigger posts to `inventory_stock` per location: a `transfer` (qty>0) subtracts from source + adds
+to dest and leaves the item total alone; the others net the location balance AND
+`inventory_items.on_hand` (kept as the academy-wide **total**, so list/low-stock/reports still work).
+**Balances are trigger-maintained only** — `inventory_stock` has a read policy, NO client write
+policy. Convention: a catalog item meant for several centers should be HO-level
+(`inventory_items.center_id IS NULL`) so all center_admins see it, with per-center qty in
+inventory_stock. Mobile: `itemStockProvider`, `recordMovement` gained `centerId`/`toCenterId`,
+the movement sheet has Transfer + location pickers, item page shows stock-by-location.
+**Owed:** web-admin `npm run gen:types`. **Deliberately NOT done:** location-scoping the movement
+INSERT (who may transfer to/from which center) — still the permissive `inv_moves_staff_insert`
+(staff + academy); tenant isolation holds (academy_id), but intra-academy transfer permissions are
+a follow-up that must handle the HO null-center case so admins aren't locked out.
+
+### 2026-06-14 — inventory: UI speaks Purchase/Sale, DB stays in/out/adjustment/return
+"Sale not saving" was a recognition gap, not a bug — the `out` insert path is identical to
+`in` (same RLS/triggers; `recordMovement` negates the qty). The DB `kind` tokens are unchanged
+(`in/out/adjustment/return`); the **UI now labels them Purchase / Sale / Return / Adjust** via
+the single source of truth `kInventoryKindLabels` / `kInventoryKindHints` /
+`inventoryKindLabel()` in [inventory.dart](apps/mobile/lib/features/inventory/data/inventory.dart).
+Reuse those for any new inventory UI (reports, the #7 issue/return transfers) — don't hard-code
+"In"/"Out" or re-map tokens per screen.
+
+### 2026-06-14 — inventory: new items seed opening stock via a movement
+Bug: created items always showed `on_hand = 0` ("0 20" in the list = 0 stock + 20
+reorder) because the item form never captured opening stock. `on_hand` is
+ledger-driven (the `sync_item_on_hand` trigger on `inventory_movements`) and can
+NOT be set directly on `inventory_items` — so the create form now has an **Opening
+stock** field that records an opening `in` movement after insert
+([inventory_item_form_page.dart](apps/mobile/lib/features/inventory/presentation/inventory_item_form_page.dart)).
+**Any future stock-seeding path (CSV import, purchase/sale entry — issues #6/#7)
+must do the same: write a movement, never set `on_hand`.**
+
+### 2026-06-14 — center_admin can manage MULTIPLE centers (user_centers)
+A center_admin (or any center-scoped staffer) may now be assigned to several
+centers. New `user_centers(user_id, center_id)` join table = the EXTRA grants;
+`users.center_id` stays the PRIMARY/home center
+([20260614000000](supabase/migrations/20260614000000_user_centers_multi.sql)).
+New membership helper **`current_user_in_center(center_id)`** (home center OR a
+user_centers grant) replaced every inline `= current_user_center_id()` check
+inside the scope helpers (`center_admin_sees_*`, `can_admin_center_scope`,
+`batch_in_my_center`, `student_in_my_center`, `can_manage_batches/_batch_fields/
+_student/_coach_record`, `can_provision_role`, `head_coach_sees_coach`,
+`can_target_announcement`). **RLS policies were NOT touched** — they call the
+helpers, so all center-scoped reads/writes/provisioning/finance span every
+granted center automatically. For a user with no user_centers rows the helper is
+byte-identical to the old check, so single-center roles are unaffected. **Use
+`current_user_in_center(x)` (not `x = current_user_center_id()`) for any new
+center gate.** Granting centers is admin-tier only (`has_admin_or_higher` —
+center_admin can't self-expand). Mobile: `myCenterIdsProvider` (home + grants)
+now drives the center filters (students/attendance/batches/home greeting) and the
+invite sheet has an "Also manages" multi-select that writes user_centers via
+`InviteRepo.grantCenters`; demo center_admin is granted Bandra in
+`create_demo_users.mjs`. **Owed:** web-admin `npm run gen:types` (new table) —
+needs a local DB, not run here. **Known gap:** `send-announcement` still resolves
+sport-target recipients against `current_user_center_id()` (primary center only),
+so a multi-center admin targeting a sport at a non-primary center passes
+validation but reaches no one there until that edge fn is widened. Two mobile
+**compose/config** surfaces also still use the primary center only for a
+center_admin (data isolation is unaffected — these are pickers, not RLS): the
+announcements composer audience ([announcement_providers.dart](apps/mobile/lib/features/announcements/data/announcement_providers.dart),
+~L230/L256) and sports-settings scope ([sports_settings_page.dart](apps/mobile/lib/features/sports/presentation/sports_settings_page.dart) L46).
+**Not yet built:** an edit-existing-member centers screen (invite-time assignment
++ the demo grant cover the create path; editing grants later needs UI).
+
 ### 2026-06-09 — BRAND RE-SKIN: violet → orange + navy, LIGHT-ONLY (v1, reverses 2026-06-06)
 Client approved the **`ui_demo/v1` "Sports-Light"** concept, so the locked-violet
 theme is **reversed**: brand is now **orange `#FF6A2C` + navy ink `#0F2540`**

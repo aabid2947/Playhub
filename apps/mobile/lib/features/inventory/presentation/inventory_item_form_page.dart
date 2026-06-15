@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
@@ -28,6 +29,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
       text: widget.existing?.unitCost.toString() ?? '0');
   late final _reorder = TextEditingController(
       text: widget.existing?.reorderThreshold.toString() ?? '0');
+  // Opening stock — only on CREATE. on_hand is otherwise driven entirely by
+  // movements (the sync_item_on_hand trigger), so editing it here would desync
+  // the ledger; existing items change stock via the movement sheet instead.
+  final _openingStock = TextEditingController(text: '0');
   String? _categoryId;
   String? _vendorId;
   String? _centerId;
@@ -43,7 +48,15 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
 
   @override
   void dispose() {
-    for (final c in [_name, _sku, _desc, _unit, _unitCost, _reorder]) {
+    for (final c in [
+      _name,
+      _sku,
+      _desc,
+      _unit,
+      _unitCost,
+      _reorder,
+      _openingStock,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -55,7 +68,7 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
     try {
       final repo = await ref.read(inventoryRepoProvider.future);
       if (repo == null) throw StateError('no academy');
-      await repo.upsertItem(
+      final item = await repo.upsertItem(
         id: widget.existing?.id,
         name: _name.text.trim(),
         sku: _sku.text.trim().isEmpty ? null : _sku.text.trim(),
@@ -67,6 +80,21 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
         vendorId: _vendorId,
         centerId: _centerId,
       );
+      // On create, seed the opening stock as an "in" movement — on_hand is
+      // trigger-driven from the ledger, so a new item starts at 0 unless we
+      // record the starting quantity the user entered.
+      if (widget.existing == null) {
+        final opening = double.tryParse(_openingStock.text.trim()) ?? 0;
+        if (opening > 0) {
+          await repo.recordMovement(
+            itemId: item.id,
+            kind: 'in',
+            qty: opening,
+            centerId: item.centerId, // opening stock lands at the item's location
+            reference: 'Opening stock',
+          );
+        }
+      }
       ref.invalidate(inventoryItemsProvider);
       if (!mounted) return;
       AppSnackbar.success(
@@ -145,7 +173,13 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
                         controller: _unitCost,
                         label: 'Unit cost (₹)',
                         enabled: !_saving,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        // Numeric only — digits + a single decimal point.
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp('[0-9.]')),
+                        ],
                       );
                       // Stack the paired fields on narrow screens so the
                       // inputs never crush to unusable widths.
@@ -175,7 +209,24 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
                     label: 'Low-stock threshold',
                     enabled: !_saving,
                     keyboardType: TextInputType.number,
+                    // Whole count only — no letters / decimals.
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
+                  // Opening stock only on create. Existing items change stock
+                  // through the movement sheet (purchase / issue / return), so
+                  // there's no editable on-hand field here.
+                  if (!isEditing) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    AppFormField(
+                      controller: _openingStock,
+                      label: 'Opening stock',
+                      hint: 'Quantity on hand now, e.g. 30',
+                      enabled: !_saving,
+                      keyboardType: TextInputType.number,
+                      // Whole count only — what you type is what stock shows.
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ],
                 ],
               ),
             ),

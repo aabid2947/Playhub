@@ -150,6 +150,18 @@ async function main() {
     if (error) console.warn(`  ! 2nd parent link: ${error.message}`);
   }
 
+  // Multi-center demo: the center_admin's PRIMARY (home) center is Andheri
+  // (set via metadata above → users.center_id). Grant Bandra as an ADDITIONAL
+  // center so the demo admin manages both — exercises user_centers / the
+  // current_user_in_center scope. (See 20260614000000_user_centers_multi.)
+  {
+    const { error } = await admin.from("user_centers").upsert(
+      { academy_id: ACADEMY, user_id: idByRole["center_admin"], center_id: CENTER_B },
+      { onConflict: "user_id,center_id", ignoreDuplicates: true },
+    );
+    if (error) console.warn(`  ! center_admin 2nd center grant: ${error.message}`);
+  }
+
   console.log(`\n=== PlayHub demo logins (all password: ${PASSWORD}) ===`);
   for (const c of created) console.log(`  ${c.role.padEnd(14)} ${c.email}`);
   console.log("\nDone.");

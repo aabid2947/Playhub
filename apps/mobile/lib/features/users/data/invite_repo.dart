@@ -54,6 +54,31 @@ class InviteRepo {
     );
   }
 
+  /// Grants a user ADDITIONAL centers (beyond their primary `users.center_id`)
+  /// by upserting `user_centers` rows — the multi-center model for center_admins
+  /// (migration 20260614000000). The user_centers_admin_insert RLS policy gates
+  /// this to admin tier in the same academy, so a non-admin caller writes zero
+  /// rows. The target user's academy is read from their row (admins can read
+  /// same-academy users). Idempotent: re-granting an existing center is a no-op.
+  Future<void> grantCenters(String userId, List<String> centerIds) async {
+    if (centerIds.isEmpty) return;
+    final user = await _client
+        .from('users')
+        .select('academy_id')
+        .eq('id', userId)
+        .maybeSingle();
+    final academyId = user?['academy_id'] as String?;
+    if (academyId == null) return;
+    await _client.from('user_centers').upsert(
+      [
+        for (final c in centerIds)
+          {'academy_id': academyId, 'user_id': userId, 'center_id': c},
+      ],
+      onConflict: 'user_id,center_id',
+      ignoreDuplicates: true,
+    );
+  }
+
   /// Removes a team member's login (public.users row). The users_admin_delete
   /// RLS policy enforces the provisioning ladder (can_provision_role), so a
   /// caller can only remove a rung strictly below them in their own center;

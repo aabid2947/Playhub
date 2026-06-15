@@ -5,6 +5,7 @@ import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show UserAttributes;
 
 /// Self-service profile editor available to every signed-in user — v1
 /// "Sports-Light". Edits name + phone on the `users` row and uploads an avatar
@@ -90,6 +91,74 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  /// Lets a signed-in user set a new password in-app (the forgot-password flow
+  /// is for signed-OUT users). Supabase's updateUser changes the password for
+  /// the current session without needing the old one.
+  Future<void> _changePassword() async {
+    final newPw = TextEditingController();
+    final confirmPw = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Change password'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppFormField(
+                controller: newPw,
+                label: 'New password',
+                obscureText: true,
+                validator: (v) => (v == null || v.length < 8)
+                    ? 'At least 8 characters'
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                controller: confirmPw,
+                label: 'Confirm password',
+                obscureText: true,
+                validator: (v) =>
+                    v != newPw.text ? 'Passwords do not match' : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogCtx).pop(true);
+              }
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      newPw.dispose();
+      confirmPw.dispose();
+      return;
+    }
+    try {
+      final client = ref.read(supabaseClientProvider);
+      await client.auth.updateUser(UserAttributes(password: newPw.text));
+      if (mounted) AppSnackbar.success(context, 'Password updated.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      newPw.dispose();
+      confirmPw.dispose();
     }
   }
 
@@ -245,6 +314,15 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       _AccountCard(
                         email: profile.email,
                         role: _roleLabel(profile.role),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _changePassword,
+                          icon: const Icon(Icons.lock_reset_outlined),
+                          label: const Text('Change password'),
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       SizedBox(

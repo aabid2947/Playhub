@@ -88,6 +88,7 @@ class SupportTicketRow {
     required this.priority,
     required this.status,
     required this.createdAt,
+    this.ticketNumber,
     this.category,
     this.assignedTo,
   });
@@ -96,6 +97,7 @@ class SupportTicketRow {
       SupportTicketRow(
         id: m['id'] as String,
         academyId: m['academy_id'] as String,
+        ticketNumber: (m['ticket_number'] as num?)?.toInt(),
         subject: m['subject'] as String,
         body: m['body'] as String,
         category: m['category'] as String?,
@@ -107,6 +109,7 @@ class SupportTicketRow {
 
   final String id;
   final String academyId;
+  final int? ticketNumber;
   final String subject;
   final String body;
   final String? category;
@@ -114,6 +117,11 @@ class SupportTicketRow {
   final String status;
   final String? assignedTo;
   final DateTime createdAt;
+
+  /// Friendly reference to quote, e.g. `#1042`. Falls back to a short slice of
+  /// the UUID if the number is somehow absent.
+  String get reference =>
+      ticketNumber != null ? '#$ticketNumber' : '#${id.substring(0, 8)}';
 }
 
 class TicketMessage {

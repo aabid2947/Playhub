@@ -273,6 +273,13 @@ class _TicketCard extends StatelessWidget {
                 runSpacing: AppSpacing.xs,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  Text(
+                    ticket.reference,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: AppType.semibold,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   AppBadge(
                     text: _humanize(ticket.status),
                     tone: _statusTone(ticket.status),

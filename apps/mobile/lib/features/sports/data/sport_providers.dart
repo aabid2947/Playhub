@@ -86,6 +86,33 @@ class SportsRepo {
   final SupabaseClient _client;
   final String _academyId;
 
+  /// Creates an academy-scoped custom sport (academy_id = this academy) so a
+  /// center_admin can coin a sport that isn't in the global catalog. The `code`
+  /// is a slug of the name, unique within the academy (RLS + the partial unique
+  /// index enforce both). Returns the new catalog row to enable at a center.
+  Future<Sport> createCustomSport({
+    required String name,
+    String? category,
+  }) async {
+    final trimmed = name.trim();
+    var code = trimmed
+        .toLowerCase()
+        .replaceAll(RegExp('[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    if (code.isEmpty) code = 'sport';
+    final r = await _client
+        .from('sports')
+        .insert({
+          'academy_id': _academyId,
+          'code': code,
+          'name': trimmed,
+          'category': category,
+        })
+        .select()
+        .single();
+    return Sport.fromMap(r);
+  }
+
   Future<void> enableSportAtCenter({
     required String centerId,
     required String sportId,

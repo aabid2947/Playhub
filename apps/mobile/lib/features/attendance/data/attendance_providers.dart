@@ -64,9 +64,11 @@ final todaysBatchesProvider = FutureProvider<List<Batch>>((ref) async {
       role == 'academy_admin') {
     scoped = batches;
   } else if (role == 'center_admin' || role == 'head_coach') {
-    final centerId = profile?.centerId;
+    // center_admin may span multiple centers (user_centers); head_coach stays
+    // single-center but reads the same set (its grant set is just its home).
+    final myCenters = await ref.watch(myCenterIdsProvider.future);
     scoped = batches
-        .where((b) => b.centerId == null || b.centerId == centerId)
+        .where((b) => b.centerId == null || myCenters.contains(b.centerId))
         .toList();
   } else if (role == 'coach' || role == 'trainer') {
     final coach = await ref.watch(myCoachRecordProvider.future);

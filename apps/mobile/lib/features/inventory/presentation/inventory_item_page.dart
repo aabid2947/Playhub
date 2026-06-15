@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
 import 'package:playhub/features/inventory/presentation/inventory_item_form_page.dart';
@@ -80,7 +81,9 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.swap_vert),
-        label: const Text('Movement'),
+        // Named for the entries staff look for (purchase / sale), not the
+        // internal "movement" term — the sheet covers return/adjust too.
+        label: const Text('Purchase / Sale'),
         onPressed: () => showModalBottomSheet<void>(
           context: context,
           isScrollControlled: true,
@@ -114,6 +117,7 @@ class _InventoryItemPageState extends ConsumerState<InventoryItemPage> {
                   children: [
                     _MiniStats(item: item),
                     const SizedBox(height: AppSpacing.lg),
+                    _StockByLocation(itemId: widget.itemId, unit: item.unit),
                     _Details(item: item),
                     const SizedBox(height: AppSpacing.lg),
                     movesAsync.when(
@@ -528,22 +532,107 @@ class _MovementsSection extends StatelessWidget {
   }
 }
 
+/// Per-location stock breakdown (HO + each center). Only shown when stock is
+/// actually spread across more than one location — for a single-location item
+/// the on-hand mini-stat already says everything. Balances are read-only
+/// (trigger-maintained); see migration 20260614000100.
+class _StockByLocation extends ConsumerWidget {
+  const _StockByLocation({required this.itemId, required this.unit});
+  final String itemId;
+  final String unit;
+
+  static String _qty(double v) =>
+      v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 2);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stockAsync = ref.watch(itemStockProvider(itemId));
+    final centers = ref.watch(centersProvider).valueOrNull ?? const [];
+    return stockAsync.maybeWhen(
+      orElse: () => const SizedBox.shrink(),
+      data: (rows) {
+        if (rows.length < 2) return const SizedBox.shrink();
+        final nameById = {for (final c in centers) c.id: c.name};
+        final sorted = [...rows]..sort((a, b) {
+            if (a.isHeadOffice) return -1;
+            if (b.isHeadOffice) return 1;
+            return (nameById[a.centerId] ?? '')
+                .compareTo(nameById[b.centerId] ?? '');
+          });
+        final theme = Theme.of(context);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const AppSectionHeader(
+              title: 'Stock by location',
+              icon: Icons.place_outlined,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  for (var i = 0; i < sorted.length; i++) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              sorted[i].isHeadOffice
+                                  ? 'Head office'
+                                  : (nameById[sorted[i].centerId] ?? 'Center'),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          Text(
+                            '${_qty(sorted[i].onHand)} $unit',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (i != sorted.length - 1) const Divider(height: 1),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// A single movement row: tinted kind icon → kind badge + signed qty →
 /// one tight metadata line (date · ref · notes).
-class _MovementTile extends StatelessWidget {
+class _MovementTile extends ConsumerWidget {
   const _MovementTile({required this.movement});
   final InventoryMovement movement;
 
   static final _df = DateFormat('dd MMM yyyy · HH:mm');
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final m = movement;
     final qty = m.qty.toStringAsFixed(
       m.qty.truncateToDouble() == m.qty ? 0 : 2,
     );
+    final centers = ref.watch(centersProvider).valueOrNull ?? const [];
+    final nameById = {for (final c in centers) c.id: c.name};
+    String loc(String? id) => id == null ? 'HO' : (nameById[id] ?? 'Center');
+    // Transfers read "HO → Andheri"; other entries note their location only
+    // when it's a specific center (HO is the default and stays implicit).
+    final locLine = m.kind == 'transfer'
+        ? '${loc(m.centerId)} → ${loc(m.toCenterId)}'
+        : (m.centerId != null ? 'at ${loc(m.centerId)}' : null);
     final meta = [
       _df.format(m.performedAt),
+      if (locLine != null) locLine,
       if (m.reference != null && m.reference!.isNotEmpty) 'ref: ${m.reference}',
       if (m.notes != null && m.notes!.isNotEmpty) m.notes!,
     ].join(' · ');
@@ -552,7 +641,10 @@ class _MovementTile extends StatelessWidget {
       leading: Icon(_iconFor(m.kind)),
       title: Row(
         children: [
-          AppBadge(text: m.kind.toUpperCase(), tone: _toneFor(m.kind)),
+          AppBadge(
+            text: inventoryKindLabel(m.kind).toUpperCase(),
+            tone: _toneFor(m.kind),
+          ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(qty, overflow: TextOverflow.ellipsis),
@@ -573,6 +665,8 @@ class _MovementTile extends StatelessWidget {
         return Icons.assignment_returned_outlined;
       case 'adjustment':
         return Icons.tune_outlined;
+      case 'transfer':
+        return Icons.swap_horiz_rounded;
     }
     return Icons.swap_vert;
   }
@@ -587,6 +681,8 @@ class _MovementTile extends StatelessWidget {
         return AppBadgeTone.info;
       case 'adjustment':
         return AppBadgeTone.warning;
+      case 'transfer':
+        return AppBadgeTone.neutral;
     }
     return AppBadgeTone.neutral;
   }

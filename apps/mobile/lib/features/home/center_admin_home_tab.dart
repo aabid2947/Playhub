@@ -39,10 +39,16 @@ class CenterAdminHomeTab extends ConsumerWidget {
     final batches = ref.watch(batchesProvider).valueOrNull ?? const [];
     final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? const [];
 
-    final centerName = centers
-        .where((c) => c.id == profile?.centerId)
+    // A center_admin may manage several centers (user_centers). Label the
+    // greeting with all of them ("Andheri · Bandra"); falls back to the primary
+    // while the grant set loads.
+    final myCenters = ref.watch(myCenterIdsProvider).valueOrNull ??
+        {if (profile?.centerId != null) profile!.centerId!};
+    final centerNames = centers
+        .where((c) => myCenters.contains(c.id))
         .map((c) => c.name)
-        .firstOrNull;
+        .toList(growable: false);
+    final centerName = centerNames.isNotEmpty ? centerNames.join(' · ') : null;
     final firstName =
         (profile?.displayName ?? '').split(' ').firstOrNull ?? 'there';
 

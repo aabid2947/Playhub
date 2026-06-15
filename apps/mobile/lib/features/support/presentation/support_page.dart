@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
     show SupportTicketRow, ticketMessagesProvider;
 import 'package:playhub/features/support/data/support_providers.dart';
@@ -192,6 +193,13 @@ class _TicketCard extends StatelessWidget {
             runSpacing: AppSpacing.xs,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              Text(
+                ticket.reference,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: AppType.semibold,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
               AppBadge(
                 text: _humanize(ticket.priority),
                 tone: _priorityTone(ticket.priority),
@@ -217,35 +225,57 @@ class _NewTicketSheet extends ConsumerStatefulWidget {
 }
 
 class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
-  final _subject = TextEditingController();
   final _body = TextEditingController();
-  String _priority = 'normal';
-  String? _category;
+  bool _urgent = false;
   bool _saving = false;
 
   @override
   void dispose() {
-    _subject.dispose();
     _body.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    if (_subject.text.trim().isEmpty || _body.text.trim().isEmpty) return;
+    final body = _body.text.trim();
+    if (body.isEmpty) return;
     setState(() => _saving = true);
     try {
       final repo = await ref.read(supportRepoProvider.future);
       if (repo == null) throw StateError('no academy');
-      await repo.createTicket(
-        subject: _subject.text.trim(),
-        body: _body.text.trim(),
-        category: _category,
-        priority: _priority,
+      // The user types once — derive a subject from the first line so they
+      // don't have to fill a separate field.
+      final firstLine = body.split('\n').first.trim();
+      final subject = firstLine.isEmpty
+          ? 'Support request'
+          : (firstLine.length <= 80
+              ? firstLine
+              : '${firstLine.substring(0, 77)}…');
+      final ticket = await repo.createTicket(
+        subject: subject,
+        body: body,
+        priority: _urgent ? 'urgent' : 'normal',
       );
       ref.invalidate(myAcademyTicketsProvider);
       if (!mounted) return;
-      AppSnackbar.success(context, 'Ticket created.');
-      Navigator.of(context).pop();
+      // Show the ticket number prominently so the user can quote it, then close.
+      await showDialog<void>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          icon: const Icon(Icons.check_circle_outline),
+          title: Text('Ticket ${ticket.reference} raised'),
+          content: const Text(
+            "We've received your request and will get back to you. "
+            'Note this number to follow up.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) Navigator.of(context).pop();
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
@@ -295,7 +325,7 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
                   children: [
                     Expanded(
                       child: Text(
-                        'New support ticket',
+                        'Raise a ticket',
                         style: theme.textTheme.titleLarge,
                       ),
                     ),
@@ -317,52 +347,25 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
                     AppSpacing.lg,
                   ),
                   children: [
-                    AppFormField(controller: _subject, label: 'Subject'),
-                    const SizedBox(height: AppSpacing.md),
+                    // One field — just describe the problem. Staff triage the
+                    // category/priority on their side, so a normal academy user
+                    // can raise a ticket in seconds.
                     AppFormField(
                       controller: _body,
-                      label: 'Describe the issue',
+                      label: "What's the problem?",
                       maxLines: 6,
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    AppDropdownField<String?>(
-                      label: 'Category',
-                      value: _category,
-                      items: const [
-                        DropdownMenuItem<String?>(child: Text('— None —')),
-                        DropdownMenuItem(
-                          value: 'billing',
-                          child: Text('Billing'),
-                        ),
-                        DropdownMenuItem(value: 'bug', child: Text('Bug')),
-                        DropdownMenuItem(
-                          value: 'feature',
-                          child: Text('Feature'),
-                        ),
-                        DropdownMenuItem(value: 'other', child: Text('Other')),
-                      ],
-                      onChanged: (v) => setState(() => _category = v),
+                    const SizedBox(height: AppSpacing.sm),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('This is urgent'),
+                      subtitle: const Text(
+                        'Flag it so support picks it up first.',
+                      ),
+                      value: _urgent,
+                      onChanged: (v) => setState(() => _urgent = v),
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    AppDropdownField<String>(
-                      label: 'Priority',
-                      value: _priority,
-                      items: const [
-                        DropdownMenuItem(value: 'low', child: Text('Low')),
-                        DropdownMenuItem(
-                          value: 'normal',
-                          child: Text('Normal'),
-                        ),
-                        DropdownMenuItem(value: 'high', child: Text('High')),
-                        DropdownMenuItem(
-                          value: 'urgent',
-                          child: Text('Urgent'),
-                        ),
-                      ],
-                      onChanged: (v) =>
-                          setState(() => _priority = v ?? 'normal'),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
                     FilledButton(
                       onPressed: _saving ? null : _save,
                       child: _saving
@@ -371,7 +374,7 @@ class _NewTicketSheetState extends ConsumerState<_NewTicketSheet> {
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Submit'),
+                          : const Text('Send'),
                     ),
                   ],
                 ),
@@ -395,11 +398,33 @@ class _TicketThreadPage extends ConsumerStatefulWidget {
 class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
   final _reply = TextEditingController();
   bool _busy = false;
+  // Local status mirror so a "Mark resolved" reflects immediately without
+  // re-fetching the whole thread.
+  late String _status = widget.ticket.status;
 
   @override
   void dispose() {
     _reply.dispose();
     super.dispose();
+  }
+
+  bool get _isClosedOrResolved => _status == 'resolved' || _status == 'closed';
+
+  Future<void> _setStatus(String status) async {
+    setState(() => _busy = true);
+    try {
+      final repo = await ref.read(supportRepoProvider.future);
+      if (repo == null) throw StateError('no academy');
+      await repo.setStatus(ticketId: widget.ticket.id, status: status);
+      ref.invalidate(myAcademyTicketsProvider);
+      if (!mounted) return;
+      setState(() => _status = status);
+      AppSnackbar.success(context, 'Marked ${_humanize(status)}.');
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _send() async {
@@ -424,6 +449,9 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
     final theme = Theme.of(context);
     final df = DateFormat('dd MMM yyyy · HH:mm');
     final msgsAsync = ref.watch(ticketMessagesProvider(widget.ticket.id));
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    // Only the academy's owner/admin resolve tickets (RLS enforces it too).
+    final canResolve = role == 'academy_owner' || role == 'academy_admin';
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -431,6 +459,20 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          if (canResolve && !_isClosedOrResolved)
+            TextButton.icon(
+              onPressed: _busy ? null : () => _setStatus('resolved'),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Resolve'),
+            ),
+          if (canResolve && _isClosedOrResolved)
+            TextButton.icon(
+              onPressed: _busy ? null : () => _setStatus('open'),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reopen'),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -448,8 +490,8 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                         runSpacing: AppSpacing.xs,
                         children: [
                           AppBadge(
-                            text: _humanize(widget.ticket.status),
-                            tone: _statusTone(widget.ticket.status),
+                            text: _humanize(_status),
+                            tone: _statusTone(_status),
                           ),
                           AppBadge(
                             text: _humanize(widget.ticket.priority),
@@ -468,6 +510,7 @@ class _TicketThreadPageState extends ConsumerState<_TicketThreadPage> {
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
+                        'Ticket ${widget.ticket.reference} · '
                         'Raised ${df.format(widget.ticket.createdAt)}',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,

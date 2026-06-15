@@ -593,6 +593,42 @@ class _AddSportSheet extends ConsumerStatefulWidget {
 
 class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
   String _query = '';
+  bool _creating = false;
+
+  /// Enable an existing catalog/custom sport at this center.
+  Future<void> _enable(Sport s) async {
+    final repo = await ref.read(sportsRepoProvider.future);
+    if (repo == null) return;
+    await repo.enableSportAtCenter(centerId: widget.centerId, sportId: s.id);
+    ref
+      ..invalidate(centerSportsProvider(widget.centerId))
+      ..invalidate(academyCenterSportsProvider);
+    if (mounted) Navigator.pop(context);
+  }
+
+  /// Create a brand-new academy custom sport, then enable it at this center.
+  Future<void> _createAndEnable(String name) async {
+    if (name.isEmpty) return;
+    setState(() => _creating = true);
+    try {
+      final repo = await ref.read(sportsRepoProvider.future);
+      if (repo == null) return;
+      final sport = await repo.createCustomSport(name: name);
+      await repo.enableSportAtCenter(
+        centerId: widget.centerId,
+        sportId: sport.id,
+      );
+      ref
+        ..invalidate(centerSportsProvider(widget.centerId))
+        ..invalidate(academyCenterSportsProvider)
+        ..invalidate(allSportsProvider);
+      if (mounted) Navigator.pop(context);
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -633,8 +669,8 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
             ),
             const SizedBox(height: AppSpacing.lg),
             AppFormField(
-              label: 'Search catalog',
-              hint: 'Search sports',
+              label: 'Search or add a new sport',
+              hint: 'e.g. Pickleball',
               prefixIcon: const Icon(Icons.search),
               autofocus: true,
               onChanged: (v) => setState(() => _query = v),
@@ -662,73 +698,138 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
                       s.category?.toLowerCase().contains(q) ?? false;
                   return inName || inCategory;
                 }).toList(growable: false);
-                if (candidates.isEmpty) {
-                  return Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: AppSpacing.xl),
-                    child: Text(
-                      q.isEmpty
-                          ? 'Every catalog sport is already enabled at this '
-                              'center.'
-                          : 'No sports match "$_query".',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  );
-                }
+                // Offer to create a custom sport when the typed name matches no
+                // existing sport (catalog or already-enabled) at all.
+                final anyExactName =
+                    all.any((s) => s.name.toLowerCase() == q);
+                final canCreate = q.isNotEmpty && !anyExactName;
+
                 return ConstrainedBox(
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.of(context).size.height * 0.6,
                   ),
-                  child: ListView.separated(
+                  child: ListView(
                     shrinkWrap: true,
-                    itemCount: candidates.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final s = candidates[i];
-                      final tint = colorFromName(s.name);
-                      return AppListTile(
-                        wrapLeading: false,
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: tint.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                    children: [
+                      if (canCreate)
+                        _CreateSportTile(
+                          name: _query.trim(),
+                          busy: _creating,
+                          onTap: () => _createAndEnable(_query.trim()),
+                        ),
+                      if (canCreate && candidates.isNotEmpty)
+                        const Divider(height: 1),
+                      if (candidates.isEmpty && !canCreate)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AppSpacing.xl,
                           ),
-                          child: Icon(sportIcon(s.name), color: tint, size: 20),
+                          child: Text(
+                            'Every catalog sport is already enabled at this '
+                            'center.',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                        title: Text(s.name),
-                        subtitle:
-                            s.category != null ? Text(s.category!) : null,
-                        trailing: FilledButton.tonal(
-                          onPressed: () async {
-                            final repo =
-                                await ref.read(sportsRepoProvider.future);
-                            if (repo == null) return;
-                            await repo.enableSportAtCenter(
-                              centerId: widget.centerId,
-                              sportId: s.id,
-                            );
-                            ref.invalidate(
-                              centerSportsProvider(widget.centerId),
-                            );
-                            ref.invalidate(academyCenterSportsProvider);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          child: const Text('Add'),
+                      for (var i = 0; i < candidates.length; i++) ...[
+                        if (i > 0) const Divider(height: 1),
+                        _SportCandidateTile(
+                          sport: candidates[i],
+                          onAdd: () => _enable(candidates[i]),
                         ),
-                      );
-                    },
+                      ],
+                    ],
                   ),
                 );
               },
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Create a new sport" row shown when the typed name isn't in the catalog.
+/// Creates an academy-scoped custom sport and enables it at the center.
+class _CreateSportTile extends StatelessWidget {
+  const _CreateSportTile({
+    required this.name,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final String name;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = theme.colorScheme.primary;
+    return AppListTile(
+      wrapLeading: false,
+      onTap: busy ? null : onTap,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(Icons.add_rounded, color: tint, size: 22),
+      ),
+      title: Text('Create "$name"'),
+      subtitle: const Text('Add as a new sport for your academy'),
+      trailing: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : FilledButton(
+              onPressed: onTap,
+              child: const Text('Create'),
+            ),
+    );
+  }
+}
+
+/// A selectable catalog (or academy-custom) sport row with an "Add" button.
+class _SportCandidateTile extends StatelessWidget {
+  const _SportCandidateTile({required this.sport, required this.onAdd});
+
+  final Sport sport;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = colorFromName(sport.name);
+    final subtitleParts = <String>[
+      if (sport.category != null) sport.category!,
+      if (sport.isCustom) 'Custom',
+    ];
+    return AppListTile(
+      wrapLeading: false,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(sportIcon(sport.name), color: tint, size: 20),
+      ),
+      title: Text(sport.name),
+      subtitle:
+          subtitleParts.isNotEmpty ? Text(subtitleParts.join(' · ')) : null,
+      trailing: FilledButton.tonal(
+        onPressed: onAdd,
+        child: const Text('Add'),
       ),
     );
   }

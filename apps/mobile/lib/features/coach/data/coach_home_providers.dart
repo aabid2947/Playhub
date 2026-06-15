@@ -57,14 +57,14 @@ final myBatchesProvider = FutureProvider<List<Batch>>((ref) async {
     // sport (or no sport). A head_coach's sports = the coach_sports of their
     // linked coaches row; with no link they own zero sports, so only sport-less
     // batches in their center remain — matching the server gate exactly.
-    final myCenter = profile.centerId;
+    final myCenters = await ref.watch(myCenterIdsProvider.future);
     final coach = await ref.watch(myCoachRecordProvider.future);
     final mySports = coach == null
         ? const <String>{}
         : (await ref.watch(coachSportsProvider(coach.id).future)).toSet();
     return all
         .where((b) =>
-            (b.centerId == null || b.centerId == myCenter) &&
+            (b.centerId == null || myCenters.contains(b.centerId)) &&
             (b.sportId == null || mySports.contains(b.sportId)))
         .toList(growable: false);
   }

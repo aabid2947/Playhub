@@ -56,6 +56,9 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   final _last = TextEditingController();
   String _role = 'coach';
   String? _centerId;
+  // Additional centers a center_admin manages beyond [_centerId] (the primary).
+  // Persisted to user_centers after the invite (multi-center admins).
+  final Set<String> _extraCenterIds = {};
   bool _busy = false;
 
   // Center-scoped staff roles: when an ADMIN-tier inviter picks one of these,
@@ -110,6 +113,13 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         linkCoachId: widget.preset?.linkCoachId,
         linkStudentLoginId: widget.preset?.linkStudentLoginId,
       );
+      // Multi-center admins: persist the additional centers (beyond the primary
+      // center_id the invite already set) to user_centers.
+      if (_role == 'center_admin' &&
+          _extraCenterIds.isNotEmpty &&
+          result.userId != null) {
+        await repo.grantCenters(result.userId!, _extraCenterIds.toList());
+      }
       if (!mounted) return;
       final email = _email.text.trim();
       final msg = result.resent
@@ -229,6 +239,10 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                           if (!_centerScopedTargets.contains(_role)) {
                             _centerId = null;
                           }
+                          // Extra centers only apply to a (multi-center) admin.
+                          if (_role != 'center_admin') {
+                            _extraCenterIds.clear();
+                          }
                         }),
                       ),
                     ],
@@ -268,20 +282,62 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                                   ),
                                 );
                               }
-                              return AppDropdownField<String>(
-                                label: _role == 'center_admin'
-                                    ? 'Center *'
-                                    : 'Center',
-                                value: _centerId,
-                                items: [
-                                  for (final c in active)
-                                    DropdownMenuItem(
-                                      value: c.id,
-                                      child: Text(c.name),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AppDropdownField<String>(
+                                    label: _role == 'center_admin'
+                                        ? 'Primary center *'
+                                        : 'Center',
+                                    value: _centerId,
+                                    items: [
+                                      for (final c in active)
+                                        DropdownMenuItem(
+                                          value: c.id,
+                                          child: Text(c.name),
+                                        ),
+                                    ],
+                                    onChanged: (v) => setState(() {
+                                      _centerId = v;
+                                      // The primary can't also be an "extra".
+                                      if (v != null) _extraCenterIds.remove(v);
+                                    }),
+                                  ),
+                                  // A center_admin may manage MULTIPLE centers
+                                  // (user_centers). Offer the rest as toggles.
+                                  if (_role == 'center_admin') ...[
+                                    const SizedBox(height: AppSpacing.md),
+                                    Text(
+                                      'Also manages',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                        fontWeight: AppType.semibold,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
                                     ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Wrap(
+                                      spacing: AppSpacing.sm,
+                                      runSpacing: AppSpacing.xs,
+                                      children: [
+                                        for (final c in active
+                                            .where((c) => c.id != _centerId))
+                                          FilterChip(
+                                            label: Text(c.name),
+                                            selected:
+                                                _extraCenterIds.contains(c.id),
+                                            onSelected: (sel) => setState(() {
+                                              if (sel) {
+                                                _extraCenterIds.add(c.id);
+                                              } else {
+                                                _extraCenterIds.remove(c.id);
+                                              }
+                                            }),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
-                                onChanged: (v) =>
-                                    setState(() => _centerId = v),
                               );
                             },
                           ),
