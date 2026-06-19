@@ -158,6 +158,8 @@ class AcademyDetailPage extends ConsumerWidget {
                         const SizedBox(height: AppSpacing.lg),
                         _DetailsSection(academy: a),
                         const SizedBox(height: AppSpacing.lg),
+                        _PeopleSection(academyId: academyId),
+                        const SizedBox(height: AppSpacing.lg),
                         const AppSectionHeader(
                           title: 'SaaS invoices',
                           icon: Icons.receipt_long_outlined,
@@ -706,6 +708,188 @@ class _RecordPaymentSheetState extends ConsumerState<_RecordPaymentSheet> {
               child: Text(_saving ? 'Recording…' : 'Record payment'),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Super-admin people drill-down for one academy: a Students / Coaches pill
+/// selector over the academy's roster. Each list is lazy (loads only when its
+/// tab is shown) and reads ride the super-admin RLS.
+class _PeopleSection extends ConsumerStatefulWidget {
+  const _PeopleSection({required this.academyId});
+  final String academyId;
+
+  @override
+  ConsumerState<_PeopleSection> createState() => _PeopleSectionState();
+}
+
+class _PeopleSectionState extends ConsumerState<_PeopleSection> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(title: 'People', icon: Icons.groups_outlined),
+        AppPillTabs(
+          tabs: const ['Students', 'Coaches'],
+          index: _tab,
+          onChanged: (i) => setState(() => _tab = i),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (_tab == 0)
+          _StudentsList(academyId: widget.academyId)
+        else
+          _CoachesList(academyId: widget.academyId),
+      ],
+    );
+  }
+}
+
+({String label, AppBadgeTone tone}) _studentStatusBadge(String status) {
+  switch (status) {
+    case 'active':
+      return (label: 'Active', tone: AppBadgeTone.success);
+    case 'paused':
+      return (label: 'Paused', tone: AppBadgeTone.warning);
+    case 'graduated':
+      return (label: 'Graduated', tone: AppBadgeTone.info);
+    case 'inactive':
+      return (label: 'Inactive', tone: AppBadgeTone.neutral);
+    default:
+      return (label: status, tone: AppBadgeTone.neutral);
+  }
+}
+
+class _StudentsList extends ConsumerWidget {
+  const _StudentsList({required this.academyId});
+  final String academyId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(academyStudentsProvider(academyId));
+    return async.when(
+      loading: () => const _PeopleLoading(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(academyStudentsProvider(academyId)),
+      ),
+      data: (list) {
+        if (list.isEmpty) {
+          return const _PeopleEmpty(text: 'No students in this academy.');
+        }
+        return AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < list.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                AppListTile(
+                  wrapLeading: false,
+                  leading: AppAvatar(list[i].fullName, size: 40),
+                  title: Text(
+                    list[i].fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Wrap(
+                    spacing: AppSpacing.xs,
+                    children: [
+                      if (list[i].feeOverdue)
+                        const AppBadge(text: 'Unpaid', tone: AppBadgeTone.danger),
+                      AppBadge(
+                        text: _studentStatusBadge(list[i].status).label,
+                        tone: _studentStatusBadge(list[i].status).tone,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CoachesList extends ConsumerWidget {
+  const _CoachesList({required this.academyId});
+  final String academyId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(academyCoachesProvider(academyId));
+    return async.when(
+      loading: () => const _PeopleLoading(),
+      error: (e, _) => AppErrorView(
+        message: friendlyError(e),
+        onRetry: () => ref.invalidate(academyCoachesProvider(academyId)),
+      ),
+      data: (list) {
+        if (list.isEmpty) {
+          return const _PeopleEmpty(text: 'No coaches in this academy.');
+        }
+        return AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < list.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                AppListTile(
+                  wrapLeading: false,
+                  leading: AppAvatar(list[i].fullName, size: 40),
+                  title: Text(
+                    list[i].fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: list[i].specialization.isEmpty
+                      ? null
+                      : Text(
+                          list[i].specialization.join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                  trailing: AppBadge(
+                    text: list[i].isActive ? 'Active' : 'Inactive',
+                    tone: list[i].isActive
+                        ? AppBadgeTone.success
+                        : AppBadgeTone.neutral,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PeopleLoading extends StatelessWidget {
+  const _PeopleLoading();
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: AppLoading(),
+      );
+}
+
+class _PeopleEmpty extends StatelessWidget {
+  const _PeopleEmpty({required this.text});
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Text(
+        text,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

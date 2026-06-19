@@ -12,6 +12,7 @@ class Centre {
     this.email,
     this.facilities = const [],
     this.adminId,
+    this.createdAt,
   });
 
   factory Centre.fromMap(Map<String, dynamic> m) => Centre(
@@ -29,6 +30,9 @@ class Centre {
             .map((e) => e.toString())
             .toList(),
         adminId: m['admin_id'] as String?,
+        createdAt: m['created_at'] == null
+            ? null
+            : DateTime.parse(m['created_at'] as String),
       );
 
   final String id;
@@ -43,4 +47,5 @@ class Centre {
   final String? email;
   final List<String> facilities;
   final String? adminId;
+  final DateTime? createdAt;
 }

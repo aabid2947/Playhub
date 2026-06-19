@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/analytics/data/analytics_providers.dart';
+import 'package:playhub/features/analytics/data/growth_metrics.dart';
 import 'package:playhub/features/analytics/data/sport_breakdown.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -57,6 +58,8 @@ class KpiDashboardPage extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (isOwner || isAdmin) ...const [
+                      _GrowthMetricsSection(),
+                      SizedBox(height: AppSpacing.lg),
                       _CollectionSummarySection(),
                       SizedBox(height: AppSpacing.lg),
                       _RevenueTrendCard(),
@@ -195,6 +198,135 @@ class _ChartSection extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Owner/admin growth overview — students, coaches and centers (live total vs
+/// 30 days ago) plus revenue (latest month vs prior). A 2×2 grid of
+/// [AppStatTile]; each shows the current figure with a colored growth-% pill.
+/// Backed by [growthMetricsProvider] (computed client-side, no extra query).
+class _GrowthMetricsSection extends ConsumerWidget {
+  const _GrowthMetricsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = ref.watch(growthMetricsProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const AppSectionHeader(
+          title: 'Growth',
+          icon: Icons.trending_up_rounded,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (m == null)
+          const AppCard(child: AppLoading())
+        else ...[
+          Row(
+            children: [
+              Expanded(
+                child: _GrowthTile(
+                  icon: Icons.groups_rounded,
+                  label: 'Students',
+                  stat: m.students,
+                  color: AppPalette.brandPrimary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: _GrowthTile(
+                  icon: Icons.sports_rounded,
+                  label: 'Coaches',
+                  stat: m.coaches,
+                  color: AppPalette.accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: _GrowthTile(
+                  icon: Icons.apartment_rounded,
+                  label: 'Centers',
+                  stat: m.centers,
+                  color: AppPalette.categorySwatch[4],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: _GrowthTile(
+                  icon: Icons.payments_rounded,
+                  label: 'Revenue',
+                  stat: m.revenue,
+                  color: AppPalette.success,
+                  money: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One growth tile. Shows the current figure as the headline and the growth-%
+/// (vs the stat's baseline) as a colored up/down pill via [AppStatTile].
+class _GrowthTile extends StatelessWidget {
+  const _GrowthTile({
+    required this.icon,
+    required this.label,
+    required this.stat,
+    required this.color,
+    this.money = false,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// Null while a metric has no data yet (e.g. revenue before the first month).
+  final GrowthStat? stat;
+  final Color color;
+
+  /// Format the value as compact INR currency rather than a plain count.
+  final bool money;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = stat;
+    if (s == null) {
+      return AppStatTile(
+        icon: icon,
+        label: label,
+        value: money ? '₹0' : '0',
+        color: color,
+      );
+    }
+    final f = NumberFormat.compactCurrency(locale: 'en_IN', symbol: '₹');
+    return AppStatTile(
+      icon: icon,
+      label: label,
+      value: money ? f.format(s.current) : s.current.toInt().toString(),
+      trend: _trendLabel(s, money: money),
+      trendUp: s.isUp,
+      color: color,
+    );
+  }
+
+  static String _trendLabel(GrowthStat s, {required bool money}) {
+    final pct = s.pct;
+    if (pct == null) {
+      // No baseline to grow from. Counts show the absolute gain; revenue "New".
+      if (s.delta == 0) return '0%';
+      if (money) return 'New';
+      final d = s.delta.toInt();
+      return d > 0 ? '+$d' : '$d';
+    }
+    final sign = pct >= 0 ? '+' : '';
+    final dp = (pct != 0 && pct.abs() < 10) ? 1 : 0;
+    return '$sign${pct.toStringAsFixed(dp)}%';
   }
 }
 

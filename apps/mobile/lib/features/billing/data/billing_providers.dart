@@ -382,6 +382,29 @@ Future<Invoice> updateInvoice(
 // Payments + refunds
 // =============================================================================
 
+/// Sum of completed payments recorded today (academy-wide), for the home
+/// "Today" overview. Owner/admin finance reads are RLS-allowed; center_admin
+/// is RLS-narrowed to its own center automatically.
+final todaysCollectedProvider = FutureProvider<double>((ref) async {
+  final profile = await ref.watch(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return 0;
+  final client = ref.read(supabaseClientProvider);
+  final now = DateTime.now();
+  final startOfDay =
+      DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
+  final rows = await client
+      .from('payments')
+      .select('amount')
+      .eq('academy_id', academyId)
+      .eq('status', 'completed')
+      .gte('paid_at', startOfDay);
+  return (rows as List).fold<double>(
+    0,
+    (sum, r) => sum + ((r as Map)['amount'] as num).toDouble(),
+  );
+});
+
 final paymentsForInvoiceProvider =
     FutureProvider.family<List<Payment>, String>((ref, invoiceId) async {
   final client = ref.read(supabaseClientProvider);

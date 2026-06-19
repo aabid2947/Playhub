@@ -223,6 +223,41 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-19 — super-admin: per-academy Students/Coaches drill-down
+Super-admin can now see each academy's **students and coaches** via a **People** sub-nav
+(Students / Coaches `AppPillTabs`) on the academy detail page
+([academy_detail_page.dart](apps/mobile/lib/features/super_admin/presentation/academy_detail_page.dart)
+`_PeopleSection`). Backed by new `academyStudentsProvider` / `academyCoachesProvider` (family by
+academyId) in [super_admin_providers.dart](apps/mobile/lib/features/super_admin/data/super_admin_providers.dart),
+which **reuse the app's `Student`/`Coach` models** (cross-tenant read rides `is_super_admin` RLS);
+each list is **lazy** (loads only when its tab shows). Chosen over a flat platform-wide list — it
+scales (no all-students fetch) and covers coaches too. The super-admin shell stays at **4 tabs**
+(Health/Academies/Plans/Tickets — no standalone Students tab).
+
+### 2026-06-19 — Growth metrics card (client-side, NOT a materialized view)
+Added an owner/admin **Growth** card at the top of the KPI dashboard
+([kpi_dashboard_page.dart](apps/mobile/lib/features/analytics/presentation/kpi_dashboard_page.dart)
+`_GrowthMetricsSection`): students/coaches/centers (live total vs 30 days ago) + revenue
+(latest month vs prior). **Deliberate deviation from the analytics convention** — it is
+computed **client-side** in [growth_metrics.dart](apps/mobile/lib/features/analytics/data/growth_metrics.dart)
+(`growthMetricsProvider`) from the already-loaded `studentsProvider`/`coachesProvider`/
+`centersProvider` lists + `revenueByMonthProvider`, **not** a new `analytics_*` materialized
+view — so there's no migration/RLS/pgTAP/gen:types for this. Headcount growth uses the rows'
+joined/created dates (`Student.enrollmentDate`, `Coach.joinDate`, and **new `Centre.createdAt`**
+— added to the model's `fromMap`; the column already existed) over a rolling 30-day window;
+it's approximate (a deleted row lowers the historical baseline) — fine for a directional cue,
+not an audited figure. If exact period-over-period growth is ever needed, that's the point to
+add a proper `analytics_growth_*` view.
+**Same pass — owner home dashboard** ([home_tab.dart](apps/mobile/lib/features/home/home_tab.dart))
+now surfaces four things that previously only existed deeper in the app: a **Today's overview**
+card (new students today, today's revenue, classes running, overdue/pending dues), a
+**Multi-center overview** grid (centers/students/coaches + lifetime **revenue** total), an
+**Upcoming events** list (from `eventsListProvider`, hidden when none upcoming) and an
+**Activity** feed (recent `auditLogsProvider` rows). Finance cells gate on `caps.viewRevenue`;
+everything is RLS-backed. New `todaysCollectedProvider` in
+[billing_providers.dart](apps/mobile/lib/features/billing/data/billing_providers.dart) sums
+today's completed payments directly from `payments` (not via an analytics view, so it's live).
+
 ### 2026-06-15 — per-academy payment gateways (bring-your-own Razorpay/Paytm)
 Owners can now configure their **own** Razorpay/Paytm merchant credentials; payments
 in that academy route through their account (fallback to platform `Deno.env` keys when

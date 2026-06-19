@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/coaches/data/coach.dart';
+import 'package:playhub/features/students/data/student.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AcademyRow {
@@ -538,6 +540,39 @@ final academyInvoicesProvider =
       .order('issued_at', ascending: false);
   return (rows as List)
       .map((r) => SaasInvoiceRow.fromMap(r as Map<String, dynamic>))
+      .toList(growable: false);
+});
+
+// ============================================================================
+// Per-academy people (super-admin drill-down): the students and coaches of a
+// single academy, reusing the app's [Student]/[Coach] models. Cross-tenant
+// reads ride the super-admin RLS; lazy per academy so we never load every
+// student/coach on the platform into one list.
+// ============================================================================
+
+final academyStudentsProvider =
+    FutureProvider.family<List<Student>, String>((ref, academyId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('students')
+      .select()
+      .eq('academy_id', academyId)
+      .order('first_name');
+  return (rows as List)
+      .map((r) => Student.fromMap(r as Map<String, dynamic>))
+      .toList(growable: false);
+});
+
+final academyCoachesProvider =
+    FutureProvider.family<List<Coach>, String>((ref, academyId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('coaches')
+      .select()
+      .eq('academy_id', academyId)
+      .order('first_name');
+  return (rows as List)
+      .map((r) => Coach.fromMap(r as Map<String, dynamic>))
       .toList(growable: false);
 });
 
