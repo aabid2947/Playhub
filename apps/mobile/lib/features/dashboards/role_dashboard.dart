@@ -12,6 +12,8 @@ import 'package:playhub/features/home/center_admin_home_tab.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
 import 'package:playhub/features/student/presentation/student_home_shell.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
+import 'package:playhub/features/subscription/presentation/paywall_page.dart';
 import 'package:playhub/features/super_admin/presentation/super_admin_home_shell.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -47,9 +49,16 @@ class RoleDashboard extends ConsumerWidget {
             body: const SetupAcademyPage(),
           );
         }
-        // Owners + admins share the full academy-wide OwnerHomeShell.
+        // Owners + admins share the full academy-wide OwnerHomeShell — unless
+        // the academy's subscription is frozen (suspended/cancelled/expired
+        // trial), in which case they hit the paywall until they renew. While the
+        // subscription is still loading we optimistically show the shell (RLS is
+        // the real gate); it rebuilds to the paywall once the status resolves.
         if (profile.role == 'academy_owner' ||
             profile.role == 'academy_admin') {
+          final blocked =
+              ref.watch(mySubscriptionProvider).valueOrNull?.isBlocked ?? false;
+          if (blocked) return const PaywallPage();
           return const OwnerHomeShell();
         }
         // center_admin gets the same management nav but a center-scoped home

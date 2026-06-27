@@ -8,9 +8,16 @@ import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class FeeStructureFormPage extends ConsumerStatefulWidget {
-  const FeeStructureFormPage({super.key, this.existing});
+  const FeeStructureFormPage({
+    super.key,
+    this.existing,
+    /// Pre-seed the per-day calculator with the batch's days/week when
+    /// navigating here from a batch detail page.
+    this.prefilledDaysPerWeek,
+  });
 
   final FeeStructure? existing;
+  final int? prefilledDaysPerWeek;
 
   @override
   ConsumerState<FeeStructureFormPage> createState() =>
@@ -32,6 +39,16 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
   late final _grace = TextEditingController(
       text: (widget.existing?.lateFeeGraceDays ?? 5).toString());
 
+  // Per-day pricing fields
+  late bool _perDayMode = widget.existing?.pricePerDay != null;
+  late final _perDay = TextEditingController(
+      text: widget.existing?.pricePerDay?.toStringAsFixed(2) ?? '');
+  late final _daysPerWeek = TextEditingController(
+      text: (widget.existing?.daysPerWeek ??
+              widget.prefilledDaysPerWeek ??
+              5)
+          .toString());
+
   late FeeType _type = widget.existing?.type ?? FeeType.monthly;
   late String _latePolicy = widget.existing?.lateFeePolicy ?? 'one_time';
   late bool _isActive = widget.existing?.isActive ?? true;
@@ -42,20 +59,57 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
 
   bool get isEdit => widget.existing != null;
 
-  /// Fields that feed the live invoice preview — rebuild it on every keystroke.
+  /// All inputs that feed the live invoice preview or per-day calculator.
   @override
   void initState() {
     super.initState();
     _base.addListener(_onPreviewInput);
     _tax.addListener(_onPreviewInput);
+    _perDay.addListener(_onPerDayInput);
+    _daysPerWeek.addListener(_onPerDayInput);
   }
 
   void _onPreviewInput() => setState(() {});
+
+  void _onPerDayInput() {
+    if (!_perDayMode) return;
+    final computed = _computeBase();
+    if (computed != null) {
+      _base.text = computed.toStringAsFixed(2);
+    }
+    setState(() {});
+  }
+
+  /// Returns the calculated base amount for the current fee type, or null if
+  /// the per-day inputs are incomplete.
+  double? _computeBase() {
+    final ppd = double.tryParse(_perDay.text.trim());
+    final dpw = int.tryParse(_daysPerWeek.text.trim());
+    if (ppd == null || ppd <= 0 || dpw == null || dpw < 1 || dpw > 7) {
+      return null;
+    }
+    // Weeks per billing period
+    const weeksPerYear = 52.0;
+    switch (_type) {
+      case FeeType.monthly:
+        return ppd * dpw * (weeksPerYear / 12);
+      case FeeType.quarterly:
+        return ppd * dpw * (weeksPerYear / 4);
+      case FeeType.annual:
+        return ppd * dpw * weeksPerYear;
+      case FeeType.oneTime:
+        // Per-day doesn't map to a one-time fee — return null so the user
+        // keeps whatever they typed in the base-amount field.
+        return null;
+    }
+  }
 
   @override
   void dispose() {
     _base.removeListener(_onPreviewInput);
     _tax.removeListener(_onPreviewInput);
+    _perDay.removeListener(_onPerDayInput);
+    _daysPerWeek.removeListener(_onPerDayInput);
     _name.dispose();
     _description.dispose();
     _base.dispose();
@@ -63,6 +117,8 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
     _lateFlat.dispose();
     _latePct.dispose();
     _grace.dispose();
+    _perDay.dispose();
+    _daysPerWeek.dispose();
     super.dispose();
   }
 
@@ -70,6 +126,12 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
+      final ppd = _perDayMode
+          ? double.tryParse(_perDay.text.trim())
+          : null;
+      final dpw = _perDayMode
+          ? int.tryParse(_daysPerWeek.text.trim())
+          : null;
       final patch = <String, dynamic>{
         'name': _name.text.trim(),
         'description': _description.text.trim().isEmpty
@@ -88,6 +150,8 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
         'late_fee_grace_days': int.tryParse(_grace.text.trim()) ?? 5,
         'late_fee_policy': _latePolicy,
         'is_active': _isActive,
+        'price_per_day': ppd,
+        'days_per_week': (ppd != null) ? dpw : null,
       };
       if (isEdit) {
         await updateFeeStructure(ref, widget.existing!.id, patch);
@@ -146,8 +210,10 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
                         .toList(),
                     onChanged: _busy
                         ? null
-                        : (v) =>
-                            setState(() => _type = v ?? FeeType.monthly),
+                        : (v) {
+                            setState(() => _type = v ?? FeeType.monthly);
+                            _onPerDayInput();
+                          },
                   ),
                   const SizedBox(height: AppSpacing.md),
                   SportPicker(
@@ -155,12 +221,50 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
                     onChanged: (v) => setState(() => _sportId = v),
                     label: 'Sport (optional)',
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            // ---- Per-day pricing --------------------------------------------
+            AppSectionHeader(
+              title: 'Per-day pricing',
+              trailing: Switch(
+                value: _perDayMode,
+                onChanged: _busy
+                    ? null
+                    : (on) {
+                        setState(() => _perDayMode = on);
+                        if (on) _onPerDayInput();
+                      },
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            if (_perDayMode) ...[
+              _PerDayCard(
+                perDayCtrl: _perDay,
+                daysPerWeekCtrl: _daysPerWeek,
+                feeType: _type,
+                busy: _busy,
+                computed: _computeBase(),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+            ],
+            // ---- Base amount (auto-filled when per-day mode is on) ----------
+            const AppSectionHeader(title: 'Amount'),
+            const SizedBox(height: AppSpacing.xs),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   _PairedFields(
                     first: AppFormField(
                       controller: _base,
-                      label: 'Base amount (₹) *',
+                      label: _perDayMode
+                          ? 'Calculated amount (₹) *'
+                          : 'Base amount (₹) *',
                       hint: '0.00',
+                      // Editable even in per-day mode so the owner can
+                      // round off or override the calculated figure.
                       enabled: !_busy,
                       keyboardType: const TextInputType.numberWithOptions(
                           decimal: true),
@@ -281,6 +385,172 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
         ),
       ),
     );
+  }
+}
+
+/// Per-day pricing calculator card. Shows price/day + days/week inputs and
+/// a live breakdown of what the fee works out to per week and per billing
+/// period. The [computed] value is derived by the parent and written into
+/// the base-amount field automatically.
+class _PerDayCard extends StatelessWidget {
+  const _PerDayCard({
+    required this.perDayCtrl,
+    required this.daysPerWeekCtrl,
+    required this.feeType,
+    required this.busy,
+    required this.computed,
+  });
+
+  final TextEditingController perDayCtrl;
+  final TextEditingController daysPerWeekCtrl;
+  final FeeType feeType;
+  final bool busy;
+  final double? computed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ppd = double.tryParse(perDayCtrl.text.trim());
+    final dpw = int.tryParse(daysPerWeekCtrl.text.trim());
+    final hasInputs = ppd != null && ppd > 0 && dpw != null;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _PairedFields(
+            first: AppFormField(
+              controller: perDayCtrl,
+              label: 'Price per day (₹) *',
+              hint: '0.00',
+              enabled: !busy,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            second: AppFormField(
+              controller: daysPerWeekCtrl,
+              label: 'Days per week *',
+              hint: '5',
+              enabled: !busy,
+              keyboardType: TextInputType.number,
+            ),
+          ),
+          if (hasInputs && feeType != FeeType.oneTime) ...[
+            const SizedBox(height: AppSpacing.md),
+            const Divider(height: 1),
+            const SizedBox(height: AppSpacing.md),
+            // Weekly breakdown (always shown)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Weekly  (₹${ppd!.toStringAsFixed(0)} × $dpw days)',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Text(
+                  '₹${(ppd * dpw!).toStringAsFixed(0)}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+            if (computed != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _periodLabel(feeType),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '₹${computed!.toStringAsFixed(0)}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    _formulaHint(feeType),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else if (feeType == FeeType.oneTime && hasInputs) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    'Per-day pricing does not auto-calculate for one-time '
+                    'fees — enter the base amount manually below.',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _periodLabel(FeeType type) {
+    switch (type) {
+      case FeeType.monthly:
+        return 'Monthly  (× 52 ÷ 12 weeks)';
+      case FeeType.quarterly:
+        return 'Quarterly  (× 13 weeks)';
+      case FeeType.annual:
+        return 'Annual  (× 52 weeks)';
+      case FeeType.oneTime:
+        return '';
+    }
+  }
+
+  static String _formulaHint(FeeType type) {
+    switch (type) {
+      case FeeType.monthly:
+        return 'price/day × days/week × 4.33 avg weeks/month';
+      case FeeType.quarterly:
+        return 'price/day × days/week × 13 weeks';
+      case FeeType.annual:
+        return 'price/day × days/week × 52 weeks';
+      case FeeType.oneTime:
+        return '';
+    }
   }
 }
 

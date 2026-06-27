@@ -1069,32 +1069,37 @@ class _MediaThumb extends ConsumerWidget {
   }
 }
 
-class _OutstandingCard extends ConsumerWidget {
+class _OutstandingCard extends ConsumerStatefulWidget {
   const _OutstandingCard({required this.studentId});
   final String studentId;
 
-  /// Confirm before launching checkout so a single tap can't kick off a real
-  /// payment. Returns true only on explicit confirmation.
-  Future<bool> _confirmPay(
-    BuildContext context,
-    OutstandingDues r,
-  ) async {
+  @override
+  ConsumerState<_OutstandingCard> createState() => _OutstandingCardState();
+}
+
+class _OutstandingCardState extends ConsumerState<_OutstandingCard> {
+  // Invoice ID currently being paid / downloaded — shows a spinner on that row
+  // and disables all other buttons to prevent concurrent in-flight payments.
+  String? _payingId;
+  String? _downloadingId;
+
+  Future<bool> _confirmPay(BuildContext context, OutstandingDues r) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Pay invoice'),
         content: Text(
           'Pay ₹${r.balance.toStringAsFixed(0)} towards invoice '
-          '${r.invoiceNumber}? You will be taken to the secure '
-          'Razorpay checkout.',
+          "${r.invoiceNumber}? You will be taken to the academy's "
+          'secure payment gateway to complete your payment.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () => Navigator.of(ctx).pop(true),
             child: Text('Pay ₹${r.balance.toStringAsFixed(0)}'),
           ),
         ],
@@ -1105,11 +1110,8 @@ class _OutstandingCard extends ConsumerWidget {
 
   /// Render the invoice as a PDF (generate-invoice-pdf runs under the parent's
   /// JWT + RLS — they can read their own student's invoice) and open it.
-  Future<void> _downloadInvoice(
-    BuildContext context,
-    WidgetRef ref,
-    String invoiceId,
-  ) async {
+  Future<void> _downloadInvoice(BuildContext context, String invoiceId) async {
+    setState(() => _downloadingId = invoiceId);
     try {
       final url = await generateInvoiceReceipt(ref, invoiceId);
       if (!context.mounted) return;
@@ -1122,17 +1124,16 @@ class _OutstandingCard extends ConsumerWidget {
       }
     } on Object catch (e) {
       if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _downloadingId = null);
     }
   }
 
-  Future<void> _payInvoice(
-    BuildContext context,
-    WidgetRef ref,
-    OutstandingDues r,
-  ) async {
+  Future<void> _payInvoice(BuildContext context, OutstandingDues r) async {
     final confirmed = await _confirmPay(context, r);
     if (!confirmed || !context.mounted) return;
 
+    setState(() => _payingId = r.invoiceId);
     final client = ref.read(supabaseClientProvider);
     final profile = ref.read(currentProfileProvider).valueOrNull;
     final academy = ref.read(myAcademyProvider).valueOrNull;
@@ -1151,16 +1152,16 @@ class _OutstandingCard extends ConsumerWidget {
           AppSnackbar.success(context, 'Payment received');
           // Webhook will update the invoice; refresh the dues list so the
           // row drops out without waiting for the user to pull-to-refresh.
-          ref.invalidate(studentOutstandingDuesProvider(studentId));
+          ref.invalidate(studentOutstandingDuesProvider(widget.studentId));
         case CheckoutExternalWallet(:final walletName):
           AppSnackbar.info(context, 'Continuing in $walletName…');
         case CheckoutFailure(:final message):
           AppSnackbar.error(context, 'Payment failed: $message');
       }
     } on Object catch (e) {
-      if (context.mounted) {
-        AppSnackbar.error(context, friendlyError(e));
-      }
+      if (context.mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _payingId = null);
     }
   }
 
@@ -1175,9 +1176,10 @@ class _OutstandingCard extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final async = ref.watch(studentOutstandingDuesProvider(studentId));
+    final async = ref.watch(studentOutstandingDuesProvider(widget.studentId));
+    final busy = _payingId != null || _downloadingId != null;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1217,9 +1219,12 @@ class _OutstandingCard extends ConsumerWidget {
                     _DuesRow(
                       row: rows[i],
                       tone: _toneFor(rows[i].status),
-                      onPay: () => _payInvoice(context, ref, rows[i]),
+                      isPaying: _payingId == rows[i].invoiceId,
+                      isDownloading: _downloadingId == rows[i].invoiceId,
+                      disabled: busy,
+                      onPay: () => _payInvoice(context, rows[i]),
                       onDownload: () =>
-                          _downloadInvoice(context, ref, rows[i].invoiceId),
+                          _downloadInvoice(context, rows[i].invoiceId),
                     ),
                   ],
                 ],
@@ -1238,12 +1243,18 @@ class _DuesRow extends StatelessWidget {
     required this.tone,
     required this.onPay,
     required this.onDownload,
+    this.isPaying = false,
+    this.isDownloading = false,
+    this.disabled = false,
   });
 
   final OutstandingDues row;
   final AppBadgeTone tone;
   final VoidCallback onPay;
   final VoidCallback onDownload;
+  final bool isPaying;
+  final bool isDownloading;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1293,15 +1304,27 @@ class _DuesRow extends StatelessWidget {
         Row(
           children: [
             OutlinedButton.icon(
-              onPressed: onDownload,
-              icon: const Icon(Icons.file_download_outlined, size: 18),
+              onPressed: disabled ? null : onDownload,
+              icon: isDownloading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.file_download_outlined, size: 18),
               label: const Text('Invoice'),
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: FilledButton.tonal(
-                onPressed: onPay,
-                child: const Text('Pay'),
+                onPressed: disabled ? null : onPay,
+                child: isPaying
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Pay'),
               ),
             ),
           ],

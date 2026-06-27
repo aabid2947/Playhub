@@ -4,6 +4,7 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
+import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Embedded section listing a batch's fee assignments. Mirrors
@@ -13,6 +14,7 @@ class BatchFeesSection extends ConsumerWidget {
   const BatchFeesSection({
     required this.batchId,
     this.canManage = true,
+    this.daysPerWeek,
     super.key,
   });
 
@@ -22,6 +24,10 @@ class BatchFeesSection extends ConsumerWidget {
   /// "Assign fee" / stop-billing controls are hidden (e.g. a center_admin who
   /// can view revenue but not write finance).
   final bool canManage;
+
+  /// Number of days/week the batch runs. When provided, the "New fee" button
+  /// pre-seeds the per-day calculator in [FeeStructureFormPage].
+  final int? daysPerWeek;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,14 +40,31 @@ class BatchFeesSection extends ConsumerWidget {
         AppSectionHeader(
           title: 'Batch fees',
           trailing: canManage
-              ? FilledButton.tonalIcon(
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Assign fee'),
-                  onPressed: () => _showAssignSheet(
-                    context,
-                    ref,
-                    feesAsync.valueOrNull ?? const [],
-                  ),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextButton.icon(
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('New fee'),
+                      onPressed: () => Navigator.of(context).push<void>(
+                        MaterialPageRoute(
+                          builder: (_) => FeeStructureFormPage(
+                            prefilledDaysPerWeek: daysPerWeek,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.link, size: 18),
+                      label: const Text('Assign'),
+                      onPressed: () => _showAssignSheet(
+                        context,
+                        ref,
+                        feesAsync.valueOrNull ?? const [],
+                      ),
+                    ),
+                  ],
                 )
               : null,
         ),
@@ -387,7 +410,10 @@ class _AssignSheetState extends State<_AssignSheet> {
                   (f) => DropdownMenuItem(
                     value: f.id,
                     child: Text(
-                      '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}',
+                      f.pricePerDay != null
+                          ? '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}'
+                              ' (₹${f.pricePerDay!.toStringAsFixed(0)}/day)'
+                          : '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

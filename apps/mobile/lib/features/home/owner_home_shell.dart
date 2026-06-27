@@ -12,6 +12,8 @@ import 'package:playhub/features/coaches/presentation/coaches_tab.dart';
 import 'package:playhub/features/home/home_tab.dart';
 import 'package:playhub/features/settings/settings_tab.dart';
 import 'package:playhub/features/students/presentation/students_tab.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
+import 'package:playhub/features/subscription/presentation/subscription_page.dart';
 import 'package:playhub/shared/widgets/verification_banner.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -63,6 +65,7 @@ class _OwnerHomeShellState extends State<OwnerHomeShell> {
       ),
       body: Column(
         children: [
+          const _SubscriptionBanner(),
           if (!_bannerDismissed)
             _DismissibleBanner(
               onDismiss: () => setState(() => _bannerDismissed = true),
@@ -134,6 +137,94 @@ class _DismissibleBanner extends ConsumerWidget {
           onPressed: onDismiss,
         ),
       ],
+    );
+  }
+}
+
+/// Subscription status strip: warns when a trial is about to lapse, and (for
+/// the center_admin who shares this shell — owners/admins are paywalled) flags
+/// a frozen academy. Renders nothing while active or still loading.
+class _SubscriptionBanner extends ConsumerWidget {
+  const _SubscriptionBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sub = ref.watch(mySubscriptionProvider).valueOrNull;
+    if (sub == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+
+    if (sub.isBlocked) {
+      return _SubBannerStrip(
+        color: theme.colorScheme.error,
+        icon: Icons.lock_outline,
+        text: 'Academy subscription is inactive. '
+            'Contact your academy owner to renew.',
+      );
+    }
+    if (sub.isTrialEndingSoon) {
+      final d = sub.trialDaysLeft ?? 0;
+      return _SubBannerStrip(
+        color: const Color(0xFFB45309), // amber-700
+        icon: Icons.schedule,
+        text: d <= 0
+            ? 'Your free trial ends today.'
+            : 'Your free trial ends in $d day${d == 1 ? '' : 's'}.',
+        actionLabel: 'View plans',
+        onAction: () => Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => const SubscriptionPage()),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+}
+
+class _SubBannerStrip extends StatelessWidget {
+  const _SubBannerStrip({
+    required this.color,
+    required this.icon,
+    required this.text,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String text;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: color.withValues(alpha: 0.10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                foregroundColor: color,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(actionLabel!),
+            ),
+        ],
+      ),
     );
   }
 }

@@ -223,6 +223,28 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-27 — subscription enforcement: a frozen academy is read-only
+Academies are now **write-frozen when their subscription is frozen** — suspended/cancelled, or a
+14-day trial that lapsed. Single gate `public.academy_writes_allowed()`
+([20260627000200](supabase/migrations/20260627000200_subscription_enforce_writes.sql)) is AND-ed into
+the write-only capability helpers + the policies that bypass them
+([20260627000300](supabase/migrations/20260627000300_subscription_enforce_policies.sql)).
+**GOTCHA: do NOT gate `can_admin_center_scope`** — it is reused inside the finance READ gate
+`can_view_student_finance`, so gating it would block finance *reads*; gate the write-only delegators
+(`can_manage_finance/invoice/batch_finance`) or the policy instead. **Stays open (carve-outs): all
+reads, the SaaS pay-to-unlock path, support tickets, messaging/notifications, the parent/student event
+self-register branch, and super_admin.** Recovery: a SaaS payment auto-reactivates
+([20260627000100](supabase/migrations/20260627000100_saas_auto_reactivate.sql) trigger on `saas_payments`)
+or super-admin clicks **Reactivate** (web-admin `reactivateSubscription`). Trial-expiry is enforced LIVE
+by the helper (no cron lag); `subscription-grace-period-check` also flips lapsed trials → suspended for
+UI/reporting. Mobile: a blocked owner/admin → `PaywallPage` (RoleDashboard); new
+`AcademySubscription.writesAllowed/isBlocked/isTrial/trialDaysLeft/isTrialEndingSoon`; owner-shell
+`_SubscriptionBanner`. Full plan + live status: [SUBSCRIPTION_ENFORCEMENT.md](SUBSCRIPTION_ENFORCEMENT.md).
+**OWED before prod:** apply the four `20260627*` migrations + run
+`supabase/tests/rls_subscription_enforcement.sql` (NOT run here — needs local Supabase); and **set
+existing real academies to `active`/fresh-trial first, or any on an expired trial freeze on apply.**
+Owner self-serve SaaS checkout (pay in-app) is a deferred fast-follow — recovery is super-admin-applied until then.
+
 ### 2026-06-19 — super-admin: per-academy Students/Coaches drill-down
 Super-admin can now see each academy's **students and coaches** via a **People** sub-nav
 (Students / Coaches `AppPillTabs`) on the academy detail page

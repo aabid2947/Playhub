@@ -206,6 +206,9 @@ class BatchDetailPage extends ConsumerWidget {
                     BatchFeesSection(
                       batchId: batch.id,
                       canManage: canManageFinance,
+                      daysPerWeek: batch.schedule.days.isEmpty
+                          ? null
+                          : batch.schedule.days.length,
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     BatchDiscountsSection(

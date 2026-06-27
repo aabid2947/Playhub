@@ -126,6 +126,9 @@ class _FeeTile extends ConsumerWidget {
 
     final subtitle = <String>[
       fee.type.label,
+      if (fee.pricePerDay != null)
+        '₹${fee.pricePerDay!.toStringAsFixed(0)}/day'
+        '${fee.daysPerWeek != null ? ' × ${fee.daysPerWeek}d/wk' : ''}',
       if (sportLabel != '—') sportLabel,
       if (fee.taxPct > 0) '+${fee.taxPct.toStringAsFixed(0)}% tax',
     ].join('  •  ');
