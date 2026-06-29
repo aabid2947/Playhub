@@ -53,7 +53,7 @@ class PushService {
     // surface the system notification while the app is open).
     await _localNotifs.initialize(
       const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('ic_stat_logo'),
         iOS: DarwinInitializationSettings(),
       ),
       onDidReceiveNotificationResponse: (resp) {
@@ -89,6 +89,8 @@ class PushService {
             _androidChannel.id, _androidChannel.name,
             channelDescription: _androidChannel.description,
             importance: Importance.high, priority: Priority.high,
+            icon: 'ic_stat_logo',
+            color: const Color(0xFFFF6A2C),
           ),
           iOS: const DarwinNotificationDetails(),
         ),
