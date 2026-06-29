@@ -24,9 +24,15 @@ export function nextPeriodEnd(start: Date, cycle: "monthly" | "yearly"): Date {
 }
 
 // ── Recurring invoice periods (recur-invoice-generation) ────────────────────
-export type FeeType = "monthly" | "quarterly" | "annual" | "one_time";
+export type FeeType = "weekly" | "monthly" | "quarterly" | "annual" | "one_time";
 
-/** Start of the billing period that `today` falls in, anchored on billingDay. */
+/**
+ * Start of the billing period that `today` falls in, anchored on billingDay
+ * (a day-of-month, 1–28). Only meaningful for day-of-month-anchored types
+ * (monthly/quarterly/annual). Weekly anchors on a weekday relative to the
+ * assignment start, so the cron uses `weeklyPeriodStart` instead — do NOT pass
+ * "weekly" or "one_time" here.
+ */
 export function anchorPeriodStart(today: Date, type: FeeType, billingDay: number): Date {
   const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), billingDay));
   if (type === "monthly") return d;
@@ -37,9 +43,23 @@ export function anchorPeriodStart(today: Date, type: FeeType, billingDay: number
   return new Date(Date.UTC(today.getUTCFullYear(), 0, billingDay));
 }
 
+/**
+ * Start of the rolling 7-day weekly period containing `today`, counted in whole
+ * weeks from `start` (the assignment start date). Weekly fees have no
+ * day-of-month billing_day — periods always align to the start date's weekday.
+ */
+export function weeklyPeriodStart(start: Date, today: Date): Date {
+  const msPerWeek = 7 * 86_400_000;
+  const weeks = Math.max(0, Math.floor((today.getTime() - start.getTime()) / msPerWeek));
+  const d = new Date(start);
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
+  return d;
+}
+
 export function nextPeriodStart(start: Date, type: FeeType): Date {
   const d = new Date(start);
-  if (type === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
+  if (type === "weekly") d.setUTCDate(d.getUTCDate() + 7);
+  else if (type === "monthly") d.setUTCMonth(d.getUTCMonth() + 1);
   else if (type === "quarterly") d.setUTCMonth(d.getUTCMonth() + 3);
   else d.setUTCFullYear(d.getUTCFullYear() + 1);
   return d;

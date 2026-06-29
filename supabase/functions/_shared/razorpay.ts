@@ -60,6 +60,28 @@ export async function createRazorpayOrder(
   return await res.json();
 }
 
+/// Authoritative fetch of a payment by id. Used by verify-on-return to confirm
+/// a charge server-side (the client-reported success is never trusted on its
+/// own — invariant #6).
+export async function fetchRazorpayPayment(
+  paymentId: string,
+  creds: RazorpayCreds,
+): Promise<{
+  id: string;
+  status: string; // created | authorized | captured | refunded | failed
+  amount: number; // paise
+  currency: string;
+  order_id: string | null;
+}> {
+  const res = await fetch(`${RAZORPAY_API}/payments/${paymentId}`, {
+    headers: { authorization: basicAuthHeader(creds) },
+  });
+  if (!res.ok) {
+    throw new Error(`razorpay fetch payment failed: ${res.status} ${await res.text()}`);
+  }
+  return await res.json();
+}
+
 export async function refundRazorpayPayment(
   args: {
     razorpay_payment_id: string;

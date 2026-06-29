@@ -1,5 +1,6 @@
 /// Type of fee structure — controls how the cron generates invoices.
 enum FeeType {
+  weekly('weekly', 'Weekly'),
   monthly('monthly', 'Monthly'),
   quarterly('quarterly', 'Quarterly'),
   annual('annual', 'Annual'),

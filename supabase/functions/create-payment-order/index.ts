@@ -13,7 +13,7 @@ import { initiatePaytmTransaction } from '../_shared/paytm.ts';
 import {
   resolveEnabledProvider,
   resolvePaytmCreds,
-  resolveRazorpayCreds,
+  resolveRazorpayCredsRequireAcademy,
 } from '../_shared/payment_gateway.ts';
 import { toPaise } from '../_shared/billing.ts';
 
@@ -125,12 +125,14 @@ Deno.serve(async (req) => {
     });
   }
 
-  // ---- Razorpay branch (academy keys or platform fallback) -----------------
-  let creds: Awaited<ReturnType<typeof resolveRazorpayCreds>>;
+  // ---- Razorpay branch (academy's OWN keys — fees go to the academy) -------
+  // Student fee collection requires the academy's own gateway: there is no
+  // platform fallback here (the platform account is only for SaaS billing).
+  let creds: Awaited<ReturnType<typeof resolveRazorpayCredsRequireAcademy>>;
   try {
-    creds = await resolveRazorpayCreds(admin, invoice.academy_id);
+    creds = await resolveRazorpayCredsRequireAcademy(admin, invoice.academy_id);
   } catch (e) {
-    return j({ error: (e as Error).message }, 500);
+    return j({ error: (e as Error).message }, 422);
   }
 
   let order: Awaited<ReturnType<typeof createRazorpayOrder>>;

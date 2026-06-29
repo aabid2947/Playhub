@@ -6,6 +6,8 @@ import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
+import 'package:playhub/features/payment_gateways/data/payment_gateway_providers.dart';
+import 'package:playhub/features/payment_gateways/presentation/payment_gateways_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -33,7 +35,14 @@ class FeeStructuresPage extends ConsumerWidget {
     final canManage = ref.watch(capabilitiesProvider).manageFinance;
 
     return Scaffold(
-      body: feesAsync.when(
+      body: Column(
+        children: [
+          // Online fee collection needs the academy's own gateway connected —
+          // surface a setup prompt for the owner until it is (the backend hard-
+          // requires it, so without this the parent's "Pay" just errors).
+          const _GatewaySetupBanner(),
+          Expanded(
+            child: feesAsync.when(
         loading: () => const AppSkeletonList(),
         error: (e, _) => AppErrorView(
           message: friendlyError(e),
@@ -69,6 +78,9 @@ class FeeStructuresPage extends ConsumerWidget {
             ),
           );
         },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: canManage
           ? FloatingActionButton.extended(
@@ -77,6 +89,78 @@ class FeeStructuresPage extends ConsumerWidget {
               label: const Text('New fee'),
             )
           : null,
+    );
+  }
+}
+
+/// Owner-only prompt: the academy must connect its own Razorpay account before
+/// students can pay fees online (the backend requires it). Hidden once a gateway
+/// is enabled + configured, or for roles that can't manage gateways.
+class _GatewaySetupBanner extends ConsumerWidget {
+  const _GatewaySetupBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(capabilitiesProvider).managePaymentGateways) {
+      return const SizedBox.shrink();
+    }
+    final gateways = ref.watch(paymentGatewaysProvider).valueOrNull;
+    if (gateways == null) return const SizedBox.shrink();
+    final ready =
+        gateways.values.any((g) => g.isEnabled && g.isConfigured);
+    if (ready) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        0,
+      ),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.payments_outlined, color: scheme.primary),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Set up online payments',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: AppType.bold,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              "Students can't pay fees online until you connect your academy's "
+              'Razorpay account. Add your keys and the webhook to start '
+              'collecting payments.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const PaymentGatewaysPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                label: const Text('Set up payments'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

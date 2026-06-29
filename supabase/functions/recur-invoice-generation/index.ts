@@ -14,6 +14,7 @@ import {
   isoDate,
   nextPeriodStart,
   round2,
+  weeklyPeriodStart,
 } from '../_shared/billing.ts';
 
 interface Assignment {
@@ -24,7 +25,7 @@ interface Assignment {
   end_date: string | null;
   billing_day: number | null;
   fee: {
-    type: 'monthly' | 'quarterly' | 'annual' | 'one_time';
+    type: 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'one_time';
     base_amount: number;
     tax_pct: number;
     name: string;
@@ -54,18 +55,38 @@ Deno.serve(async (req) => {
   let scanned = all.length;
   let created = 0;
   for (const a of all) {
-    if (a.fee.type === 'one_time') continue;
     if (a.end_date && new Date(a.end_date) < todayUtc) continue;
 
     const start = new Date(a.start_date + 'T00:00:00Z');
-    const billingDay = a.billing_day ?? start.getUTCDate();
+    // An assignment that hasn't begun yet bills nothing.
+    if (todayUtc < start) continue;
 
-    const periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
-    if (todayUtc.getUTCDate() !== billingDay) continue;
-    if (periodStart < start) continue;
-
-    const periodEnd = nextPeriodStart(periodStart, a.fee.type);
-    periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    // Resolve the [periodStart, periodEnd] this run should try to invoice.
+    // Each fee type anchors its period differently:
+    //   one_time → a single charge dated on the assignment start_date
+    //   weekly   → rolling 7-day windows counted from the start_date (no
+    //              day-of-month gate; billing_day is ignored)
+    //   monthly/quarterly/annual → day-of-month anchored; only fires when
+    //              today is the billing_day, dedup-guarded across the period
+    // The per-(student, fee, period_start) dedupe below makes every branch
+    // safe to re-run daily — it never double-bills a period.
+    let periodStart: Date;
+    let periodEnd: Date;
+    if (a.fee.type === 'one_time') {
+      periodStart = start;
+      periodEnd = start;
+    } else if (a.fee.type === 'weekly') {
+      periodStart = weeklyPeriodStart(start, todayUtc);
+      periodEnd = nextPeriodStart(periodStart, 'weekly');
+      periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    } else {
+      const billingDay = a.billing_day ?? start.getUTCDate();
+      if (todayUtc.getUTCDate() !== billingDay) continue;
+      periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
+      if (periodStart < start) continue;
+      periodEnd = nextPeriodStart(periodStart, a.fee.type);
+      periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    }
 
     // Skip if invoice already exists for this (student, fee, period_start) —
     // dedupes across both assignment sources.

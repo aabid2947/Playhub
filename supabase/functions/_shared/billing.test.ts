@@ -10,6 +10,7 @@ import {
   periodEndFor,
   round2,
   toPaise,
+  weeklyPeriodStart,
 } from "./billing.ts";
 
 const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
@@ -39,10 +40,26 @@ Deno.test("anchorPeriodStart anchors to the right period", () => {
 
 Deno.test("nextPeriodStart + periodEndFor", () => {
   const start = utc(2026, 4, 5); // 2026-05-05
+  assertEquals(isoDate(nextPeriodStart(start, "weekly")), "2026-05-12");
   assertEquals(isoDate(nextPeriodStart(start, "monthly")), "2026-06-05");
   assertEquals(isoDate(nextPeriodStart(start, "quarterly")), "2026-08-05");
   assertEquals(isoDate(nextPeriodStart(start, "annual")), "2027-05-05");
   assertEquals(isoDate(periodEndFor(start, "monthly")), "2026-06-04");
+  assertEquals(isoDate(periodEndFor(start, "weekly")), "2026-05-11");
+});
+
+Deno.test("weeklyPeriodStart anchors to whole weeks from the start date", () => {
+  const start = utc(2026, 4, 5); // 2026-05-05 (a Tuesday)
+  // Same day → period starts that day.
+  assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 5))), "2026-05-05");
+  // 6 days in → still the first week.
+  assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 11))), "2026-05-05");
+  // Day 7 → second week begins.
+  assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 12))), "2026-05-12");
+  // 20 days in → third full week (floor(20/7) = 2 → +14 days).
+  assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 25))), "2026-05-19");
+  // Before the assignment begins → clamped to the start date.
+  assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 1))), "2026-05-05");
 });
 
 Deno.test("daysLateSinceGrace floors at 1", () => {

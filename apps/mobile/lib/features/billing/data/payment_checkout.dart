@@ -64,12 +64,51 @@ class PaymentCheckout {
         return _payPaytm(context, body);
       case 'razorpay':
       default:
-        return _payRazorpay(
+        final r = await _payRazorpay(
           body,
           academyName: academyName,
           prefillEmail: prefillEmail,
           prefillContact: prefillContact,
         );
+        // The Razorpay sheet's "success" only means the user finished — it is
+        // NOT proof of a captured charge. Confirm server-side before we report
+        // success, so a payment can't be marked paid (or lost) on the client's
+        // word alone. The webhook remains the async backstop.
+        if (r is CheckoutSuccess) return _verifyRazorpay(r);
+        return r;
+    }
+  }
+
+  /// Server-side confirmation of a Razorpay charge (verify-razorpay-payment).
+  /// Returns the original success only when the server reports `captured`.
+  Future<CheckoutResult> _verifyRazorpay(CheckoutSuccess s) async {
+    try {
+      final res = await _client.functions.invoke(
+        'verify-razorpay-payment',
+        body: {
+          'razorpay_order_id': s.orderId,
+          'razorpay_payment_id': s.paymentId,
+        },
+      );
+      final data = res.data;
+      final status =
+          data is Map<String, dynamic> ? data['status']?.toString() : null;
+      if (status == 'captured') return s;
+      if (status == null) {
+        // Couldn't read a status — the webhook will reconcile it.
+        return const CheckoutFailure(
+          code: -5,
+          message: "Payment is being confirmed — we'll update once it clears.",
+        );
+      }
+      return CheckoutFailure(code: -1, message: 'Payment not completed ($status).');
+    } on Object {
+      // Verify call failed (e.g. network). Don't claim success; the webhook
+      // backstop still records a genuine capture.
+      return const CheckoutFailure(
+        code: -5,
+        message: "Payment is being confirmed — we'll update shortly.",
+      );
     }
   }
 

@@ -304,6 +304,8 @@ class _AssignSheetState extends State<_AssignSheet> {
         ? 'the billing day'
         : 'day $billingDay';
     switch (type) {
+      case FeeType.weekly:
+        return 'Generates an invoice every week from the start date.';
       case FeeType.monthly:
         return 'Generates an invoice every month on $day.';
       case FeeType.quarterly:
@@ -311,7 +313,7 @@ class _AssignSheetState extends State<_AssignSheet> {
       case FeeType.annual:
         return 'Generates an invoice every year on $day.';
       case FeeType.oneTime:
-        return 'Generates a single invoice on $day.';
+        return 'Generates a single invoice on the start date.';
     }
   }
 

@@ -59,6 +59,23 @@ export async function resolveRazorpayCreds(
   return { ...platformRazorpayCreds(), source: 'platform' };
 }
 
+/// Razorpay key+secret for an academy that MUST bring its own gateway (student
+/// fee collection — money goes to the academy's account, never the platform).
+/// No platform fallback: throws if the academy hasn't configured + enabled it.
+export async function resolveRazorpayCredsRequireAcademy(
+  admin: RpcClient,
+  academyId: string,
+): Promise<RazorpayCreds> {
+  const row = await fetchAcademyCreds(admin, academyId, 'razorpay');
+  if (!row?.is_enabled || !row.key_id || !row.api_secret) {
+    throw new Error(
+      'This academy has not set up its payment gateway yet. '
+      + 'Ask the academy owner to configure payments in Settings.',
+    );
+  }
+  return { keyId: row.key_id, keySecret: row.api_secret };
+}
+
 /// Razorpay webhook signing secret for verifying an inbound webhook. When an
 /// `academyId` is supplied (the `?academy=` routing param) and that academy has
 /// its own webhook secret, use it; otherwise the platform secret.

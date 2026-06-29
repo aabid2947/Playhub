@@ -91,6 +91,8 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
     // Weeks per billing period
     const weeksPerYear = 52.0;
     switch (_type) {
+      case FeeType.weekly:
+        return ppd * dpw;
       case FeeType.monthly:
         return ppd * dpw * (weeksPerYear / 12);
       case FeeType.quarterly:
@@ -529,6 +531,8 @@ class _PerDayCard extends StatelessWidget {
 
   static String _periodLabel(FeeType type) {
     switch (type) {
+      case FeeType.weekly:
+        return 'Weekly  (price × days)';
       case FeeType.monthly:
         return 'Monthly  (× 52 ÷ 12 weeks)';
       case FeeType.quarterly:
@@ -542,6 +546,8 @@ class _PerDayCard extends StatelessWidget {
 
   static String _formulaHint(FeeType type) {
     switch (type) {
+      case FeeType.weekly:
+        return 'price/day × days/week';
       case FeeType.monthly:
         return 'price/day × days/week × 4.33 avg weeks/month';
       case FeeType.quarterly:

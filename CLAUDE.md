@@ -223,6 +223,51 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-30 — fee frequencies: one_time now bills + new `weekly` frequency
+Two gaps in recurring-invoice generation fixed. **(1) `one_time` fees never billed** —
+[recur-invoice-generation](supabase/functions/recur-invoice-generation/index.ts) used to `continue` on
+`one_time`, so an assigned one-time fee produced **no invoice and no Pay button, ever** (only a manual
+`createInvoice` could bill it). The cron now issues a **single** invoice for a one-time fee dated on the
+assignment's **`start_date`** (`period_start = period_end = start_date`), guarded by the existing
+per-(student, fee, period_start) dedupe so it can't double-bill. **(2) New `weekly` frequency** added
+end-to-end: DB check constraint widened ([20260630000000](supabase/migrations/20260630000000_fee_weekly_frequency.sql)
+— **OWED: apply to hosted DB**), `FeeType.weekly` in the Dart enum + form, and period math
+`weeklyPeriodStart()` / `nextPeriodStart('weekly')` in [_shared/billing.ts](supabase/functions/_shared/billing.ts).
+**Weekly does NOT use `billing_day`** (a day-of-month 1–28) — it anchors to rolling 7-day windows counted
+from `start_date`, so the cron skips the day-of-month gate for weekly and relies on the dedupe.
+**GOTCHA:** `anchorPeriodStart()` is day-of-month only — never pass it `weekly`/`one_time` (the cron
+branches before calling it). **The "last 7 days" symptom was a red herring** — the dues list
+([parent_providers.dart](apps/mobile/lib/features/parent/data/parent_providers.dart) `studentOutstandingDuesProvider`)
+has no date filter; the "7 days" is just `due_date = period_start + 7`. **OWED before this takes effect:**
+apply the migration **and redeploy `recur-invoice-generation`** (the behavior change lives in deployed edge
+code); `flutter analyze` not run (standing preference); `gen:types` NOT needed (`type` is a text-check, not
+a pg enum). Billing unit tests (`_shared/billing.test.ts`) pass incl. new weekly cases.
+
+### 2026-06-30 — Razorpay verify-on-return + per-academy gateway REQUIRED for fees
+**Root-caused a silent payment loss:** a student paid (Razorpay captured ₹100) but the invoice stayed
+unpaid because the **webhook never fired** and there was **no fallback** — Razorpay confirmation was
+webhook-only. Fix: **verify-on-return** (mirrors the Paytm flow). After the Razorpay sheet closes,
+[PaymentCheckout.payInvoice](apps/mobile/lib/features/billing/data/payment_checkout.dart) now calls the
+new [verify-razorpay-payment](supabase/functions/verify-razorpay-payment/index.ts) edge fn, which
+re-confirms the charge **server-side via the Razorpay Payments API** ([fetchRazorpayPayment](supabase/functions/_shared/razorpay.ts))
+and records it through [confirmAndRecordRazorpay](supabase/functions/_shared/razorpay_record.ts). The
+**webhook stays as async backstop**; both converge on the same `payments` row via the existing UNIQUE
+`razorpay_payment_id` index (no webhook refactor needed). Client "success" is never trusted alone
+(invariant #6). **Fee collection now REQUIRES the academy's OWN gateway** — `create-payment-order` uses
+new `resolveRazorpayCredsRequireAcademy` (**no platform fallback**; returns 422 if unconfigured). **SaaS
+billing still uses the PLATFORM account** (`create-saas-order` unchanged) — two separate money paths, do
+not conflate. Owner UX: a **"Set up online payments" banner** on
+[fee_structures_page.dart](apps/mobile/lib/features/billing/presentation/fee_structures_page.dart) shows
+until the owner enables a configured gateway (the per-academy webhook URL is shown on the existing
+payment-gateways page). **GOTCHA discovered:** the app calls `create-payment-order` (unified) but only
+`create-razorpay-order` (legacy) had been deployed to the hosted project — **`create-payment-order` was
+missing**, so every student payment 404'd. Now deployed. **Deployed this session:** create-payment-order,
+verify-razorpay-payment (JWT on), razorpay-webhook, create-saas-order. **NOT deployed (Paytm, unused):**
+verify-paytm-payment, paytm-webhook. **SaaS still has no verify-on-return** (webhook + reactivate only) —
+a follow-up if SaaS payments ever silently drop. Mobile needs a rebuild to ship the verify-on-return +
+banner. **To collect fees, each academy must now configure Razorpay in Settings → Payment Gateways +
+register its per-academy webhook** (`…/razorpay-webhook?academy=<id>`).
+
 ### 2026-06-29 — owner self-serve SaaS checkout at signup (trial vs ₹100/mo) — Phase 6
 Built the deferred "Phase 6" owner self-serve SaaS payment. The academy-setup screen
 ([setup_academy_page.dart](apps/mobile/lib/features/dashboards/setup_academy_page.dart)) now offers
