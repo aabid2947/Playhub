@@ -17,6 +17,7 @@ class TrialLimits {
     this.studentCount = 0,
     this.coachCount = 0,
     this.sportCount = 0,
+    this.batchCount = 0,
     this.headCoachCount = 0,
     this.coachLoginCount = 0,
     this.trainerCount = 0,
@@ -28,12 +29,14 @@ class TrialLimits {
   static const int maxStudents = 5;
   static const int maxCoachRecords = 2; // 1 head coach + 1 coach
   static const int maxSports = 1;
+  static const int maxBatches = 2;
   static const int maxPerStaffRole = 1; // head_coach / coach / trainer logins
 
   final bool isTrial;
   final int studentCount;
   final int coachCount;
   final int sportCount;
+  final int batchCount;
   final int headCoachCount;
   final int coachLoginCount;
   final int trainerCount;
@@ -41,6 +44,7 @@ class TrialLimits {
   bool get studentsReached => isTrial && studentCount >= maxStudents;
   bool get coachesReached => isTrial && coachCount >= maxCoachRecords;
   bool get sportsReached => isTrial && sportCount >= maxSports;
+  bool get batchesReached => isTrial && batchCount >= maxBatches;
 
   /// True when the trial's per-role login cap for [role] is used up.
   bool staffRoleReached(String role) {
@@ -63,6 +67,9 @@ class TrialLimits {
   String get sportsMessage =>
       'Free trial limit reached — $maxSports sport. '
       'Upgrade your plan to offer more sports.';
+  String get batchesMessage =>
+      'Free trial limit reached — $maxBatches batches. '
+      'Upgrade your plan to add more.';
 }
 
 /// Resolves the academy's current trial usage. Returns [TrialLimits.unlimited]
@@ -83,6 +90,10 @@ final trialLimitsProvider = FutureProvider<TrialLimits>((ref) async {
       .eq('academy_id', academyId)) as List<dynamic>;
   final coaches = (await client
       .from('coaches')
+      .select('id')
+      .eq('academy_id', academyId)) as List<dynamic>;
+  final batches = (await client
+      .from('batches')
       .select('id')
       .eq('academy_id', academyId)) as List<dynamic>;
   // Distinct sports come from center_sports — the only sport-enable path the app
@@ -108,6 +119,7 @@ final trialLimitsProvider = FutureProvider<TrialLimits>((ref) async {
     isTrial: true,
     studentCount: students.length,
     coachCount: coaches.length,
+    batchCount: batches.length,
     sportCount: sportIds.length,
     headCoachCount: byRole('head_coach'),
     coachLoginCount: byRole('coach'),

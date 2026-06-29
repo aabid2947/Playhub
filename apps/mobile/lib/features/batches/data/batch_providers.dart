@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Reads from the `batches_with_counts` view so each row carries
@@ -47,7 +48,9 @@ Future<Batch> createBatch(WidgetRef ref, Map<String, dynamic> data) async {
       .insert({...data, 'academy_id': academyId})
       .select()
       .single();
-  ref.invalidate(batchesProvider);
+  ref
+    ..invalidate(batchesProvider)
+    ..invalidate(trialLimitsProvider); // refresh trial-cap counts
   return Batch.fromMap(row);
 }
 

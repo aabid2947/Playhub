@@ -248,7 +248,8 @@ upgrade in SubscriptionPage) still route through super-admin — only the signup
 
 ### 2026-06-29 — free-trial USAGE quotas (hard, RLS-enforced; separate from soft plan caps)
 A live free-trial academy (`subscription_status = 'trial'`) is now **capped on creation**: **1 sport,
-2 coach records (1 head coach + 1 coach), 1 head_coach / 1 coach / 1 trainer login, 5 students**. Caps
+2 coach records (1 head coach + 1 coach), 2 batches, 1 head_coach / 1 coach / 1 trainer login, 5 students**
+(batches added [20260629000200](supabase/migrations/20260629000200_trial_quota_batches.sql)). Caps
 **lift the moment it goes paid** (`active`/`past_due`); a suspended/cancelled/trial-EXPIRED academy is
 already fully write-frozen by `academy_writes_allowed()`, so the quotas only bite a *valid* trial. These
 are **distinct from** `subscription_plans.max_*` (those stay soft UI hints) — this is the v1.1 "real

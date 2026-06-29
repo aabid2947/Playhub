@@ -9,6 +9,7 @@ import 'package:playhub/features/batches/presentation/batch_detail_page.dart';
 import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchesTab extends ConsumerStatefulWidget {
@@ -27,10 +28,21 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
     );
   }
 
+  void _showTrialLimit(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final batchesAsync = ref.watch(batchesProvider);
     final caps = ref.watch(capabilitiesProvider);
+
+    // Free-trial cap: once at the batch limit, the create button prompts to
+    // upgrade instead of opening the form (RLS is the hard backstop).
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
+    final batchesBlocked = limits?.batchesReached ?? false;
 
     return Scaffold(
       // Body tab under owner_home_shell's single AppBar — no AppBar here; the
@@ -86,8 +98,10 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
       floatingActionButton: caps.manageBatches
           ? FloatingActionButton.extended(
               heroTag: 'fab-batches',
-              onPressed: _openForm,
-              icon: const Icon(Icons.add),
+              onPressed: batchesBlocked
+                  ? () => _showTrialLimit(limits!.batchesMessage)
+                  : _openForm,
+              icon: Icon(batchesBlocked ? Icons.lock_outline : Icons.add),
               label: const Text('New batch'),
             )
           : null,
