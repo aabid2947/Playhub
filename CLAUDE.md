@@ -223,6 +223,62 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-29 — owner self-serve SaaS checkout at signup (trial vs ₹100/mo) — Phase 6
+Built the deferred "Phase 6" owner self-serve SaaS payment. The academy-setup screen
+([setup_academy_page.dart](apps/mobile/lib/features/dashboards/setup_academy_page.dart)) now offers
+**two CTAs: "Start 14-day free trial"** (existing bootstrap path) **and "Subscribe — ₹100/month"**
+(opens Razorpay). New ₹100 **`starter`** plan
+([20260629000100](supabase/migrations/20260629000100_saas_self_serve_checkout.sql)). **SaaS billing uses
+PlayHub's PLATFORM Razorpay keys, NOT the academy's own merchant gateway** (that's only for parents
+paying the academy) — new [create-saas-order](supabase/functions/create-saas-order/index.ts) calls
+`platformRazorpayCreds()`, issues/reuses a `saas_invoice`, and creates an order tagged
+`notes.invoice_type='saas'`. [razorpay-webhook](supabase/functions/razorpay-webhook/index.ts) branches on
+that tag → inserts `saas_payments` (idempotent via new **`saas_payments.unique_event_id`**) instead of
+`payments`. **Missing trial→active conversion fixed:** `reactivate_paid_subscription()` now also converts
+a paying **`trial`** sub → active (was past_due/suspended only) + rolls a fresh monthly period. Mobile:
+`PaymentCheckout.paySaasSubscription()` (reuses the Razorpay sheet). **GOTCHA:** the subscribe path calls
+the `bootstrap_owner_academy` RPC **directly** (not `bootstrapOwnerAcademy()`) so the `currentProfile`
+invalidation is **deferred until after checkout** — otherwise RoleDashboard rebuilds and unmounts the
+setup page mid-payment. A cancelled/failed payment just lands the owner on their trial (academy already
+created). **OWED before prod (NOT done here):** deploy `create-saas-order` (JWT ON) + redeploy
+`razorpay-webhook` (`--no-verify-jwt`); apply migration `20260629000100`; confirm the Razorpay webhook is
+registered for `payment.captured` on the **platform** account (user confirmed platform keys+webhook are
+configured); `flutter analyze` not run (standing preference). Self-serve plan *changes* (post-signup
+upgrade in SubscriptionPage) still route through super-admin — only the signup checkout is self-serve.
+
+### 2026-06-29 — free-trial USAGE quotas (hard, RLS-enforced; separate from soft plan caps)
+A live free-trial academy (`subscription_status = 'trial'`) is now **capped on creation**: **1 sport,
+2 coach records (1 head coach + 1 coach), 1 head_coach / 1 coach / 1 trainer login, 5 students**. Caps
+**lift the moment it goes paid** (`active`/`past_due`); a suspended/cancelled/trial-EXPIRED academy is
+already fully write-frozen by `academy_writes_allowed()`, so the quotas only bite a *valid* trial. These
+are **distinct from** `subscription_plans.max_*` (those stay soft UI hints) — this is the v1.1 "real
+enforcement" the soft caps deferred. Migration
+[20260629000000](supabase/migrations/20260629000000_trial_quota_limits.sql): `academy_on_trial()` +
+per-resource `trial_allows_*()` count helpers added as **standalone RESTRICTIVE INSERT policies** on
+students, coaches, center_sports, users (+ `academy_sports` **only where that table exists** — canonical
+[20260510000100](supabase/migrations/20260510000100_sports_catalog.sql) but missing on some drifted DBs,
+so guarded by `to_regclass`; the **`center_sports` cap enforces "1 sport"** since the app never writes
+`academy_sports`). **Why RESTRICTIVE, not editing the existing INSERT policies:** they AND on top of
+whatever permissive policies exist, so this migration is **independent of the `20260627*` freeze layer**
+(does NOT reference `academy_writes_allowed()`) and doesn't have to reproduce drifted policy bodies — it
+applies cleanly even on a DB that never got subscription enforcement. **These trial caps ≠ the read-only
+freeze:** an EXPIRED-trial "service interrupted" lockout still requires the `20260627*` migrations. **GOTCHAS for future edits:** (1) caps are **INSERT-ONLY** — never
+fold a count into the shared `can_manage_*`/`can_provision_role` helpers (they gate UPDATE too → would
+block *editing* existing rows at the limit); (2) every helper **excludes the new row by `id`
+(`id <> p_row_id`)** because an INSERT `WITH CHECK` subquery can already see the just-inserted row
+(off-by-one otherwise); (3) **staff LOGINS bypass this RLS** — invite-user creates them via service role
+(auth trigger = SECURITY DEFINER), so the per-role login cap's real enforcement is in
+[invite-user](supabase/functions/invite-user/index.ts) via `trial_role_quota_ok()`; the `users` RLS cap
+is only a backstop. "1 sport" = 1 distinct sport across the academy (same sport re-enabled at another
+center is allowed). Mobile mirror: `trialLimitsProvider` +
+[trial_limits.dart](apps/mobile/lib/features/subscription/data/trial_limits.dart) greys the New-student /
+New-coach / Add-sport entry points and the invite role (RLS is the hard gate); create paths invalidate
+`trialLimitsProvider`. pgTAP: [rls_trial_quota.sql](supabase/tests/rls_trial_quota.sql). **OWED before
+prod (NOT run here — needs local Supabase/Docker + npm):** apply the migration + run `rls_trial_quota.sql`;
+web-admin `npm run gen:types` is **not** needed (no schema/column/enum change — functions + policies only);
+`flutter analyze` not run (per standing preference). **Dev safety unchanged:** keep seed/demo academies
+`active` so resets don't cap testers (same note as 2026-06-27).
+
 ### 2026-06-27 — subscription enforcement: a frozen academy is read-only
 Academies are now **write-frozen when their subscription is frozen** — suspended/cancelled, or a
 14-day trial that lapsed. Single gate `public.academy_writes_allowed()`

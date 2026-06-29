@@ -73,6 +73,51 @@ class PaymentCheckout {
     }
   }
 
+  /// Owner self-serve SaaS subscription checkout. Calls `create-saas-order`
+  /// (which issues a SaaS invoice + a Razorpay order on PlayHub's PLATFORM
+  /// keys), then opens the Razorpay sheet. The platform webhook records the
+  /// payment and the reactivate trigger flips the academy to active — so a
+  /// [CheckoutSuccess] here means "paid"; the activation lands server-side.
+  Future<CheckoutResult> paySaasSubscription({
+    required String academyName,
+    String planCode = 'starter',
+    String? prefillEmail,
+    String? prefillContact,
+  }) async {
+    final Map<String, dynamic> body;
+    try {
+      final res = await _client.functions
+          .invoke('create-saas-order', body: {'plan_code': planCode});
+      final data = res.data;
+      if (data is! Map<String, dynamic>) {
+        return const CheckoutFailure(
+          code: -3,
+          message: 'Could not start payment. Please try again.',
+        );
+      }
+      body = data;
+    } on Object catch (e) {
+      return CheckoutFailure(code: -3, message: _humanizeOrderError(e));
+    }
+
+    if (body['order_id'] == null) {
+      final raw = body['error']?.toString() ?? '';
+      return CheckoutFailure(
+        code: -4,
+        message: raw.isEmpty || raw.length > 140
+            ? 'Could not start payment. Please try again.'
+            : raw,
+      );
+    }
+
+    return _payRazorpay(
+      body,
+      academyName: academyName,
+      prefillEmail: prefillEmail,
+      prefillContact: prefillContact,
+    );
+  }
+
   // --- Razorpay (native sheet) ------------------------------------------------
 
   Future<CheckoutResult> _payRazorpay(

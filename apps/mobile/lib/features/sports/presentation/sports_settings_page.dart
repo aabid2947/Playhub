@@ -9,6 +9,7 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Settings → Sports. The center selector is the scope control: pick a center,
@@ -48,6 +49,10 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
     // any center, center_admin their OWN (can_admin_center_scope). This only
     // hides the controls; RLS is the real gate.
     final canManage = caps.manageSports;
+    // Free-trial cap: a trial academy may offer only 1 sport. Once reached, the
+    // Add-sport FAB prompts to upgrade (RLS is the hard backstop).
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
+    final sportsBlocked = limits?.sportsReached ?? false;
     return Scaffold(
       body: centersAsync.when(
         loading: () => const AppSkeletonList(),
@@ -123,13 +128,19 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
       floatingActionButton: (_centerId == null || !canManage)
           ? null
           : FloatingActionButton.extended(
-              icon: const Icon(Icons.add),
+              icon: Icon(sportsBlocked ? Icons.lock_outline : Icons.add),
               label: const Text('Add sport'),
-              onPressed: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => _AddSportSheet(centerId: _centerId!),
-              ),
+              onPressed: sportsBlocked
+                  ? () => ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(content: Text(limits!.sportsMessage)),
+                    )
+                  : () => showModalBottomSheet<void>(
+                        context: context,
+                        isScrollControlled: true,
+                        builder: (_) => _AddSportSheet(centerId: _centerId!),
+                      ),
             ),
     );
   }
@@ -602,7 +613,8 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
     await repo.enableSportAtCenter(centerId: widget.centerId, sportId: s.id);
     ref
       ..invalidate(centerSportsProvider(widget.centerId))
-      ..invalidate(academyCenterSportsProvider);
+      ..invalidate(academyCenterSportsProvider)
+      ..invalidate(trialLimitsProvider); // refresh trial-cap counts
     if (mounted) Navigator.pop(context);
   }
 
@@ -621,7 +633,8 @@ class _AddSportSheetState extends ConsumerState<_AddSportSheet> {
       ref
         ..invalidate(centerSportsProvider(widget.centerId))
         ..invalidate(academyCenterSportsProvider)
-        ..invalidate(allSportsProvider);
+        ..invalidate(allSportsProvider)
+        ..invalidate(trialLimitsProvider); // refresh trial-cap counts
       if (mounted) Navigator.pop(context);
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));

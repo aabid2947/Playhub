@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentsFilter {
@@ -128,7 +129,9 @@ Future<Student> createStudent(WidgetRef ref, Map<String, dynamic> data) async {
       code: '42501',
     );
   }
-  ref.invalidate(studentsProvider);
+  ref
+    ..invalidate(studentsProvider)
+    ..invalidate(trialLimitsProvider); // refresh trial-cap counts
   return Student.fromMap(row);
 }
 

@@ -123,6 +123,26 @@ Deno.serve(async (req) => {
     return j({ error: `you are not allowed to invite a ${body.role}` }, 403);
   }
 
+  // Free-trial usage cap. Staff logins are minted via the service role (the
+  // auth trigger bypasses RLS), so the per-role trial quota — 1 head_coach /
+  // 1 coach / 1 trainer while on trial — is enforced here rather than in the
+  // users RLS policy. trial_role_quota_ok() returns true once the academy is
+  // paid (caps lift) or the role isn't trial-capped. See 20260629000000.
+  const { data: quotaOk, error: quotaErr } = await callerClient.rpc(
+    'trial_role_quota_ok',
+    { p_role: body.role },
+  );
+  if (quotaErr) {
+    console.log('[invite-user] trial_role_quota_ok failed', quotaErr.message);
+    return j({ error: quotaErr.message }, 400);
+  }
+  if (quotaOk !== true) {
+    return j({
+      error: `Your free trial allows only one ${body.role.replace('_', ' ')}. `
+        + 'Upgrade your plan to invite more.',
+    }, 403);
+  }
+
   // Validate any linked rows belong to caller's academy.
   const admin = createClient(url, key);
   const academyId = caller.academy_id;

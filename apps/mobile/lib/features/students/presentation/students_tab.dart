@@ -9,6 +9,7 @@ import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_bulk_import_page.dart';
 import 'package:playhub/features/students/presentation/student_form_page.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -39,19 +40,34 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
     );
   }
 
+  void _showTrialLimit(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final studentsAsync = ref.watch(studentsProvider);
     final caps = ref.watch(capabilitiesProvider);
 
+    // Free-trial cap: once the academy hits its student limit, the create
+    // entry points show an upgrade prompt instead (RLS is the hard backstop).
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
+    final studentsBlocked = limits?.studentsReached ?? false;
+
     // Bulk import creates NEW students — onboarding, so hide it for roles that
     // can't create (e.g. coaches, who only edit their own batch students). RLS
     // rejects it regardless.
-    final onImport = caps.createStudents
-        ? () => Navigator.of(context).push<void>(
-              MaterialPageRoute(builder: (_) => const StudentBulkImportPage()),
-            )
-        : null;
+    final onImport = !caps.createStudents
+        ? null
+        : studentsBlocked
+            ? () => _showTrialLimit(limits!.studentsMessage)
+            : () => Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => const StudentBulkImportPage(),
+                  ),
+                );
 
     return Scaffold(
       // Body tab under owner_home_shell's single AppBar — no AppBar here; the
@@ -102,8 +118,12 @@ class _StudentsTabState extends ConsumerState<StudentsTab> {
       floatingActionButton: caps.createStudents
           ? FloatingActionButton.extended(
               heroTag: 'fab-students',
-              onPressed: _openForm,
-              icon: const Icon(Icons.person_add),
+              onPressed: studentsBlocked
+                  ? () => _showTrialLimit(limits!.studentsMessage)
+                  : _openForm,
+              icon: Icon(
+                studentsBlocked ? Icons.lock_outline : Icons.person_add,
+              ),
               label: const Text('New student'),
             )
           : null,

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final coachesProvider = FutureProvider<List<Coach>>((ref) async {
@@ -41,7 +42,9 @@ Future<Coach> createCoach(WidgetRef ref, Map<String, dynamic> data) async {
       code: '42501',
     );
   }
-  ref.invalidate(coachesProvider);
+  ref
+    ..invalidate(coachesProvider)
+    ..invalidate(trialLimitsProvider); // refresh trial-cap counts
   return Coach.fromMap(row);
 }
 

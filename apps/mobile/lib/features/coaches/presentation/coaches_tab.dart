@@ -7,6 +7,7 @@ import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_bulk_import_page.dart';
 import 'package:playhub/features/coaches/presentation/coach_form_page.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -44,6 +45,12 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
     );
   }
 
+  void _showTrialLimit(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   /// Client-side search + status filter over the already-fetched list. The
   /// coaches provider returns the full tenant-scoped set; we narrow it here so
   /// the data layer stays untouched.
@@ -74,6 +81,11 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
     final coachesAsync = ref.watch(coachesProvider);
     final caps = ref.watch(capabilitiesProvider);
 
+    // Free-trial cap: once at the coach limit, create entry points prompt to
+    // upgrade instead of opening the form (RLS is the hard backstop).
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
+    final coachesBlocked = limits?.coachesReached ?? false;
+
     // Header count reflects the filtered view (null until data lands).
     final loaded = coachesAsync.valueOrNull;
     final headerCount = loaded == null ? null : _filter(loaded).length;
@@ -89,7 +101,11 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
             onStatusChanged: (v) => setState(() => _status = v),
             // Bulk import creates NEW coaches — onboarding, so it follows the
             // same gate as the New-coach FAB. RLS rejects it regardless.
-            onImport: caps.manageCoaches ? _openImport : null,
+            onImport: !caps.manageCoaches
+                ? null
+                : coachesBlocked
+                    ? () => _showTrialLimit(limits!.coachesMessage)
+                    : _openImport,
           ),
           Expanded(
             child: coachesAsync.when(
@@ -136,8 +152,10 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
       floatingActionButton: caps.manageCoaches
           ? FloatingActionButton.extended(
               heroTag: 'fab-coaches',
-              onPressed: _openForm,
-              icon: const Icon(Icons.add),
+              onPressed: coachesBlocked
+                  ? () => _showTrialLimit(limits!.coachesMessage)
+                  : _openForm,
+              icon: Icon(coachesBlocked ? Icons.lock_outline : Icons.add),
               label: const Text('New coach'),
             )
           : null,

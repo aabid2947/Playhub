@@ -61,6 +61,34 @@ Deno.serve(async (req) => {
   const invoiceId = payload.notes?.invoice_id;
   const academyId = payload.notes?.academy_id;
   const studentId = payload.notes?.student_id;
+  const invoiceType = payload.notes?.invoice_type ?? 'student';
+
+  // SaaS subscription payments (PlayHub billing the academy) record into
+  // saas_payments — no student. The apply_saas_payment + reactivate triggers
+  // then mark the invoice paid and activate the academy.
+  if (invoiceType === 'saas') {
+    if (!invoiceId || !academyId) {
+      return j({ ok: true, ignored: 'missing saas notes' });
+    }
+    if (event.event !== 'payment.captured') {
+      return j({ ok: true, ignored: event.event });
+    }
+    const { error } = await admin.from('saas_payments').insert({
+      academy_id: academyId,
+      saas_invoice_id: invoiceId,
+      amount: (payload.amount ?? 0) / 100,
+      method: 'razorpay',
+      razorpay_order_id: payload.order_id,
+      razorpay_payment_id: payload.id,
+      unique_event_id: eventId,
+    });
+    // 23505 = unique_violation → duplicate webhook delivery, already recorded.
+    if (error && error.code !== '23505') {
+      return j({ error: error.message }, 500);
+    }
+    return j({ ok: true, event: 'payment.captured', saas_invoice_id: invoiceId });
+  }
+
   if (!invoiceId || !academyId || !studentId) {
     return j({ ok: true, ignored: 'missing notes — likely external order' });
   }

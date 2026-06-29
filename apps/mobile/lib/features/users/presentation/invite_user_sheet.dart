@@ -4,6 +4,7 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -91,6 +92,19 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+    // Free-trial cap on staff logins (head_coach / coach / trainer = 1 each).
+    // The invite-user edge fn enforces this server-side too; this is the early,
+    // friendly stop before we fire the request.
+    final limits = await ref.read(trialLimitsProvider.future);
+    if (!mounted) return;
+    if (limits.staffRoleReached(_role)) {
+      AppSnackbar.error(
+        context,
+        'Free trial limit reached — one ${_roleLabel(_role).toLowerCase()}. '
+        'Upgrade your plan to invite more.',
+      );
+      return;
+    }
     final caps = ref.read(capabilitiesProvider);
     if (widget.preset == null &&
         !caps.inviteScopedToOwnCenter &&
@@ -120,6 +134,7 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
           result.userId != null) {
         await repo.grantCenters(result.userId!, _extraCenterIds.toList());
       }
+      ref.invalidate(trialLimitsProvider); // refresh trial-cap counts
       if (!mounted) return;
       final email = _email.text.trim();
       final msg = result.resent
@@ -350,6 +365,23 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
+                    // Free-trial cap warning for the selected staff role.
+                    if (ref
+                            .watch(trialLimitsProvider)
+                            .valueOrNull
+                            ?.staffRoleReached(_role) ??
+                        false) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Your free trial allows only one '
+                        '${_roleLabel(_role).toLowerCase()}. '
+                        'Upgrade your plan to invite more.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppSemanticColors.of(context).danger,
+                          fontWeight: AppType.semibold,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

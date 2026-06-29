@@ -15,7 +15,7 @@
 --   4. 20260627000300_subscription_enforce_policies (gate the inline/direct policies)
 --
 -- NOTE: if your DB already has SOME of these applied, a `create trigger ...` or a
--- `drop policy ...` will error and the whole transaction rolls back. In that case
+-- `drop policy if exists ...` will error and the whole transaction rolls back. In that case
 -- use `supabase db push` instead (applies only what's missing).
 --
 -- AFTER APPLYING:
@@ -186,6 +186,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_saas_payment_reactivate on public.saas_payments;
 create trigger trg_saas_payment_reactivate
   after insert on public.saas_payments
   for each row execute function public.reactivate_paid_subscription();
@@ -487,7 +488,7 @@ $$;
 -- ============================================================================
 
 -- ---- students_update: gate the inline coach branch too ---------------------
-drop policy students_update on public.students;
+drop policy if exists students_update on public.students;
 create policy students_update on public.students
   for update using (
     public.is_super_admin()
@@ -506,9 +507,9 @@ create policy students_update on public.students
   );
 
 -- ---- leads (direct can_admin_center_scope) ---------------------------------
-drop policy leads_write_insert on public.leads;
-drop policy leads_write_update on public.leads;
-drop policy leads_write_delete on public.leads;
+drop policy if exists leads_write_insert on public.leads;
+drop policy if exists leads_write_update on public.leads;
+drop policy if exists leads_write_delete on public.leads;
 
 create policy leads_write_insert on public.leads
   for insert with check (
@@ -538,9 +539,9 @@ create policy leads_write_delete on public.leads
   );
 
 -- ---- inventory_items (direct can_admin_center_scope) -----------------------
-drop policy inv_items_write_insert on public.inventory_items;
-drop policy inv_items_write_update on public.inventory_items;
-drop policy inv_items_write_delete on public.inventory_items;
+drop policy if exists inv_items_write_insert on public.inventory_items;
+drop policy if exists inv_items_write_update on public.inventory_items;
+drop policy if exists inv_items_write_delete on public.inventory_items;
 
 create policy inv_items_write_insert on public.inventory_items
   for insert with check (
@@ -570,9 +571,9 @@ create policy inv_items_write_delete on public.inventory_items
   );
 
 -- ---- fee_structures (templates; direct can_admin_center_scope) -------------
-drop policy fee_structures_write_insert on public.fee_structures;
-drop policy fee_structures_write_update on public.fee_structures;
-drop policy fee_structures_write_delete on public.fee_structures;
+drop policy if exists fee_structures_write_insert on public.fee_structures;
+drop policy if exists fee_structures_write_update on public.fee_structures;
+drop policy if exists fee_structures_write_delete on public.fee_structures;
 
 create policy fee_structures_write_insert on public.fee_structures
   for insert with check (
@@ -602,9 +603,9 @@ create policy fee_structures_write_delete on public.fee_structures
   );
 
 -- ---- discount_structures (templates; direct can_admin_center_scope) --------
-drop policy ds_write_insert on public.discount_structures;
-drop policy ds_write_update on public.discount_structures;
-drop policy ds_write_delete on public.discount_structures;
+drop policy if exists ds_write_insert on public.discount_structures;
+drop policy if exists ds_write_update on public.discount_structures;
+drop policy if exists ds_write_delete on public.discount_structures;
 
 create policy ds_write_insert on public.discount_structures
   for insert with check (
@@ -634,9 +635,9 @@ create policy ds_write_delete on public.discount_structures
   );
 
 -- ---- center_sports (direct can_admin_center_scope) -------------------------
-drop policy center_sports_write_insert on public.center_sports;
-drop policy center_sports_write_update on public.center_sports;
-drop policy center_sports_write_delete on public.center_sports;
+drop policy if exists center_sports_write_insert on public.center_sports;
+drop policy if exists center_sports_write_update on public.center_sports;
+drop policy if exists center_sports_write_delete on public.center_sports;
 
 create policy center_sports_write_insert on public.center_sports
   for insert with check (
@@ -666,9 +667,9 @@ create policy center_sports_write_delete on public.center_sports
   );
 
 -- ---- academy_sports (catalog; inline has_admin_or_higher) ------------------
-drop policy academy_sports_admin_insert on public.academy_sports;
-drop policy academy_sports_admin_update on public.academy_sports;
-drop policy academy_sports_admin_delete on public.academy_sports;
+drop policy if exists academy_sports_admin_insert on public.academy_sports;
+drop policy if exists academy_sports_admin_update on public.academy_sports;
+drop policy if exists academy_sports_admin_delete on public.academy_sports;
 
 create policy academy_sports_admin_insert on public.academy_sports
   for insert with check (
@@ -694,9 +695,9 @@ create policy academy_sports_admin_delete on public.academy_sports
   );
 
 -- ---- vendors (inline has_admin_or_higher) ----------------------------------
-drop policy vendors_admin_insert on public.vendors;
-drop policy vendors_admin_update on public.vendors;
-drop policy vendors_admin_delete on public.vendors;
+drop policy if exists vendors_admin_insert on public.vendors;
+drop policy if exists vendors_admin_update on public.vendors;
+drop policy if exists vendors_admin_delete on public.vendors;
 
 create policy vendors_admin_insert on public.vendors
   for insert with check (
@@ -722,9 +723,9 @@ create policy vendors_admin_delete on public.vendors
   );
 
 -- ---- inventory_categories (inline has_admin_or_higher) ---------------------
-drop policy inv_cats_admin_insert on public.inventory_categories;
-drop policy inv_cats_admin_update on public.inventory_categories;
-drop policy inv_cats_admin_delete on public.inventory_categories;
+drop policy if exists inv_cats_admin_insert on public.inventory_categories;
+drop policy if exists inv_cats_admin_update on public.inventory_categories;
+drop policy if exists inv_cats_admin_delete on public.inventory_categories;
 
 create policy inv_cats_admin_insert on public.inventory_categories
   for insert with check (
@@ -750,7 +751,7 @@ create policy inv_cats_admin_delete on public.inventory_categories
   );
 
 -- ---- inventory_movements (inline staff role list) --------------------------
-drop policy inv_moves_staff_insert on public.inventory_movements;
+drop policy if exists inv_moves_staff_insert on public.inventory_movements;
 create policy inv_moves_staff_insert on public.inventory_movements
   for insert with check (
     public.is_super_admin()
@@ -764,9 +765,9 @@ create policy inv_moves_staff_insert on public.inventory_movements
   );
 
 -- ---- parent_links (inline has_admin_or_higher) -----------------------------
-drop policy parent_links_admin_insert on public.parent_links;
-drop policy parent_links_admin_update on public.parent_links;
-drop policy parent_links_admin_delete on public.parent_links;
+drop policy if exists parent_links_admin_insert on public.parent_links;
+drop policy if exists parent_links_admin_update on public.parent_links;
+drop policy if exists parent_links_admin_delete on public.parent_links;
 
 create policy parent_links_admin_insert on public.parent_links
   for insert with check (
@@ -792,9 +793,9 @@ create policy parent_links_admin_delete on public.parent_links
   );
 
 -- ---- announcements (compose; can_target_announcement is plpgsql) -----------
-drop policy announcements_compose_insert on public.announcements;
-drop policy announcements_compose_update on public.announcements;
-drop policy announcements_compose_delete on public.announcements;
+drop policy if exists announcements_compose_insert on public.announcements;
+drop policy if exists announcements_compose_update on public.announcements;
+drop policy if exists announcements_compose_delete on public.announcements;
 
 create policy announcements_compose_insert on public.announcements
   for insert with check (
@@ -838,9 +839,9 @@ create policy announcements_compose_delete on public.announcements
   );
 
 -- ---- event_registrations: gate STAFF writes; keep parent/student self-register
-drop policy event_regs_admin_insert on public.event_registrations;
-drop policy event_regs_admin_update on public.event_registrations;
-drop policy event_regs_admin_delete on public.event_registrations;
+drop policy if exists event_regs_admin_insert on public.event_registrations;
+drop policy if exists event_regs_admin_update on public.event_registrations;
+drop policy if exists event_regs_admin_delete on public.event_registrations;
 
 create policy event_regs_admin_insert on public.event_registrations
   for insert with check (
@@ -893,7 +894,7 @@ create policy event_regs_admin_delete on public.event_registrations
   );
 
 -- ---- event_results (inline staff role list) --------------------------------
-drop policy event_results_staff_insert on public.event_results;
+drop policy if exists event_results_staff_insert on public.event_results;
 create policy event_results_staff_insert on public.event_results
   for insert with check (
     public.is_super_admin()
