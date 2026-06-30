@@ -328,14 +328,12 @@ class _GatewayCard extends StatelessWidget {
                 'Webhook secret',
                 g.webhookConfigured ? 'Configured' : 'Not set',
               ),
-            if (provider == kPaytmProvider) ...[
-              _kv(theme, 'Website', g.website ?? '—'),
+            if (provider == kPaytmProvider)
               _kv(
                 theme,
                 'Environment',
                 g.environment == 'prod' ? 'Production' : 'Staging',
               ),
-            ],
             // Webhook setup — only once the academy uses its OWN account, so a
             // platform-fallback academy isn't told to register a webhook it
             // doesn't need. Razorpay = manual URL + copy; Paytm = automatic.
@@ -562,8 +560,6 @@ class _GatewayEditorSheetState extends ConsumerState<_GatewayEditorSheet> {
       TextEditingController(text: widget.existing?.keyId ?? '');
   final _secret = TextEditingController();
   final _webhook = TextEditingController();
-  late final TextEditingController _website =
-      TextEditingController(text: widget.existing?.website ?? 'DEFAULT');
   late String _environment = widget.existing?.environment ?? 'stage';
   bool _busy = false;
   String? _error;
@@ -577,7 +573,6 @@ class _GatewayEditorSheetState extends ConsumerState<_GatewayEditorSheet> {
     _keyId.dispose();
     _secret.dispose();
     _webhook.dispose();
-    _website.dispose();
     super.dispose();
   }
 
@@ -595,12 +590,8 @@ class _GatewayEditorSheetState extends ConsumerState<_GatewayEditorSheet> {
     }
     Map<String, dynamic>? config;
     if (_isPaytm) {
-      final website = _website.text.trim();
-      if (website.isEmpty) {
-        setState(() => _error = 'Website name is required for Paytm.');
-        return;
-      }
-      config = {'website': website, 'environment': _environment};
+      // websiteName is derived from environment in the backend — not collected.
+      config = {'environment': _environment};
     }
     setState(() {
       _busy = true;
@@ -680,12 +671,6 @@ class _GatewayEditorSheetState extends ConsumerState<_GatewayEditorSheet> {
               ),
             ],
             if (_isPaytm) ...[
-              const SizedBox(height: AppSpacing.md),
-              AppFormField(
-                controller: _website,
-                label: 'Website name',
-                hint: 'DEFAULT (prod) / WEBSTAGING (test)',
-              ),
               const SizedBox(height: AppSpacing.md),
               AppDropdownField<String>(
                 label: 'Environment',

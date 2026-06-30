@@ -111,18 +111,17 @@ export async function resolvePaytmCreds(
   academyId: string,
 ): Promise<PaytmCreds> {
   const row = await fetchAcademyCreds(admin, academyId, 'paytm');
-  const website = row?.config?.['website'];
   const environment = row?.config?.['environment'];
   if (
     !row?.is_enabled || !row.key_id || !row.api_secret ||
-    typeof website !== 'string' || (environment !== 'stage' && environment !== 'prod')
+    (environment !== 'stage' && environment !== 'prod')
   ) {
     throw new Error('paytm gateway is not fully configured for this academy');
   }
+  // websiteName is derived from environment in _shared/paytm.ts — not stored.
   return {
     mid: row.key_id,
     merchantKey: row.api_secret,
-    website,
     environment,
   };
 }

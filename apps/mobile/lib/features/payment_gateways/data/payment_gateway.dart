@@ -44,26 +44,22 @@ class PaymentGateway {
   /// Whether a webhook signing secret is stored (Razorpay only).
   final bool webhookConfigured;
 
-  /// Non-secret provider config. Paytm: `website`, `environment` (stage|prod).
+  /// Non-secret provider config. Paytm: `environment` (stage|prod). The Paytm
+  /// `websiteName` is derived from the environment in the backend, not stored.
   final Map<String, dynamic> config;
 
   final DateTime? secretSetAt;
   final DateTime? updatedAt;
 
-  /// Paytm website name (e.g. "DEFAULT" / "WEBSTAGING"); null for Razorpay.
-  String? get website => config['website'] as String?;
-
   /// Paytm environment: 'stage' | 'prod'; null for Razorpay.
   String? get environment => config['environment'] as String?;
 
   /// Ready to be enabled for checkout: needs both a key id and a stored secret.
-  /// Paytm additionally needs a website + environment.
+  /// Paytm additionally needs an environment.
   bool get isConfigured {
     final base = (keyId?.isNotEmpty ?? false) && secretConfigured;
     if (provider == kPaytmProvider) {
-      return base &&
-          (website?.isNotEmpty ?? false) &&
-          (environment == 'stage' || environment == 'prod');
+      return base && (environment == 'stage' || environment == 'prod');
     }
     return base;
   }

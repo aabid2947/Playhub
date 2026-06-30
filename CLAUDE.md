@@ -223,6 +223,25 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-30 — Paytm `websiteName` hardcoded (no longer a per-academy setting)
+Paytm's `websiteName` is now **derived from `environment`** in the edge layer
+([_shared/paytm.ts](supabase/functions/_shared/paytm.ts) `paytmWebsite()`: `stage`→`WEBSTAGING`,
+`prod`→`DEFAULT`) instead of being collected from the owner. A wrong website (`DEFAULT` on staging) was
+causing Paytm initiate to fail; owners shouldn't have to know the magic value. Changes: `PaytmCreds`
+dropped its `website` field; `resolvePaytmCreds` no longer reads/requires `config.website` (only
+`environment`); the Website-name input + display row are removed from
+[payment_gateways_page.dart](apps/mobile/lib/features/payment_gateways/presentation/payment_gateways_page.dart)
+and `AcademyPaymentGateway.website` getter is gone; Paytm config is now just `{environment}`. RPC relaxed
+([20260630000100](supabase/migrations/20260630000100_paytm_drop_website_config.sql) — **OWED: apply**):
+`set_payment_gateway` enable-check requires only `environment` for Paytm, not `website` (existing rows that
+still carry `config.website` are harmless — it's ignored). Also surfaced Paytm's `resultCode` in the
+initiate error for diagnosability. **Deployed this session:** `create-payment-order`. **Still NOT
+redeployed (bundle their own `_shared/paytm.ts` copy; redeploy when Paytm is actually used):**
+`verify-paytm-payment`, `paytm-webhook`. **GOTCHA — Paytm staging still unproven:** after the website fix,
+initiate returns `resultCode 501 "System Error"` = invalid/mismatched **staging MID+merchant key** (NOT a
+checksum bug — that'd be 330). Razorpay remains the proven fee path (verify-on-return + refunds built);
+Paytm refunds still unbuilt. `flutter analyze` not run (standing preference).
+
 ### 2026-06-30 — eager invoice generation on fee-assign (no 24h cron lag)
 A fee's current-period invoice (and its Pay button) now appears **immediately on assignment** instead of
 waiting for the next daily cron. Chosen over a "compute dues on the fly / no invoice row" rewrite —

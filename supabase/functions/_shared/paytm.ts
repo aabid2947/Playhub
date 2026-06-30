@@ -16,7 +16,6 @@ const SALT_CHARS =
 export interface PaytmCreds {
   mid: string;
   merchantKey: string;
-  website: string;
   environment: 'stage' | 'prod';
 }
 
@@ -24,6 +23,13 @@ function paytmHost(env: 'stage' | 'prod'): string {
   return env === 'prod'
     ? 'https://securegw.paytm.in'
     : 'https://securegw-stage.paytm.in';
+}
+
+/// The Paytm `websiteName` is fully determined by the environment — staging
+/// merchants must use 'WEBSTAGING', production uses 'DEFAULT'. It's hardcoded
+/// here (not a per-academy setting) so owners can't mis-enter it.
+function paytmWebsite(env: 'stage' | 'prod'): string {
+  return env === 'prod' ? 'DEFAULT' : 'WEBSTAGING';
 }
 
 // --- low-level crypto -------------------------------------------------------
@@ -119,7 +125,7 @@ export async function initiatePaytmTransaction(
   const body = {
     requestType: 'Payment',
     mid: creds.mid,
-    websiteName: creds.website,
+    websiteName: paytmWebsite(creds.environment),
     orderId: args.orderId,
     txnAmount: { value: args.amount, currency: 'INR' },
     userInfo: { custId: args.custId },
@@ -141,8 +147,10 @@ export async function initiatePaytmTransaction(
   const json = await res.json();
   const token = json?.body?.txnToken;
   if (!token) {
-    const msg = json?.body?.resultInfo?.resultMsg ?? 'no txnToken';
-    throw new Error(`paytm initiate rejected: ${msg}`);
+    const info = json?.body?.resultInfo ?? {};
+    const msg = info.resultMsg ?? 'no txnToken';
+    const code = info.resultCode ?? '?';
+    throw new Error(`paytm initiate rejected: ${msg} (code ${code})`);
   }
   return { txnToken: token };
 }
