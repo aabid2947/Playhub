@@ -32,6 +32,13 @@ interface Assignment {
   };
 }
 
+/** Optional scope for an ad-hoc (app-triggered) run; all empty = full cron. */
+interface Filter {
+  studentId?: string;
+  batchId?: string;
+  academyId?: string;
+}
+
 Deno.serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
@@ -43,13 +50,30 @@ Deno.serve(async (req) => {
   if (!url || !key) return j({ error: 'missing env' }, 500);
   const admin = createClient(url, key);
 
+  // Optional scope. The scheduled cron sends no body → full run across every
+  // academy. The app sends `{ academy_id, student_id }` or `{ academy_id,
+  // batch_id }` right after assigning a fee, to materialise just that scope's
+  // current-period invoice immediately (no 24h wait). Same idempotent dedupe,
+  // so eager + scheduled runs can never double-bill.
+  const filter: Filter = {};
+  try {
+    const body = await req.json();
+    if (body && typeof body === 'object') {
+      if (typeof body.student_id === 'string') filter.studentId = body.student_id;
+      if (typeof body.batch_id === 'string') filter.batchId = body.batch_id;
+      if (typeof body.academy_id === 'string') filter.academyId = body.academy_id;
+    }
+  } catch (_) {
+    // No / non-JSON body → unscoped full run (the scheduled cron).
+  }
+
   const today = new Date();
   const todayUtc = new Date(Date.UTC(
     today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(),
   ));
 
-  const studentLevel = await collectStudentLevel(admin);
-  const batchLevel = await collectBatchLevel(admin);
+  const studentLevel = await collectStudentLevel(admin, filter);
+  const batchLevel = await collectBatchLevel(admin, filter);
   const all: Assignment[] = [...studentLevel, ...batchLevel];
 
   let scanned = all.length;
@@ -265,28 +289,56 @@ async function applyDiscounts(
 
 async function collectStudentLevel(
   admin: ReturnType<typeof createClient>,
+  filter: Filter,
 ): Promise<Assignment[]> {
-  const { data } = await admin
+  // A batch-scoped run (a batch-fee trigger) has no student-level component.
+  if (filter.batchId && !filter.studentId) return [];
+
+  let q = admin
     .from('student_fee_assignments')
     .select('academy_id, student_id, fee_structure_id, start_date, '
         + 'end_date, billing_day, '
         + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
     .eq('is_active', true);
+  if (filter.studentId) q = q.eq('student_id', filter.studentId);
+  if (filter.academyId) q = q.eq('academy_id', filter.academyId);
+
+  const { data } = await q;
   return ((data ?? []) as unknown as Assignment[])
     .filter((r) => r.fee !== null);
 }
 
 async function collectBatchLevel(
   admin: ReturnType<typeof createClient>,
+  filter: Filter,
 ): Promise<Assignment[]> {
+  // When scoped to a single student, restrict to the batches they're actually
+  // enrolled in (and emit only that student below).
+  let restrictBatchIds: string[] | null = null;
+  if (filter.studentId && !filter.batchId) {
+    const { data: enrolls } = await admin
+      .from('batch_enrollments')
+      .select('batch_id')
+      .eq('student_id', filter.studentId)
+      .eq('enrollment_status', 'active');
+    restrictBatchIds = ((enrolls ?? []) as Array<{ batch_id: string }>)
+      .map((e) => e.batch_id);
+    if (restrictBatchIds.length === 0) return [];
+  }
+
   // Batch-level fee assignments + active enrollments → expand to per-student
   // pseudo-assignments that share the per-student code path.
-  const { data: bfas } = await admin
+  let q = admin
     .from('batch_fee_assignments')
     .select('academy_id, batch_id, fee_structure_id, start_date, '
         + 'end_date, billing_day, '
         + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
     .eq('is_active', true);
+  if (filter.batchId) q = q.eq('batch_id', filter.batchId);
+  if (restrictBatchIds) q = q.in('batch_id', restrictBatchIds);
+  if (filter.academyId) q = q.eq('academy_id', filter.academyId);
+
+  const { data: bfas } = await q;
 
   const out: Assignment[] = [];
   for (const bfa of (bfas ?? []) as unknown as Array<{
@@ -299,11 +351,13 @@ async function collectBatchLevel(
     fee: Assignment['fee'] | null;
   }>) {
     if (!bfa.fee) continue;
-    const { data: enrolls } = await admin
+    let eq = admin
       .from('batch_enrollments')
       .select('student_id')
       .eq('batch_id', bfa.batch_id)
       .eq('enrollment_status', 'active');
+    if (filter.studentId) eq = eq.eq('student_id', filter.studentId);
+    const { data: enrolls } = await eq;
     for (const e of (enrolls ?? []) as Array<{ student_id: string }>) {
       out.push({
         academy_id: bfa.academy_id,

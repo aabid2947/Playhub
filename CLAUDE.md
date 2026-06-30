@@ -223,6 +223,26 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-06-30 — eager invoice generation on fee-assign (no 24h cron lag)
+A fee's current-period invoice (and its Pay button) now appears **immediately on assignment** instead of
+waiting for the next daily cron. Chosen over a "compute dues on the fly / no invoice row" rewrite —
+invoices stay the source of truth (GST sequential numbering, frozen tax/discount/late-fee snapshot,
+payment/refund/partial linkage, overdue + `students.fee_overdue` + reporting all depend on the row).
+Mechanism: [recur-invoice-generation](supabase/functions/recur-invoice-generation/index.ts) now accepts an
+**optional scope** in its POST body — `{ academy_id, student_id }` or `{ academy_id, batch_id }`. No body
+(the scheduled cron) = unscoped full run across all academies, unchanged. `collectStudentLevel` /
+`collectBatchLevel` take a `Filter`; a `batch_id` scope skips student-level, a `student_id` scope restricts
+batch-level to that student's enrolled batches and emits only them. [billing_providers.dart](apps/mobile/lib/features/billing/data/billing_providers.dart)
+`assignFee` / `assignFeeToBatch` fire `_generateInvoicesNow(...)` (scoped invoke) right after the insert,
+then invalidate `invoicesProvider`. **Idempotent** — the existing per-(student, fee, period_start) dedupe
+means eager + scheduled can't double-bill (verified: scoped re-run on an already-billed fee → `created: 0`).
+**The cron still runs daily** as the backstop + future-period generator (next month/week/quarter). The
+in-app invoke is **non-fatal** (try/caught) — a failure just falls back to the cron. **Security note:**
+`authoriseCron` already accepted any bearer (now the app calls it with the user's JWT + own `academy_id`);
+worst case a caller triggers idempotent generation — no data exposure, nothing the cron wouldn't do.
+**OWED:** `recur-invoice-generation` redeployed this session ✅; mobile needs a rebuild to ship the
+assign-time trigger; `flutter analyze` not run (standing preference).
+
 ### 2026-06-30 — fee frequencies: one_time now bills + new `weekly` frequency
 Two gaps in recurring-invoice generation fixed. **(1) `one_time` fees never billed** —
 [recur-invoice-generation](supabase/functions/recur-invoice-generation/index.ts) used to `continue` on

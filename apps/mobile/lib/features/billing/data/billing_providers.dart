@@ -130,7 +130,36 @@ Future<void> assignFee(
     'start_date': startDate.toIso8601String().substring(0, 10),
     if (billingDay != null) 'billing_day': billingDay,
   });
-  ref.invalidate(assignmentsForStudentProvider(studentId));
+  await _generateInvoicesNow(ref, academyId: academyId, studentId: studentId);
+  ref
+    ..invalidate(assignmentsForStudentProvider(studentId))
+    ..invalidate(invoicesProvider);
+}
+
+/// Fire the recurring-invoice generator scoped to a single student or batch so
+/// the current period's invoice (and its Pay button) appears immediately rather
+/// than after the next daily cron. Idempotent — the cron's per-period dedupe
+/// means this can't double-bill. Non-fatal: if it fails the assignment is still
+/// saved and the daily cron will generate the invoice as the backstop.
+Future<void> _generateInvoicesNow(
+  WidgetRef ref, {
+  required String academyId,
+  String? studentId,
+  String? batchId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  try {
+    await client.functions.invoke(
+      'recur-invoice-generation',
+      body: {
+        'academy_id': academyId,
+        if (studentId != null) 'student_id': studentId,
+        if (batchId != null) 'batch_id': batchId,
+      },
+    );
+  } on Object {
+    // Swallow — the daily cron is the backstop; don't fail the assignment.
+  }
 }
 
 Future<void> deactivateAssignment(
@@ -218,7 +247,10 @@ Future<void> assignFeeToBatch(
     'start_date': startDate.toIso8601String().substring(0, 10),
     if (billingDay != null) 'billing_day': billingDay,
   });
-  ref.invalidate(assignmentsForBatchProvider(batchId));
+  await _generateInvoicesNow(ref, academyId: academyId, batchId: batchId);
+  ref
+    ..invalidate(assignmentsForBatchProvider(batchId))
+    ..invalidate(invoicesProvider);
 }
 
 Future<void> deactivateBatchAssignment(
