@@ -18,6 +18,11 @@ Thumbs.db
 *.pem
 *.key
 
+# Build artifacts (APK/AAB/IPA — never commit large binaries)
+*.apk
+*.aab
+*.ipa
+
 # Flutter
 apps/mobile/build/
 apps/mobile/.dart_tool/
