@@ -56,6 +56,24 @@ export function weeklyPeriodStart(start: Date, today: Date): Date {
   return d;
 }
 
+/**
+ * Start of the day-of-month-anchored period that CONTAINS `today`. Unlike
+ * `anchorPeriodStart` (which returns this month's/quarter's/year's billingDay
+ * even when that day is still in the future), this steps back one period when
+ * today falls before the anchor — so it always returns the period today is in.
+ * Used by ad-hoc/eager runs to bill the current period on any day of the month.
+ * Not for weekly/one_time.
+ */
+export function currentPeriodStart(today: Date, type: FeeType, billingDay: number): Date {
+  const anchor = anchorPeriodStart(today, type, billingDay);
+  if (today.getTime() >= anchor.getTime()) return anchor;
+  const d = new Date(anchor);
+  if (type === "quarterly") d.setUTCMonth(d.getUTCMonth() - 3);
+  else if (type === "annual") d.setUTCFullYear(d.getUTCFullYear() - 1);
+  else d.setUTCMonth(d.getUTCMonth() - 1);
+  return d;
+}
+
 export function nextPeriodStart(start: Date, type: FeeType): Date {
   const d = new Date(start);
   if (type === "weekly") d.setUTCDate(d.getUTCDate() + 7);

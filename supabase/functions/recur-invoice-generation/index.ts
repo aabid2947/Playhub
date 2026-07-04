@@ -11,6 +11,7 @@ import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
 import {
   anchorPeriodStart,
   computeDiscounts,
+  currentPeriodStart,
   isoDate,
   nextPeriodStart,
   round2,
@@ -66,6 +67,11 @@ Deno.serve(async (req) => {
   } catch (_) {
     // No / non-JSON body → unscoped full run (the scheduled cron).
   }
+  // A scoped run is the app's eager call right after assigning a fee / enrolling
+  // a student. It materialises the CURRENT period immediately (no day-of-month
+  // gate); the unscoped scheduled cron keeps the gate so it only issues on the
+  // billing day. Dedupe makes the two safe to overlap.
+  const scoped = !!(filter.studentId || filter.batchId);
 
   const today = new Date();
   const todayUtc = new Date(Date.UTC(
@@ -105,9 +111,19 @@ Deno.serve(async (req) => {
       periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
     } else {
       const billingDay = a.billing_day ?? start.getUTCDate();
-      if (todayUtc.getUTCDate() !== billingDay) continue;
-      periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
-      if (periodStart < start) continue;
+      if (scoped) {
+        // Eager: bill the period that contains today, on any day of the month.
+        // today >= start (checked above) and today is within this period, so a
+        // mid-cycle join bills the full current period; dedupe stops the
+        // scheduled run from re-billing it on the billing day.
+        periodStart = currentPeriodStart(todayUtc, a.fee.type, billingDay);
+      } else {
+        // Scheduled cron: only issue on the billing day, and never for a period
+        // that started before the assignment.
+        if (todayUtc.getUTCDate() !== billingDay) continue;
+        periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
+        if (periodStart < start) continue;
+      }
       periodEnd = nextPeriodStart(periodStart, a.fee.type);
       periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
     }

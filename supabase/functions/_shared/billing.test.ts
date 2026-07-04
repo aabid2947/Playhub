@@ -3,6 +3,7 @@ import {
   anchorPeriodStart,
   computeDiscounts,
   computeLateFee,
+  currentPeriodStart,
   daysLateSinceGrace,
   isoDate,
   nextPeriodEnd,
@@ -60,6 +61,21 @@ Deno.test("weeklyPeriodStart anchors to whole weeks from the start date", () => 
   assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 25))), "2026-05-19");
   // Before the assignment begins → clamped to the start date.
   assertEquals(isoDate(weeklyPeriodStart(start, utc(2026, 4, 1))), "2026-05-05");
+});
+
+Deno.test("currentPeriodStart returns the period containing today", () => {
+  // today AFTER this month's billing day → current month's period
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 5, 30), "monthly", 28)), "2026-06-28");
+  // today BEFORE this month's billing day → previous month's period
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 5, 10), "monthly", 28)), "2026-05-28");
+  // today exactly ON the billing day → that day starts the period
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 5, 28), "monthly", 28)), "2026-06-28");
+  // quarterly: mid-quarter join bills the current quarter (Q2 starts Apr)
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 5, 30), "quarterly", 28)), "2026-04-28");
+  // quarterly before the quarter's billing day → previous quarter (Q1 starts Jan)
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 3, 10), "quarterly", 28)), "2026-01-28");
+  // annual before Jan billing day → previous year
+  assertEquals(isoDate(currentPeriodStart(utc(2026, 0, 10), "annual", 28)), "2025-01-28");
 });
 
 Deno.test("daysLateSinceGrace floors at 1", () => {
