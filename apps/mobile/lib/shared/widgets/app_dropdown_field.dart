@@ -11,6 +11,7 @@ class AppDropdownField<T> extends StatelessWidget {
     required this.items,
     required this.onChanged,
     this.hint,
+    this.validator,
     super.key,
   });
 
@@ -19,6 +20,10 @@ class AppDropdownField<T> extends StatelessWidget {
   final List<DropdownMenuItem<T>> items;
   final ValueChanged<T?>? onChanged;
   final String? hint;
+
+  /// Optional validator forwarded to the underlying [DropdownButtonFormField]
+  /// so a required select participates in Form.validate().
+  final String? Function(T?)? validator;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +43,7 @@ class AppDropdownField<T> extends StatelessWidget {
           initialValue: value,
           items: items,
           onChanged: onChanged,
+          validator: validator,
           decoration: InputDecoration(hintText: hint),
         ),
       ],

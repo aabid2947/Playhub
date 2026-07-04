@@ -107,6 +107,17 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // A student must belong to a center. A null-center student is visible and
+    // editable by EVERY center_admin (the center_admin_sees_*(null)=true rule),
+    // which breaks per-center isolation. The dropdown's validator covers the
+    // data state; this backstops loading/error (and the no-centers case).
+    if (_centerId == null) {
+      AppSnackbar.error(
+        context,
+        'Pick a center for this student — add one in Settings → Centers first.',
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
@@ -309,10 +320,14 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               loading: () => const LinearProgressIndicator(minHeight: 2),
               error: (e, _) => Text(friendlyError(e)),
               data: (centres) => AppDropdownField<String>(
-                label: 'Center',
+                label: 'Center *',
                 value: _centerId,
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Required' : null,
                 items: [
-                  const DropdownMenuItem<String>(child: Text('— none —')),
+                  const DropdownMenuItem<String>(
+                    child: Text('— select a center —'),
+                  ),
                   for (final c in centres.where((c) => c.isActive))
                     DropdownMenuItem(value: c.id, child: Text(c.name)),
                 ],

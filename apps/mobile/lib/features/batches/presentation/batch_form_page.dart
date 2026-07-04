@@ -64,6 +64,35 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // A batch must have a sport — head_coach/coach RLS (batch_in_my_sport), the
+    // performance rubric and sport filtering all key off it. The picker's
+    // validator covers "sports exist but none picked"; this backstops the "no
+    // sports configured" empty state, where the picker renders a hint (not a
+    // field) so the validator can't run.
+    if (_sportId == null) {
+      // Coaches/head_coaches can't enable sports themselves (that's admin /
+      // center_admin), so point them at an admin instead of Settings → Sports.
+      final role = ref.read(currentProfileProvider).valueOrNull?.role;
+      final scoped = role == 'head_coach' || role == 'coach';
+      AppSnackbar.error(
+        context,
+        scoped
+            ? 'Pick a sport for this batch — ask an admin to enable a sport you can coach first.'
+            : 'Pick a sport for this batch — enable one in Settings → Sports first.',
+      );
+      return;
+    }
+    // A batch must have a coach — the coach app only shows batches its user
+    // staffs, so a coachless batch is invisible and can't have attendance
+    // marked. The picker's validator covers the data state; this backstops
+    // loading/error (and reminds where to add one if the academy has none).
+    if (_coachId == null) {
+      AppSnackbar.error(
+        context,
+        'Assign a coach for this batch — add one in the Coaches tab first if you have none.',
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
@@ -165,10 +194,13 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final sport = SportPicker(
+                  label: 'Sport *',
                   value: _sportId,
                   onChanged: (v) => setState(() => _sportId = v),
                   centerId: _centerId,
                   restrictToSportIds: restrictSports,
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Required' : null,
                 );
                 final ageGroup = AppFormField(
                   controller: _ageGroup,
@@ -211,15 +243,17 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
             ),
             const SizedBox(height: AppSpacing.md),
             _AsyncDropdownField<Coach>(
-              label: 'Coach',
+              label: 'Coach *',
               value: _coachId,
               async: coachesAsync,
-              emptyOptionLabel: '— unassigned —',
+              emptyOptionLabel: '— select a coach —',
               optionsOf: (coaches) => coaches,
               idOf: (c) => c.id,
               labelOf: (c) => c.fullName,
               onChanged: (v) => setState(() => _coachId = v),
               onRetry: () => ref.invalidate(coachesProvider),
+              validator: (v) =>
+                  (v == null || v.isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: AppSpacing.md),
             AppDropdownField<String>(
@@ -288,6 +322,7 @@ class _AsyncDropdownField<T> extends StatelessWidget {
     required this.labelOf,
     required this.onChanged,
     required this.onRetry,
+    this.validator,
   });
 
   final String label;
@@ -303,6 +338,10 @@ class _AsyncDropdownField<T> extends StatelessWidget {
   final String Function(T) labelOf;
   final ValueChanged<String?> onChanged;
   final VoidCallback onRetry;
+
+  /// Optional validator (runs only in the data state; loading/error render a
+  /// placeholder, so callers requiring a value must backstop at save time).
+  final String? Function(String?)? validator;
 
   @override
   Widget build(BuildContext context) {
@@ -320,6 +359,7 @@ class _AsyncDropdownField<T> extends StatelessWidget {
         return AppDropdownField<String>(
           label: label,
           value: value,
+          validator: validator,
           items: [
             DropdownMenuItem<String>(child: Text(emptyOptionLabel)),
             for (final r in options)

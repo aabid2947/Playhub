@@ -47,6 +47,11 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
   String? _paymentType;
   String? _photo;
   final Set<String> _sportIds = <String>{};
+  // Existing coaches load their sports asynchronously (see initState). Until
+  // that resolves, _sportIds is empty but NOT genuinely sportless — so the
+  // save-time "≥1 sport" guard must wait for this, or it false-blocks (and a
+  // save in the gap would wipe the coach's sports via setCoachSports([])).
+  bool _sportsHydrated = false;
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -60,11 +65,18 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     _paymentType = widget.existing?.paymentType;
     _photo = widget.existing?.photo;
     final id = widget.existing?.id;
+    // A brand-new coach has nothing to load, so it's "hydrated" immediately.
+    _sportsHydrated = id == null;
     if (id != null) {
-      // Hydrate the coach's existing sport assignments, if any.
+      // Hydrate the coach's existing sport assignments, if any. Mark hydrated
+      // in `finally` so a load error unlocks the form rather than trapping it.
       Future.microtask(() async {
-        final ids = await ref.read(coachSportsProvider(id).future);
-        if (mounted) setState(() => _sportIds.addAll(ids));
+        try {
+          final ids = await ref.read(coachSportsProvider(id).future);
+          if (mounted) setState(() => _sportIds.addAll(ids));
+        } finally {
+          if (mounted) setState(() => _sportsHydrated = true);
+        }
       });
     }
   }
@@ -94,6 +106,37 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // A coach must belong to a center. A null-center coach is visible/editable
+    // by every center_admin (center_admin_sees_*(null)=true), breaking per-
+    // center isolation. The dropdown validator covers the data state; this
+    // backstops loading/error and the no-centers case.
+    if (_centerId == null) {
+      AppSnackbar.error(
+        context,
+        'Pick a center for this coach — add one in Settings → Centers first.',
+      );
+      return;
+    }
+    // Don't judge sports until the existing coach's assignments have loaded —
+    // otherwise a quick save false-blocks (and setCoachSports below would wipe
+    // them). New coaches are hydrated immediately, so this only gates edits.
+    if (!_sportsHydrated) {
+      AppSnackbar.error(
+        context,
+        "Still loading this coach's details — try again in a moment.",
+      );
+      return;
+    }
+    // At least one sport: head_coach sport-scoping and coach->batch assignment
+    // key off coach_sports; a sportless coach falls back to center-only scope.
+    // The chip multi-select doesn't take part in Form.validate(), so guard here.
+    if (_sportIds.isEmpty) {
+      AppSnackbar.error(
+        context,
+        'Select at least one sport — enable sports in Settings → Sports first.',
+      );
+      return;
+    }
     setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
@@ -304,11 +347,13 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 onRetry: () => ref.invalidate(centersProvider),
               ),
               data: (centres) => AppDropdownField<String>(
-                label: 'Center',
+                label: 'Center *',
                 value: _centerId,
+                validator: (v) =>
+                    (v == null || v.isEmpty) ? 'Required' : null,
                 items: [
                   const DropdownMenuItem<String>(
-                    child: Text('— none —'),
+                    child: Text('— select a center —'),
                   ),
                   for (final c in centres.where((c) => c.isActive))
                     DropdownMenuItem(

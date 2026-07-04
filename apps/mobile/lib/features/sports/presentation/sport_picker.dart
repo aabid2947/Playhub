@@ -116,6 +116,7 @@ class SportPicker extends ConsumerWidget {
     this.label = 'Sport',
     this.centerId,
     this.restrictToSportIds,
+    this.validator,
   });
 
   /// Current `sport_id`. Pass null when nothing is selected.
@@ -136,6 +137,12 @@ class SportPicker extends ConsumerWidget {
   /// rejects the rest). An empty set therefore shows the "no sports" hint.
   final Set<String>? restrictToSportIds;
 
+  /// Optional validator forwarded to the underlying form field so a required
+  /// sport participates in Form.validate(). NOT run in the empty state (no
+  /// sports configured, which renders a hint not a field) — callers that need
+  /// a sport must backstop that case at save time.
+  final String? Function(String?)? validator;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     var sports = _dedup(_resolveSports(ref, centerId));
@@ -149,6 +156,7 @@ class SportPicker extends ConsumerWidget {
     return DropdownButtonFormField<String?>(
       initialValue: value,
       decoration: InputDecoration(labelText: label),
+      validator: validator,
       items: [
         const DropdownMenuItem<String?>(child: Text('— select —')),
         for (final s in sports)
