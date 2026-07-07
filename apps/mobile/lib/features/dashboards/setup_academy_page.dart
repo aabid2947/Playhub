@@ -36,6 +36,24 @@ class _SetupAcademyPageState extends ConsumerState<SetupAcademyPage> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    // Carry over the academy name captured at signup (stashed in user_metadata
+    // by signup_page). Owners who signed up with email confirmation ON reach
+    // this screen only after verifying + signing in, so without this they'd
+    // retype the name they already entered. They still choose trial vs
+    // subscribe below; the field stays editable.
+    final raw = ref
+        .read(supabaseClientProvider)
+        .auth
+        .currentUser
+        ?.userMetadata?['academy_name'];
+    if (raw is String && raw.trim().isNotEmpty) {
+      _name.text = raw.trim();
+    }
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     super.dispose();

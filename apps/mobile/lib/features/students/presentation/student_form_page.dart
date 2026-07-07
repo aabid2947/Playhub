@@ -14,9 +14,16 @@ import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/features/students/presentation/student_documents_section.dart';
+import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
+
+/// Which person the single create-form email belongs to. Decides where it's
+/// stored (`parent_email` vs the student's own `email`) and which magic-link
+/// login invite is sent on save. Create-only; edit keeps the plain parent-email
+/// field and uses the Logins & access cards for invites.
+enum _EmailOwner { parent, student }
 
 class StudentFormPage extends ConsumerStatefulWidget {
   const StudentFormPage({super.key, this.existing});
@@ -55,6 +62,10 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   String _status = 'active';
   DateTime? _dob;
   String? _photo;
+  // Create-only: whether the single email field is the parent's or the
+  // student's own — drives which column it's saved to and which login invite
+  // is sent on save.
+  _EmailOwner _emailOwner = _EmailOwner.parent;
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -99,6 +110,22 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   String? _emptyToNull(TextEditingController c) =>
       c.text.trim().isEmpty ? null : c.text.trim();
 
+  /// Optional email: blank is allowed (skips the invite); if present it must
+  /// look like an address.
+  String? _optionalEmail(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return null;
+    return t.contains('@') ? null : 'Enter a valid email';
+  }
+
+  /// The create-only email toggle + invite shows only when the inviter can
+  /// provision BOTH a parent and a student login (owner/admin/center_admin). A
+  /// head_coach can create students but can't invite parent/student
+  /// (capabilities.invitableRoles), so they keep the plain parent-email field
+  /// with no invite; edit mode uses the Logins & access cards instead.
+  bool _offerInvite(Capabilities caps) =>
+      !isEdit && caps.canInvite('parent') && caps.canInvite('student');
+
   String _initials() {
     final f = _firstName.text.trim();
     final l = _lastName.text.trim();
@@ -120,12 +147,13 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     }
     setState(() => _busy = true);
     try {
+      final offerInvite = _offerInvite(ref.read(capabilitiesProvider));
+      final email = _emptyToNull(_parentEmail);
       final patch = <String, dynamic>{
         'first_name': _firstName.text.trim(),
         'last_name': _lastName.text.trim(),
         'parent_name': _parentName.text.trim(),
         'parent_phone': _emptyToNull(_parentPhone),
-        'parent_email': _emptyToNull(_parentEmail),
         'sport_id': _sportId,
         'city': _emptyToNull(_city),
         'medical_notes': _emptyToNull(_medical),
@@ -136,21 +164,77 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
         'date_of_birth': _dob?.toIso8601String().substring(0, 10),
         'photo': _photo,
       };
+      // Route the single email: the student's own column only when the toggle
+      // is on "Student" (create + inviter can provision one); otherwise it's the
+      // parent email (edit, head_coach create, or the "Parent" toggle).
+      if (offerInvite && _emailOwner == _EmailOwner.student) {
+        patch['email'] = email;
+      } else {
+        patch['parent_email'] = email;
+      }
+
       if (isEdit) {
         await updateStudent(ref, widget.existing!.id, patch);
-      } else {
-        await createStudent(ref, patch);
+        if (!mounted) return;
+        AppSnackbar.success(context, 'Student updated.');
+        context.pop();
+        return;
       }
+
+      final created = await createStudent(ref, patch);
       if (!mounted) return;
-      AppSnackbar.success(
-        context,
-        isEdit ? 'Student updated.' : 'Student created.',
-      );
+      // Best-effort login invite. The student row already exists, so an invite
+      // failure is non-fatal — surface it but keep the created student.
+      if (offerInvite && email != null) {
+        try {
+          await _sendLoginInvite(created, email);
+          if (!mounted) return;
+          AppSnackbar.success(
+            context,
+            _emailOwner == _EmailOwner.parent
+                ? 'Student created — parent invited to log in.'
+                : 'Student created — login invite sent to the student.',
+          );
+        } on Object catch (e) {
+          if (!mounted) return;
+          AppSnackbar.error(
+            context,
+            'Student created, but the login invite could not be sent: '
+            '${friendlyError(e)} You can retry from their profile.',
+          );
+        }
+      } else {
+        AppSnackbar.success(context, 'Student created.');
+      }
       context.pop();
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Fires the magic-link invite for a just-created student: a parent account
+  /// linked to the student, or the student's own login, per [_emailOwner].
+  /// Mirrors the presets used by the edit-screen Logins & access cards.
+  Future<void> _sendLoginInvite(Student created, String email) async {
+    final repo = ref.read(inviteRepoProvider);
+    if (_emailOwner == _EmailOwner.parent) {
+      await repo.invite(
+        email: email,
+        role: 'parent',
+        firstName: _parentName.text.trim(),
+        linkToStudentId: created.id,
+        linkRelationship: 'parent',
+      );
+    } else {
+      await repo.invite(
+        email: email,
+        role: 'student',
+        firstName: _firstName.text.trim(),
+        lastName: _lastName.text.trim(),
+        linkStudentLoginId: created.id,
+      );
     }
   }
 
@@ -290,25 +374,88 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               validator: _required,
             ),
             const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  child: AppFormField(
-                    controller: _parentPhone,
-                    label: 'Parent phone',
-                    keyboardType: TextInputType.phone,
-                  ),
+            if (_offerInvite(caps)) ...[
+              // Create + the inviter can provision a parent OR student login:
+              // one email field, toggled to decide whose it is and which invite
+              // fires on save.
+              AppFormField(
+                controller: _parentPhone,
+                label: 'Parent phone',
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Send a login (optional)',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: AppType.semibold,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppFormField(
-                    controller: _parentEmail,
-                    label: 'Parent email',
-                    keyboardType: TextInputType.emailAddress,
-                  ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<_EmailOwner>(
+                  segments: const [
+                    ButtonSegment(
+                      value: _EmailOwner.parent,
+                      label: Text('Parent'),
+                      icon: Icon(Icons.family_restroom_outlined),
+                    ),
+                    ButtonSegment(
+                      value: _EmailOwner.student,
+                      label: Text('Student'),
+                      icon: Icon(Icons.school_outlined),
+                    ),
+                  ],
+                  selected: {_emailOwner},
+                  onSelectionChanged: (sel) =>
+                      setState(() => _emailOwner = sel.first),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              AppFormField(
+                controller: _parentEmail,
+                label: _emailOwner == _EmailOwner.parent
+                    ? 'Parent email'
+                    : 'Student email',
+                keyboardType: TextInputType.emailAddress,
+                validator: _optionalEmail,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _emailOwner == _EmailOwner.parent
+                    ? 'A magic-link invite is emailed to the parent — they get '
+                        'the parent dashboard for this student. Leave blank to '
+                        'skip and invite later from the profile.'
+                    : 'A magic-link invite is emailed to the student for their '
+                        'own login. Leave blank to skip and invite later from '
+                        'the profile.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ] else ...[
+              // Edit, or a head_coach who can't provision logins: plain contact.
+              Row(
+                children: [
+                  Expanded(
+                    child: AppFormField(
+                      controller: _parentPhone,
+                      label: 'Parent phone',
+                      keyboardType: TextInputType.phone,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppFormField(
+                      controller: _parentEmail,
+                      label: 'Parent email',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             AppFormField(controller: _city, label: 'City'),
             const SizedBox(height: AppSpacing.xl),

@@ -223,6 +223,31 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-07 — student create: email toggle sends a parent OR student login invite
+The New-student form now provisions a login at creation time. A **[Parent | Student] SegmentedButton +
+single email field** ([student_form_page.dart](apps/mobile/lib/features/students/presentation/student_form_page.dart))
+decides both where the email is stored (`parent_email` vs the student's own `email` column) and which
+magic-link invite fires on save: `role=parent` (linkToStudentId + relationship=parent) or `role=student`
+(linkStudentLoginId), mirroring the edit-screen "Logins & access" presets via `InviteRepo.invite`.
+**Invite is best-effort** — the student row is created first, so an invite failure is surfaced but
+non-fatal (student is kept; retry from their profile). **Shown only when the inviter can provision BOTH
+parent + student** (`caps.canInvite`, i.e. owner/admin/center_admin); a **head_coach** can create students
+but not those logins, so they keep the plain parent-email field with no invite (edit mode likewise). Email
+is **optional** — blank = no invite, create as before. `flutter analyze` not run (standing preference).
+
+### 2026-07-07 — owner signup: academy name carried into SetupAcademyPage (no re-typing)
+Fixed a double academy-name entry. `signup_page` only calls `bootstrap_owner_academy` when
+`auth.signUp` returns a session synchronously (email confirmation **OFF**); with confirmation **ON**
+— the real path now that SMTP is configured — `signUp` returns no session, the academy name typed at
+signup was silently dropped (it lives only in `user_metadata`, read by nothing), and after
+verify→login `SetupAcademyPage` re-prompted for it. Fix ("carry over", user-chosen):
+[setup_academy_page.dart](apps/mobile/lib/features/dashboards/setup_academy_page.dart) `initState` now
+**prefills** `_name` from `currentUser.userMetadata['academy_name']` (still editable; the
+trial-vs-subscribe choice is unchanged). **Contract:** signup's `signUp(data: {academy_name})` is now
+read back by SetupAcademyPage — don't drop `academy_name` from the signup metadata. **Residual
+(unchanged):** the confirmation-OFF path still auto-bootstraps a trial at signup and never shows the
+setup/subscribe screen (owners there skip the plan choice). `flutter analyze` not run (standing preference).
+
 ### 2026-06-30 — Paytm `websiteName` hardcoded (no longer a per-academy setting)
 Paytm's `websiteName` is now **derived from `environment`** in the edge layer
 ([_shared/paytm.ts](supabase/functions/_shared/paytm.ts) `paytmWebsite()`: `stage`→`WEBSTAGING`,
