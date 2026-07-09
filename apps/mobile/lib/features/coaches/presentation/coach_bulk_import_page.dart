@@ -12,7 +12,9 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Required CSV header columns.
@@ -60,6 +62,11 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
   List<Map<String, String>>? _rows;
   String? _error;
   String? _filename;
+  // Required target center + sports applied to EVERY imported coach.
+  // coaches.center_id is NOT NULL at the DB (20260710000000); ">=1 sport" is a
+  // product rule (coach_sports has no DB cardinality constraint) enforced here.
+  String? _centerId;
+  final Set<String> _sportIds = <String>{};
   bool _busy = false;
   int? _imported;
   int? _failed;
@@ -159,6 +166,24 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
       return;
     }
 
+    final centerId = _centerId;
+    if (centerId == null) {
+      setState(() {
+        _busy = false;
+        _error = 'Pick a center to import coaches into.';
+      });
+      return;
+    }
+    if (_sportIds.isEmpty) {
+      setState(() {
+        _busy = false;
+        _error = 'Select at least one sport for the imported coaches.';
+      });
+      return;
+    }
+    final sportIds = _sportIds.toList();
+    final sportsRepo = await ref.read(sportsRepoProvider.future);
+
     final client = ref.read(supabaseClientProvider);
     var ok = 0;
     var fail = 0;
@@ -179,8 +204,9 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
         continue;
       }
       try {
-        await client.from('coaches').insert({
+        final inserted = await client.from('coaches').insert({
           'academy_id': academyId,
+          'center_id': centerId,
           'first_name': r['first_name'],
           'last_name': r['last_name'],
           if (r['email'] != null) 'email': r['email'],
@@ -193,7 +219,10 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
             'experience_years': int.tryParse(r['experience_years']!),
           if (r['salary'] != null) 'salary': double.tryParse(r['salary']!),
           if (r['payment_type'] != null) 'payment_type': r['payment_type'],
-        });
+        }).select('id').single();
+        // Every coach needs >=1 sport (head_coach scoping + the perf rubric
+        // depend on it). Tag all imported coaches with the chosen sports.
+        await sportsRepo?.setCoachSports(inserted['id'] as String, sportIds);
         ok++;
       } on Object catch (e) {
         fail++;
@@ -375,14 +404,45 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
                     ),
                   )
                 else ...[
+                  _CenterSelect(
+                    value: _centerId,
+                    onChanged: (v) => setState(() => _centerId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _SportSelect(
+                    selectedIds: _sportIds,
+                    onToggle: (sid, sel) => setState(() {
+                      if (sel) {
+                        _sportIds.add(sid);
+                      } else {
+                        _sportIds.remove(sid);
+                      }
+                    }),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       icon: const Icon(Icons.cloud_upload_outlined),
                       label: Text('Import $validCount valid rows'),
-                      onPressed: (_busy || validCount == 0) ? null : _import,
+                      onPressed: (_busy ||
+                              validCount == 0 ||
+                              _centerId == null ||
+                              _sportIds.isEmpty)
+                          ? null
+                          : _import,
                     ),
                   ),
+                  if (_centerId == null || _sportIds.isEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Pick a center and at least one sport above to enable '
+                      'importing.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                   if (invalidCount > 0) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
@@ -411,6 +471,94 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
         ],
       ),
     );
+  }
+}
+
+/// Required target-center dropdown applied to the whole import (coaches.center_id
+/// is NOT NULL at the DB). Blocks with guidance when the academy has no center.
+class _CenterSelect extends ConsumerWidget {
+  const _CenterSelect({required this.value, required this.onChanged});
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ref.watch(centersProvider).when(
+          loading: () => const LinearProgressIndicator(minHeight: 2),
+          error: (e, _) => _InlineError(message: friendlyError(e)),
+          data: (centres) {
+            final active = centres.where((c) => c.isActive).toList();
+            if (active.isEmpty) {
+              return const _InlineError(
+                message: 'Create a center first — imported coaches must '
+                    'belong to a center.',
+              );
+            }
+            return AppDropdownField<String>(
+              label: 'Import all coaches into center *',
+              value: value,
+              items: [
+                for (final c in active)
+                  DropdownMenuItem(value: c.id, child: Text(c.name)),
+              ],
+              onChanged: onChanged,
+            );
+          },
+        );
+  }
+}
+
+/// Multi-select of the academy's enabled sports, applied to every imported
+/// coach. Deduped by catalog sport id (a sport may be enabled at many centers).
+/// Blocks with guidance when no sport is enabled (every coach needs >=1 sport).
+class _SportSelect extends ConsumerWidget {
+  const _SportSelect({required this.selectedIds, required this.onToggle});
+
+  final Set<String> selectedIds;
+  final void Function(String sportId, bool selected) onToggle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return ref.watch(academyCenterSportsProvider).when(
+          loading: () => const LinearProgressIndicator(minHeight: 2),
+          error: (e, _) => _InlineError(message: friendlyError(e)),
+          data: (list) {
+            final byId = <String, String>{};
+            for (final cs in list) {
+              byId.putIfAbsent(cs.sport.id, () => cs.sport.name);
+            }
+            if (byId.isEmpty) {
+              return const _InlineError(
+                message: 'Enable a sport first (Settings → Sports) — every '
+                    'imported coach must have at least one sport.',
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sports for all imported coaches *',
+                  style: theme.textTheme.labelLarge,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final e in byId.entries)
+                      FilterChip(
+                        label: Text(e.value),
+                        selected: selectedIds.contains(e.key),
+                        onSelected: (sel) => onToggle(e.key, sel),
+                      ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
   }
 }
 

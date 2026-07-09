@@ -12,6 +12,7 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -60,6 +61,9 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
   List<String>? _headers;
   String? _error;
   String? _filename;
+  // Required target center applied to EVERY imported student — students.center_id
+  // is NOT NULL at the DB (20260710000000), so a center-less insert now fails.
+  String? _centerId;
   bool _busy = false;
   int? _imported;
   int? _failed;
@@ -157,6 +161,15 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
       return;
     }
 
+    final centerId = _centerId;
+    if (centerId == null) {
+      setState(() {
+        _busy = false;
+        _error = 'Pick a center to import students into.';
+      });
+      return;
+    }
+
     final client = ref.read(supabaseClientProvider);
 
     // Build a name → sport_id lookup off the academy's enabled sports so
@@ -196,6 +209,7 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
       try {
         await client.from('students').insert({
           'academy_id': academyId,
+          'center_id': centerId,
           'first_name': r['first_name'],
           'last_name': r['last_name'],
           'parent_name': r['parent_name'],
@@ -385,14 +399,30 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
                     ),
                   )
                 else ...[
+                  _CenterSelect(
+                    value: _centerId,
+                    onChanged: (v) => setState(() => _centerId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
                       icon: const Icon(Icons.cloud_upload_outlined),
                       label: Text('Import $validCount valid rows'),
-                      onPressed: (_busy || validCount == 0) ? null : _import,
+                      onPressed: (_busy || validCount == 0 || _centerId == null)
+                          ? null
+                          : _import,
                     ),
                   ),
+                  if (_centerId == null) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'Pick a center above to enable importing.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                   if (invalidCount > 0) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text(
@@ -421,6 +451,42 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
         ],
       ),
     );
+  }
+}
+
+/// Required target-center dropdown applied to the whole import. Its own
+/// ConsumerWidget so it can read `centersProvider`; when the academy has no
+/// center it blocks with guidance (students.center_id is NOT NULL at the DB).
+class _CenterSelect extends ConsumerWidget {
+  const _CenterSelect({required this.value, required this.onChanged});
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ref.watch(centersProvider).when(
+          loading: () => const LinearProgressIndicator(minHeight: 2),
+          error: (e, _) => _InlineError(message: friendlyError(e)),
+          data: (centres) {
+            final active = centres.where((c) => c.isActive).toList();
+            if (active.isEmpty) {
+              return const _InlineError(
+                message: 'Create a center first — imported students must '
+                    'belong to a center.',
+              );
+            }
+            return AppDropdownField<String>(
+              label: 'Import all students into center *',
+              value: value,
+              items: [
+                for (final c in active)
+                  DropdownMenuItem(value: c.id, child: Text(c.name)),
+              ],
+              onChanged: onChanged,
+            );
+          },
+        );
   }
 }
 

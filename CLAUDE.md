@@ -223,6 +223,57 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-10 — creation-chain dependencies now enforced at the DB (were UI-only)
+"Coach needs a center", "batch needs a sport + coach", "student needs a center", and
+"center_admin/head_coach login needs a center" were ONLY Flutter-form guards — the columns were
+nullable, no CHECK asserted them, and the RLS insert policies **explicitly allow a null center**
+(`p_center_id is null or …`), so any non-UI path (CSV import, raw API, an invite omitting center)
+created powerless / isolation-leaking rows.
+[20260710000000](supabase/migrations/20260710000000_enforce_creation_chain_constraints.sql) —
+**applied live via the Management API this session** — makes `coaches.center_id`, `students.center_id`,
+`batches.sport_id`, `batches.coach_id` **NOT NULL**, adds CHECK `users_center_scoped_role_needs_center`
+(center_admin/head_coach ⇒ center), and flips those 4 FKs **ON DELETE SET NULL → RESTRICT** (deleting a
+center/sport/coach still referenced is now **blocked — reassign first**, was silent-orphan). Pre-req
+cleanup baked into the migration: null-center rows in single-center academies were backfilled (this also
+fixed diya's null center), and un-backfillable junk in two abandoned test academies ("am" = 0 centers;
+"Elite" = a coachless batch) was **deleted**. **NOT enforced (owner decision): "coach needs ≥1 sport"** —
+sports live in the `coach_sports` join table inserted in a SEPARATE request, so no column/CHECK/deferred-
+trigger can assert it without an atomic-RPC rewrite; stays UI-only. **Same pass:** the coach + student
+**CSV importers** now require a target center (+ ≥1 sport for coaches, via `setCoachSports`) — they
+inserted null-center rows and would hard-fail these constraints otherwise. **OWED:** web-admin
+`npm run gen:types` (center_id/sport_id/coach_id are now non-null in the generated types — needs local
+DB, not run here); if `seed.sql`/`create_demo_users.mjs` are re-run they must supply center/sport/coach;
+`flutter analyze` not run (standing preference).
+
+### 2026-07-09 — invite form: head_coach now REQUIRES a center (was optional)
+An admin-tier inviter (owner/academy_admin) could invite a head_coach **without picking a center**,
+minting `users.center_id = NULL` → a **powerless** head_coach: their authority is center+sport gated
+via `current_user_in_center()`, so a center-less head_coach can create/manage nothing (batches,
+students, coaches) — it is NOT "academy-wide". Fix in
+[invite_user_sheet.dart](apps/mobile/lib/features/users/presentation/invite_user_sheet.dart): new
+`_centerRequiredTargets = {center_admin, head_coach}` now gates the submit guard, the "Center *"
+label, and the empty-centers "create a center first" message (coach/trainer stay optional — they're
+batch-assignment scoped, so center-less is fine and the "academy-wide until assigned" hint is accurate
+for them). **Still-open gap (NOT fixed):** the invite sheet never links a `coaches` record for a
+head_coach (no `link_coach_id` — that only flows from the coach-login preset, which forces role=coach),
+so an invited head_coach still owns **zero sports** (`head_coach_owns_sport` finds no linked coaches row)
+until a coach record is linked to their login out-of-band — there is no clean in-app "head_coach + coach
+record + sport" provisioning flow yet. `flutter analyze` not run (standing preference).
+
+### 2026-07-07 — head_coach STUDENT read widened to their CENTER (reverses 20260608000500)
+20260608000500 narrowed a head_coach's student read to "students enrolled in a batch in their center
+AND sport", which **dead-ended onboarding**: a head_coach can create a student (`can_manage_student`
+is center-wide) but the new/unenrolled student was invisible to them AND absent from the batch
+**Enrol** picker (both draw from the students read), so it could never be enrolled. The head_coach
+branch of `head_coach_sees_student` is now `public.student_in_my_center(p_student_id)` — every student
+in their center(s)/null-center, matching their center-wide write.
+[20260707000000](supabase/migrations/20260707000000_head_coach_center_wide_students.sql), **applied
+live to the hosted DB this session via the Management API** (+ committed to migrations/). **Owner-approved
+tradeoff:** a head_coach now also sees OTHER sports' students in their center (student sport-narrowing
+gone; **batches + coaches stay center+sport-scoped**). **Backend-only — no mobile change** (the mobile
+`studentsProvider` already relies on RLS for head_coach). Rollback = restore the 20260608000500 body;
+`gen:types` not needed (function body only).
+
 ### 2026-07-07 — student create: email toggle sends a parent OR student login invite
 The New-student form now provisions a login at creation time. A **[Parent | Student] SegmentedButton +
 single email field** ([student_form_page.dart](apps/mobile/lib/features/students/presentation/student_form_page.dart))

@@ -70,6 +70,14 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
     'center_admin', 'head_coach', 'coach', 'trainer',
   };
 
+  // Of those, the roles whose authority is *center-gated* and therefore can't
+  // function without one — so a center is REQUIRED, not optional. A center_admin
+  // administers a center; a head_coach is scoped to their center + sport via
+  // current_user_in_center(), so a center-less head_coach can manage nothing
+  // (it is NOT "academy-wide"). coach/trainer are batch-assignment scoped, so
+  // they work fine center-less — center stays optional for them.
+  static const _centerRequiredTargets = {'center_admin', 'head_coach'};
+
   @override
   void initState() {
     super.initState();
@@ -108,9 +116,12 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
     final caps = ref.read(capabilitiesProvider);
     if (widget.preset == null &&
         !caps.inviteScopedToOwnCenter &&
-        _role == 'center_admin' &&
+        _centerRequiredTargets.contains(_role) &&
         _centerId == null) {
-      AppSnackbar.error(context, 'Pick a center for the center admin.');
+      AppSnackbar.error(
+        context,
+        'Pick a center for the ${_roleLabel(_role).toLowerCase()}.',
+      );
       return;
     }
     setState(() => _busy = true);
@@ -286,8 +297,9 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                                   .toList();
                               if (active.isEmpty) {
                                 return Text(
-                                  _role == 'center_admin'
-                                      ? 'Create a center first — a center admin '
+                                  _centerRequiredTargets.contains(_role)
+                                      ? 'Create a center first — a '
+                                            '${_roleLabel(_role).toLowerCase()} '
                                             'must be assigned to one.'
                                       : 'No centers yet. This staffer will be '
                                             'academy-wide until you assign a '
@@ -303,7 +315,9 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
                                   AppDropdownField<String>(
                                     label: _role == 'center_admin'
                                         ? 'Primary center *'
-                                        : 'Center',
+                                        : _centerRequiredTargets.contains(_role)
+                                            ? 'Center *'
+                                            : 'Center',
                                     value: _centerId,
                                     items: [
                                       for (final c in active)
