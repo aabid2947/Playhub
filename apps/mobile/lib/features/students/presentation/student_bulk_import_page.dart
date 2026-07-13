@@ -15,6 +15,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Required CSV header columns.
@@ -268,6 +269,9 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
     final rows = _rows;
     final validCount = rows == null ? 0 : rows.where(_isValid).length;
     final invalidCount = rows == null ? 0 : rows.length - validCount;
+    // Free-trial student cap — surfaced up-front (step 3) so a partial import
+    // (only the remaining slots succeed) doesn't look like a failure.
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -399,6 +403,24 @@ class _StudentBulkImportPageState extends ConsumerState<StudentBulkImportPage> {
                     ),
                   )
                 else ...[
+                  if (limits != null && limits.isTrial) ...[
+                    Text(
+                      (TrialLimits.maxStudents - limits.studentCount) <= 0
+                          ? 'Free trial: your ${TrialLimits.maxStudents}-student '
+                              "limit is reached — rows won't import until you "
+                              'upgrade.'
+                          : 'Free trial: at most ${TrialLimits.maxStudents} '
+                              'students '
+                              '(${TrialLimits.maxStudents - limits.studentCount} '
+                              "left) — extra rows won't import. Upgrade to add "
+                              'more.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppSemanticColors.of(context).warning,
+                        fontWeight: AppType.semibold,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   _CenterSelect(
                     value: _centerId,
                     onChanged: (v) => setState(() => _centerId = v),

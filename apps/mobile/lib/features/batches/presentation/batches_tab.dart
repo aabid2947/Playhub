@@ -10,6 +10,7 @@ import 'package:playhub/features/batches/presentation/batch_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:playhub/features/subscription/presentation/upgrade_prompt.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class BatchesTab extends ConsumerStatefulWidget {
@@ -28,11 +29,9 @@ class _BatchesTabState extends ConsumerState<BatchesTab> {
     );
   }
 
-  void _showTrialLimit(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
+  // Reaching a free-trial cap opens the upgrade prompt (RLS is the hard gate).
+  Future<void> _showTrialLimit(String message) =>
+      showUpgradePrompt(context, message: message);
 
   @override
   Widget build(BuildContext context) {

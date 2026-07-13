@@ -66,7 +66,7 @@ class TrialLimits {
       'Upgrade your plan to add more.';
   String get sportsMessage =>
       'Free trial limit reached — $maxSports sport. '
-      'Upgrade your plan to offer more sports.';
+      'Upgrade your plan to add more.';
   String get batchesMessage =>
       'Free trial limit reached — $maxBatches batches. '
       'Upgrade your plan to add more.';

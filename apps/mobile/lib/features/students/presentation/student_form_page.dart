@@ -466,20 +466,28 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
             centresAsync.when(
               loading: () => const LinearProgressIndicator(minHeight: 2),
               error: (e, _) => Text(friendlyError(e)),
-              data: (centres) => AppDropdownField<String>(
-                label: 'Center *',
-                value: _centerId,
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Required' : null,
-                items: [
-                  const DropdownMenuItem<String>(
-                    child: Text('— select a center —'),
-                  ),
-                  for (final c in centres.where((c) => c.isActive))
-                    DropdownMenuItem(value: c.id, child: Text(c.name)),
-                ],
-                onChanged: (v) => setState(() => _centerId = v),
-              ),
+              data: (centres) {
+                final active = centres.where((c) => c.isActive).toList();
+                // Guard a stored center that's now inactive (edit mode): it's
+                // filtered out of the items and the dropdown asserts on a value
+                // not among them. Fall back to "— select —"; validator flags it.
+                final safeValue =
+                    active.any((c) => c.id == _centerId) ? _centerId : null;
+                return AppDropdownField<String>(
+                  label: 'Center *',
+                  value: safeValue,
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Required' : null,
+                  items: [
+                    const DropdownMenuItem<String>(
+                      child: Text('— select a center —'),
+                    ),
+                    for (final c in active)
+                      DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => _centerId = v),
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.md),
             Row(
@@ -563,12 +571,19 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                 const SizedBox(height: AppSpacing.xl),
               ],
               StudentDocumentsSection(studentId: widget.existing!.id),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Logins & access'),
-              const SizedBox(height: AppSpacing.sm),
-              _ParentAccessCard(student: widget.existing!),
-              const SizedBox(height: AppSpacing.md),
-              _StudentLoginCard(student: widget.existing!),
+              // Logins & access — only for roles that can mint those logins
+              // (owner/admin/center_admin/head_coach, via canInvite). A coach
+              // reaches this form via manageStudents but can't provision a
+              // parent/student login, so hide the cards rather than show an
+              // invite that would 403.
+              if (caps.canInvite('parent') || caps.canInvite('student')) ...[
+                const SizedBox(height: AppSpacing.xl),
+                const AppSectionHeader(title: 'Logins & access'),
+                const SizedBox(height: AppSpacing.sm),
+                _ParentAccessCard(student: widget.existing!),
+                const SizedBox(height: AppSpacing.md),
+                _StudentLoginCard(student: widget.existing!),
+              ],
               if (caps.manageStudents) ...[
                 const SizedBox(height: AppSpacing.xl),
                 const AppSectionHeader(title: 'Danger zone'),

@@ -346,23 +346,31 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 message: friendlyError(e),
                 onRetry: () => ref.invalidate(centersProvider),
               ),
-              data: (centres) => AppDropdownField<String>(
-                label: 'Center *',
-                value: _centerId,
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Required' : null,
-                items: [
-                  const DropdownMenuItem<String>(
-                    child: Text('— select a center —'),
-                  ),
-                  for (final c in centres.where((c) => c.isActive))
-                    DropdownMenuItem(
-                      value: c.id,
-                      child: Text(c.name),
+              data: (centres) {
+                final active = centres.where((c) => c.isActive).toList();
+                // Guard a stored center that's now inactive (edit mode): it's
+                // filtered out of the items and the dropdown asserts on a value
+                // not among them. Fall back to "— select —"; validator flags it.
+                final safeValue =
+                    active.any((c) => c.id == _centerId) ? _centerId : null;
+                return AppDropdownField<String>(
+                  label: 'Center *',
+                  value: safeValue,
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Required' : null,
+                  items: [
+                    const DropdownMenuItem<String>(
+                      child: Text('— select a center —'),
                     ),
-                ],
-                onChanged: (v) => setState(() => _centerId = v),
-              ),
+                    for (final c in active)
+                      DropdownMenuItem(
+                        value: c.id,
+                        child: Text(c.name),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() => _centerId = v),
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.xl),
 

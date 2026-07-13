@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -123,9 +124,17 @@ Future<Student> createStudent(WidgetRef ref, Map<String, dynamic> data) async {
   // Surface a clean permission error instead of the opaque PGRST116 that
   // `.single()` throws on zero rows.
   if (row == null) {
-    throw const PostgrestException(
-      message: 'Create blocked by row-level security '
-          '(you can only manage students in your own center).',
+    // Two RLS block reasons look identical (0 rows): a frozen subscription
+    // (writes off for everyone, incl. owners) vs the center-scope gate. Name
+    // the plan one when it applies so an owner whose trial lapsed mid-session
+    // doesn't see a wrong "own center" message. (isBlocked recomputes vs now.)
+    final paused =
+        ref.read(mySubscriptionProvider).valueOrNull?.isBlocked ?? false;
+    throw PostgrestException(
+      message: paused
+          ? "Your academy's plan is paused — renew it to add or edit records."
+          : 'Create blocked by row-level security '
+              '(you can only manage students in your own center).',
       code: '42501',
     );
   }

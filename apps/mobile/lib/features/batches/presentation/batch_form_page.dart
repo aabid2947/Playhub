@@ -64,6 +64,16 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // A batch must belong to a center (batches.center_id is NOT NULL). The
+    // picker's validator covers the data state; this backstops loading/error/
+    // empty, where the picker renders a placeholder rather than a field.
+    if (_centerId == null) {
+      AppSnackbar.error(
+        context,
+        'Pick a center for this batch — add one in Settings → Centers first.',
+      );
+      return;
+    }
     // A batch must have a sport — head_coach/coach RLS (batch_in_my_sport), the
     // performance rubric and sport filtering all key off it. The picker's
     // validator covers "sports exist but none picked"; this backstops the "no
@@ -190,6 +200,29 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: AppSpacing.md),
+            // Center FIRST — the Sport picker below scopes to it (centerId), so
+            // picking/changing a center can't leave a stale sport the center
+            // doesn't offer (which would trip the dropdown's value-in-items
+            // assert in debug, or save a batch tagged with a mismatched sport).
+            _AsyncDropdownField<Centre>(
+              label: 'Center *',
+              value: _centerId,
+              async: centresAsync,
+              emptyOptionLabel: '— select a center —',
+              // Inactive centers can't take new assignments; hide them.
+              optionsOf: (centres) => centres.where((c) => c.isActive).toList(),
+              idOf: (c) => c.id,
+              labelOf: (c) => c.name,
+              onChanged: (v) => setState(() {
+                _centerId = v;
+                // Sport is center-scoped — clear it so it can't persist across a
+                // center change into a list that no longer contains it.
+                _sportId = null;
+              }),
+              onRetry: () => ref.invalidate(centersProvider),
+              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: AppSpacing.md),
             // Sport + age group stack gracefully on narrow widths.
             LayoutBuilder(
               builder: (context, constraints) {
@@ -227,19 +260,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                   ],
                 );
               },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _AsyncDropdownField<Centre>(
-              label: 'Center',
-              value: _centerId,
-              async: centresAsync,
-              emptyOptionLabel: '— none —',
-              // Inactive centers can't take new assignments; hide them.
-              optionsOf: (centres) => centres.where((c) => c.isActive).toList(),
-              idOf: (c) => c.id,
-              labelOf: (c) => c.name,
-              onChanged: (v) => setState(() => _centerId = v),
-              onRetry: () => ref.invalidate(centersProvider),
             ),
             const SizedBox(height: AppSpacing.md),
             _AsyncDropdownField<Coach>(
@@ -356,9 +376,14 @@ class _AsyncDropdownField<T> extends StatelessWidget {
       ),
       data: (rows) {
         final options = optionsOf(rows);
+        // Guard a stored value that's been filtered out of the options — e.g.
+        // editing a record whose center was later deactivated. DropdownButton-
+        // FormField asserts on a value absent from its items; fall back to the
+        // empty option (null) so the validator flags it instead of crashing.
+        final safeValue = options.any((r) => idOf(r) == value) ? value : null;
         return AppDropdownField<String>(
           label: label,
-          value: value,
+          value: safeValue,
           validator: validator,
           items: [
             DropdownMenuItem<String>(child: Text(emptyOptionLabel)),

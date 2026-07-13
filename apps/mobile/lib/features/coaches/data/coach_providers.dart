@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -36,9 +37,16 @@ Future<Coach> createCoach(WidgetRef ref, Map<String, dynamic> data) async {
   // Null = blocked by RLS — center_admin / head_coach can only manage coaches
   // in their own center (can_manage_coach_record). Clean 42501 over PGRST116.
   if (row == null) {
-    throw const PostgrestException(
-      message: 'Create blocked by row-level security '
-          '(you can only manage coaches in your own center).',
+    // Frozen subscription (writes off for everyone incl. owners) vs the
+    // center-scope gate — same 0-row result. Name the plan one when it applies
+    // so an owner whose trial lapsed doesn't see a wrong "own center" message.
+    final paused =
+        ref.read(mySubscriptionProvider).valueOrNull?.isBlocked ?? false;
+    throw PostgrestException(
+      message: paused
+          ? "Your academy's plan is paused — renew it to add or edit records."
+          : 'Create blocked by row-level security '
+              '(you can only manage coaches in your own center).',
       code: '42501',
     );
   }
@@ -84,6 +92,19 @@ Future<void> archiveCoach(WidgetRef ref, String coachId) async {
       .update({'is_active': false})
       .eq('id', coachId);
   ref.invalidate(coachesProvider);
+}
+
+/// Hard-deletes a coach record. Reserved for ROLLING BACK a coach just created
+/// during a head_coach invite whose login step then failed — leaving it would
+/// orphan the record and consume a trial coach-record slot. For a normal removal
+/// use [archiveCoach] (soft); a hard delete drops the coach's sports/documents.
+/// RLS (coaches_delete) limits this to admin / own-center scope.
+Future<void> deleteCoachRecord(WidgetRef ref, String coachId) async {
+  final client = ref.read(supabaseClientProvider);
+  await client.from('coaches').delete().eq('id', coachId);
+  ref
+    ..invalidate(coachesProvider)
+    ..invalidate(trialLimitsProvider);
 }
 
 /// Helper: parse a comma-separated field into a clean list.

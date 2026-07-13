@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/leads/data/lead.dart';
 import 'package:playhub/features/leads/data/lead_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -20,6 +21,10 @@ class LeadConvertSheet extends ConsumerStatefulWidget {
 
 class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
   String? _batchId;
+  // students.center_id is NOT NULL — the convert must resolve a center. The lead
+  // form never captured one, so default to the lead's preferred (if set) and
+  // require a pick; convert() stamps it onto the lead for convert_lead to read.
+  late String? _centerId = widget.lead.preferredCenterId;
   bool _busy = false;
   // Built once — keeping it out of build() avoids re-querying (and flickering
   // the dropdown back to a spinner) on every setState.
@@ -41,6 +46,10 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
   }
 
   Future<void> _convert() async {
+    if (_centerId == null) {
+      AppSnackbar.error(context, 'Pick a center for the new student.');
+      return;
+    }
     setState(() => _busy = true);
     try {
       final repo = await ref.read(leadsRepoProvider.future);
@@ -48,6 +57,7 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
       await repo.convert(
         leadId: widget.lead.id,
         batchId: _batchId,
+        centerId: _centerId,
       );
       ref
         ..invalidate(leadByIdProvider(widget.lead.id))
@@ -136,6 +146,44 @@ class _LeadConvertSheetState extends ConsumerState<LeadConvertSheet> {
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            // Center is required — students.center_id is NOT NULL. Defaults to
+            // the lead's preferred center (if the web form set one).
+            ref.watch(centersProvider).when(
+              loading: () => const SizedBox(
+                height: 56,
+                child: AppLoading(label: 'Loading centers…'),
+              ),
+              error: (e, _) => Text(
+                friendlyError(e),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppSemanticColors.of(context).danger,
+                ),
+              ),
+              data: (centres) {
+                final active = centres.where((c) => c.isActive).toList();
+                if (active.isEmpty) {
+                  return Text(
+                    'Create a center first — a student must belong to one.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppSemanticColors.of(context).danger,
+                    ),
+                  );
+                }
+                return AppDropdownField<String>(
+                  label: 'Center *',
+                  // Guard a stale preferred center that's now inactive (else the
+                  // dropdown's value-in-items assert trips).
+                  value:
+                      active.any((c) => c.id == _centerId) ? _centerId : null,
+                  items: [
+                    for (final c in active)
+                      DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => _centerId = v),
+                );
+              },
             ),
             const SizedBox(height: AppSpacing.lg),
             FutureBuilder<List<({String id, String name})>>(

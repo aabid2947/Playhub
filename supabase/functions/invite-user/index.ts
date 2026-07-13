@@ -108,6 +108,23 @@ Deno.serve(async (req) => {
     ? (caller.center_id ?? null)
     : (body.center_id ?? null);
 
+  // center_admin / head_coach are center-scoped: their authority is gated on a
+  // center, and public.users now enforces it with a CHECK
+  // (users_center_scoped_role_needs_center, 20260710000000). Without a center
+  // the auth trigger's insert violates that CHECK and aborts the whole signup
+  // with an opaque DB error — so reject early with a clear message. (The mobile
+  // invite form already requires a center for these roles; this guards
+  // raw-API / non-form callers. A center-scoped caller inherits their own
+  // center above, so this only bites an admin-tier caller who omitted it.)
+  if (
+    (body.role === 'center_admin' || body.role === 'head_coach') &&
+    !effectiveCenterId
+  ) {
+    return j({
+      error: `a ${body.role.replace('_', ' ')} must be assigned a center`,
+    }, 400);
+  }
+
   // Authoritative gate — mirrors the users RLS policy. can_provision_role()
   // encodes the full creation ladder (rank ceiling + center scope), so this is
   // the one place that decides who may mint whom.

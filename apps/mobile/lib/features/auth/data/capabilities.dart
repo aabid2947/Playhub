@@ -52,7 +52,10 @@ class Capabilities {
       case 'center_admin':
         return const ['head_coach', 'coach', 'trainer', 'parent', 'student'];
       case 'head_coach':
-        return const ['coach', 'trainer'];
+        // head_coach manages students in their center (can_manage_student), so
+        // they may also mint those students' parent/student logins — mirror of
+        // can_provision_role's head_coach branch (20260711000000).
+        return const ['coach', 'trainer', 'parent', 'student'];
       case 'coach':
         return const ['trainer'];
       default:

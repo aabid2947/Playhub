@@ -223,6 +223,113 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-11 — head_coach can now invite parent/student logins (was owner/admin/center_admin only)
+Owner decision — supersedes the 2026-07-07/07-09 "a head_coach can't mint student/parent logins" notes. A
+head_coach already creates + manages students in their center, so they may now mint those students' parent +
+student LOGINS. Widened ONLY the parent/student branch of `can_provision_role`
+([20260711000000](supabase/migrations/20260711000000_head_coach_invite_parent_student.sql) — **applied
+live**) to accept a head_coach scoped to their own center(s); **`can_admin_center_scope` left untouched** (the
+finance-read gate reuses it). Client mirror: `head_coach.invitableRoles` in
+[capabilities.dart](apps/mobile/lib/features/auth/data/capabilities.dart) += `parent`/`student` (invariant
+#3). Also **gated the student-edit "Logins & access" cards on `canInvite`** — they rendered unconditionally,
+so a plain coach saw invite cards that 403'd; now shown to owner/admin/center_admin/head_coach, hidden from
+coach. **No `invite-user` redeploy needed** (it calls `can_provision_role` at runtime). `flutter analyze` not
+run (standing preference).
+
+### 2026-07-11 — generic invite dropdown is staff-only; coach/parent/student are record-backed invites
+The generic "Invite team member" sheet used to offer `coach`/`parent`/`student` as target roles, which
+minted a **dangling login** (a coach with no `coaches` row → invisible in the coach list + can't own a
+batch; a student with no `students` row; a parent linked to no student). Now
+[invite_user_sheet.dart](apps/mobile/lib/features/users/presentation/invite_user_sheet.dart) filters
+`_recordBackedTargets = {coach, parent, student}` OUT of the role dropdown — they're invited only from
+their record's own profile (Coaches → "invite login" with `linkCoachId`; a student's "Logins & access" with
+`linkToStudentId`/`linkStudentLoginId`), which links the login to a real row. **head_coach stays in the
+dropdown — its invite mints the coach record.** `capabilities.invitableRoles` is UNCHANGED (still lists all
+of them) so `canInvite()` keeps gating those record-backed invite tiles; the filter is dropdown-only. Don't
+re-add coach/parent/student to the generic dropdown. `flutter analyze` not run (standing preference).
+
+### 2026-07-11 — GOTCHA: a SCOPED `delete` under `session_replication_role=replica` skips FK cascades
+Surfaced by /code-review (#11) on the `20260710000000` junk-row cleanup. `replica` disables FK triggers, so
+`delete from batches where …` does NOT cascade to `batch_enrollments`/`attendance`/etc. — a *scoped* delete
+orphans children (dangling FK, no error, since RI is off too). It's fine in `wipe.sql` (deletes the WHOLE
+tenant set) but NOT for a partial delete. **Moot on our DB** (fully wiped after that migration; a fresh
+`seed.sql` has none of those junk rows). Not fixed in-place — the migration is applied + immutable
+(invariant #5). **Lesson: for a scoped delete of parents that have children, delete children first, or don't
+run it under `replica`.**
+
+### 2026-07-11 — invite-user rejects a center-less center_admin/head_coach (server-side; deployed)
+Found by /code-review (#4). [invite-user](supabase/functions/invite-user/index.ts) now returns a clear 400
+("a center admin/head coach must be assigned a center") when `effectiveCenterId` is null for those roles,
+instead of letting `handle_new_auth_user` insert a center-less row that violates the new
+`users_center_scoped_role_needs_center` CHECK and aborts the signup with an opaque DB error. Defense-in-depth:
+the mobile invite form already requires it, so this only guards raw-API / web-admin / non-form callers.
+**Deployed this session** via `npx supabase functions deploy invite-user --project-ref <ref>` (JWT on).
+
+### 2026-07-11 — /code-review hardening: dropdown value-guards, freeze-aware create errors, scoped HC sports
+Follow-ups from the review (all mobile, no deploy). **(#8)** Every center dropdown (batch/coach/student
+forms — `_AsyncDropdownField` / `AppDropdownField`) AND the shared
+[SportPicker](apps/mobile/lib/features/sports/presentation/sport_picker.dart) now fall back to
+"— select —" when their stored value isn't in the current options (edit-mode deactivated center / disabled
+sport / head_coach restrict) instead of tripping `DropdownButtonFormField`'s value-in-items assert — the
+validator then flags it. **(#9)** `createStudent`/`createCoach`/`createBatch` surface "your academy's plan
+is paused" (vs the misleading "own center") when a frozen subscription is the real RLS block —
+`AcademySubscription.isBlocked` recomputes vs `now()`, so it catches a mid-session trial lapse; the
+update/edit blocks keep the "own center" wording (same-class residual). **(#6)** the head_coach invite's
+sport chips are scoped to the chosen center (`centerSportsProvider`) + cleared on center change. **(#5)**
+`createBatch` uses `.maybeSingle()` + a clean 42501 like its peers. `flutter analyze` not run (standing pref).
+
+### 2026-07-11 — batch form: Center before Sport + SportPicker value-guard (fixes a dropdown assert)
+Found by /code-review. The batch form rendered Sport ABOVE the (now-required) Center and never reset the
+sport when the center changed, so picking a sport then a center left `_sportId` out of the re-scoped list →
+`DropdownButtonFormField` "one item with value" assert (debug) / a batch tagged with a sport its center
+doesn't offer (RLS doesn't check sport-at-center). Fix: [batch_form_page.dart](apps/mobile/lib/features/batches/presentation/batch_form_page.dart)
+puts Center first and clears `_sportId` in the center `onChanged`. Also hardened the shared
+[SportPicker](apps/mobile/lib/features/sports/presentation/sport_picker.dart) to fall back to "— select —"
+when its `value` isn't in the current scope (center change / sport disabled at the center / head_coach
+restrict) instead of asserting — benefits every caller (batch/coach/lead/event). `flutter analyze` not run.
+
+### 2026-07-10 — FIX: lead→student conversion (regression from students.center_id NOT NULL)
+Found by /code-review: the 20260710000000 `students.center_id` NOT NULL constraint broke `convert_lead()`
+— it inserted the student with `v_lead.preferred_center_id`, which the in-app lead form never captures, so
+EVERY lead→student conversion hit an opaque NOT NULL violation with no recovery.
+[20260710000200](supabase/migrations/20260710000200_convert_lead_center.sql) — **applied live** — makes
+`convert_lead` resolve center = `coalesce(lead.preferred_center_id, chosen batch's center)` and raise a
+CLEAR error if neither (signature unchanged ⇒ **no edge-fn redeploy needed**). The convert sheet
+([lead_convert_sheet.dart](apps/mobile/lib/features/leads/presentation/lead_convert_sheet.dart)) now has a
+**required Center picker** (defaults to the lead's preferred), and `LeadsRepo.convert(centerId:)` stamps it
+onto `leads.preferred_center_id` before invoking the edge fn (RLS `leads_write_update` lets an admin set
+it), so the RPC always resolves a center. `flutter analyze` not run (standing preference).
+
+### 2026-07-10 — batch requires a center; head_coach invite requires ≥1 sport (mints a coach record)
+Two more creation-chain guards. **(1) Batch → center:** `batches.center_id` is now **NOT NULL**
+([20260710000100](supabase/migrations/20260710000100_batch_center_required.sql) — applied live; FK →
+RESTRICT), and [batch_form_page](apps/mobile/lib/features/batches/presentation/batch_form_page.dart)
+requires **Center \*** (validator + save-guard). With sport_id + coach_id already NOT NULL, every batch is
+fully scoped (center + sport + coach). **(2) head_coach → ≥1 sport:** inviting a head_coach now requires a
+name + **≥1 sport** (sports multi-select in
+[invite_user_sheet](apps/mobile/lib/features/users/presentation/invite_user_sheet.dart)); on submit it
+**mints a `coaches` record** (name + center + those sports) and passes it as `link_coach_id`, so the auth
+trigger stamps `coaches.user_id` on accept and the head_coach actually **owns** sports
+(`head_coach_owns_sport`). **CLOSES the "invited head_coach owns zero sports" gap** from the 2026-07-09
+entry. Owner-chosen flow (vs "invite from an existing coach record"). A failed invite now ROLLS BACK the minted
+coach record (no orphan, no consumed trial slot, no double-mint on retry; found by /code-review), and the
+trial coach-record cap is pre-checked before minting. Still UI-only (the
+head_coach↔sport link can't be a DB constraint — join-table cardinality), so a raw-API head_coach invite
+without a coach record still yields a sportless head_coach. **OWED:** web-admin `gen:types`
+(`batches.center_id` now non-null); `flutter analyze` not run (standing preference).
+
+### 2026-07-10 — trial-cap surfaces now open an upgrade PROMPT (was dead-end snackbars)
+Reaching ANY free-trial quota (sports / coaches / students / batches / staff logins) now opens a shared
+upgrade dialog — [showUpgradePrompt](apps/mobile/lib/features/subscription/presentation/upgrade_prompt.dart),
+whose "View plans" routes to `SubscriptionPage` (same destination as `PaywallPage`) — instead of the old
+inconsistent snackbars (`_showTrialLimit`, a raw `SnackBar` for sports, `AppSnackbar.error` for invite).
+**Role-aware (added 2026-07-11, /code-review):** only the owner (`manageSubscription`) sees "View plans";
+admins/center_admins get "Ask your academy owner to upgrade" + OK (no dead-end to a page they can't act on).
+**Reuse `showUpgradePrompt(context, message: <TrialLimits.*Message>)` for any NEW quota gate — don't add a
+fresh snackbar.** RLS is still the hard gate. **Decision (owner):** did NOT make archiving a coach/student/
+batch free its trial slot (the counts still include archived rows) — hitting the cap routes to upgrade
+instead. (Sports stay swap-by-delete since remove is a hard-delete.) `flutter analyze` not run (standing preference).
+
 ### 2026-07-10 — creation-chain dependencies now enforced at the DB (were UI-only)
 "Coach needs a center", "batch needs a sport + coach", "student needs a center", and
 "center_admin/head_coach login needs a center" were ONLY Flutter-form guards — the columns were

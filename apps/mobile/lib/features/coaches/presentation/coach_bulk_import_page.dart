@@ -15,6 +15,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Required CSV header columns.
@@ -270,6 +271,9 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
     final rows = _rows;
     final validCount = rows == null ? 0 : rows.where(_isValid).length;
     final invalidCount = rows == null ? 0 : rows.length - validCount;
+    // Free-trial coach-record cap — surfaced up-front (step 3) so a partial
+    // import (only the remaining slots succeed) doesn't look like a failure.
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -404,6 +408,24 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
                     ),
                   )
                 else ...[
+                  if (limits != null && limits.isTrial) ...[
+                    Text(
+                      (TrialLimits.maxCoachRecords - limits.coachCount) <= 0
+                          ? 'Free trial: your ${TrialLimits.maxCoachRecords}-coach '
+                              "limit is reached — rows won't import until you "
+                              'upgrade.'
+                          : 'Free trial: at most ${TrialLimits.maxCoachRecords} '
+                              'coaches '
+                              '(${TrialLimits.maxCoachRecords - limits.coachCount} '
+                              "left) — extra rows won't import. Upgrade to add "
+                              'more.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppSemanticColors.of(context).warning,
+                        fontWeight: AppType.semibold,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   _CenterSelect(
                     value: _centerId,
                     onChanged: (v) => setState(() => _centerId = v),

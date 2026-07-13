@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -47,7 +48,27 @@ Future<Batch> createBatch(WidgetRef ref, Map<String, dynamic> data) async {
       .from('batches')
       .insert({...data, 'academy_id': academyId})
       .select()
-      .single();
+      .maybeSingle();
+  // Null = insert blocked by RLS — a head_coach/center_admin can only add
+  // batches in their own center + sport (can_manage_batch_fields), or the
+  // free-trial batch cap / write-freeze applies. Throw a clean 42501 instead of
+  // the opaque PGRST116 that .single() raises on zero rows (matches
+  // createStudent / createCoach).
+  if (row == null) {
+    // Frozen subscription (writes off for everyone incl. owners) vs the
+    // center/sport-scope gate — same 0-row result. Name the plan one when it
+    // applies so an owner whose trial lapsed doesn't see a wrong "own center"
+    // message.
+    final paused =
+        ref.read(mySubscriptionProvider).valueOrNull?.isBlocked ?? false;
+    throw PostgrestException(
+      message: paused
+          ? "Your academy's plan is paused — renew it to add or edit records."
+          : 'Create blocked by row-level security '
+              '(you can only add batches in your own center).',
+      code: '42501',
+    );
+  }
   ref
     ..invalidate(batchesProvider)
     ..invalidate(trialLimitsProvider); // refresh trial-cap counts

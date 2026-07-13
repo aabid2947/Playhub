@@ -153,8 +153,15 @@ class SportPicker extends ConsumerWidget {
     if (sports.isEmpty) {
       return _SportPickerEmpty(centerId: centerId, label: label, framed: true);
     }
+    // Guard a stored value that's absent from the current scope (center changed,
+    // the sport was disabled at the center, or it's restricted out for a
+    // head_coach): DropdownButtonFormField asserts on a value not among its
+    // items. Fall back to "— select —" (null); the validator then flags it so
+    // the user re-picks a sport valid for this center.
+    final safeValue =
+        sports.any((s) => s.sport.id == value) ? value : null;
     return DropdownButtonFormField<String?>(
-      initialValue: value,
+      initialValue: safeValue,
       decoration: InputDecoration(labelText: label),
       validator: validator,
       items: [

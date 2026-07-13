@@ -10,6 +10,7 @@ import 'package:playhub/features/sports/data/sport.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:playhub/features/subscription/presentation/upgrade_prompt.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Settings → Sports. The center selector is the scope control: pick a center,
@@ -131,11 +132,10 @@ class _SportsSettingsPageState extends ConsumerState<SportsSettingsPage> {
               icon: Icon(sportsBlocked ? Icons.lock_outline : Icons.add),
               label: const Text('Add sport'),
               onPressed: sportsBlocked
-                  ? () => ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(content: Text(limits!.sportsMessage)),
-                    )
+                  ? () => showUpgradePrompt(
+                        context,
+                        message: limits!.sportsMessage,
+                      )
                   : () => showModalBottomSheet<void>(
                         context: context,
                         isScrollControlled: true,
@@ -524,8 +524,14 @@ class _SportRow extends ConsumerWidget {
                       );
                       if (confirm ?? false) {
                         await repo.disableCenterSport(row.id);
-                        ref.invalidate(centerSportsProvider(row.centerId));
-                        ref.invalidate(academyCenterSportsProvider);
+                        // Removing a sport also frees the free-trial cap —
+                        // refresh the counter so the "Add sport" entry point
+                        // unlocks again (the add paths already do this; remove
+                        // had missed it).
+                        ref
+                          ..invalidate(centerSportsProvider(row.centerId))
+                          ..invalidate(academyCenterSportsProvider)
+                          ..invalidate(trialLimitsProvider);
                       }
                     }
                   },
