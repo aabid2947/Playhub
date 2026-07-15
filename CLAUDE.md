@@ -223,6 +223,26 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — self-serve SaaS upgrade wired into SubscriptionPage (was a request stub)
+Pulled the deferred v1.x self-serve plan-change forward (owner decision). The pricing page's
+"Request change" snackbar (`We've noted your interest…`) is replaced with a real Razorpay checkout:
+[subscription_page](apps/mobile/lib/features/subscription/presentation/subscription_page.dart) `_PlanCard`
+is now a `ConsumerStatefulWidget` whose button calls `PaymentCheckout.paySaasSubscription(planCode: plan.code)`
+→ `create-saas-order` (PLATFORM Razorpay, NOT the academy's own gateway) → webhook + `reactivate_paid_subscription`
+activate the academy server-side; on success it invalidates `mySubscription`/`trialLimits`/etc. **Backend
+already supported this** (`create-saas-order` already takes any `plan_code`; deployed 2026-06-30) — pure mobile
+change, needs a rebuild. **Removes super_admin oversight of plan changes** (any owner can now self-upgrade). To
+work in prod the PLATFORM Razorpay keys + `payment.captured` webhook must be live. `flutter analyze` not run
+(standing preference; recommend running before relying on the APK).
+
+### 2026-07-14 — head_coach hides ALL head_coaches incl. OWN (widens 20260714000000)
+Owner follow-up: a head_coach should see/manage NO head_coach records in Coaches, not just peers — supersedes
+the "own record unaffected" note in the entry below. [20260714000100](supabase/migrations/20260714000100_head_coach_hide_own_coach_record.sql)
+— **applied live + verified** (sees_OWN=f, sees_PLAIN=t) — drops the `u.id <> auth.uid()` self-carve from
+`coach_is_foreign_head_coach` so it now matches ANY head_coach when the actor is a head_coach. The read helper +
+coaches_update + can_manage_coach call it by name → auto pick up the change. Sport authority unaffected
+(`head_coach_owns_sport` is SECURITY DEFINER). Fn name keeps "foreign" for continuity (see its comment). RLS-only.
+
 ### 2026-07-14 — head_coach can no longer see/edit a PEER head_coach (RLS)
 Org-hierarchy: a head_coach manages coaches/trainers under them, not other head coaches.
 Was NOT enforced — `can_manage_coach_record` is center-scoped, so a head_coach could edit

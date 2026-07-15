@@ -3,8 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
+import 'package:playhub/features/billing/data/payment_checkout.dart';
+import 'package:playhub/features/billing/data/razorpay_checkout.dart';
 import 'package:playhub/features/subscription/data/subscription_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
     show PlanRow;
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -16,13 +21,13 @@ final _inrFmt = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
 /// archetype C (pushed detail under a NAVY billing hero).
 /// - Navy hero shows the current plan + status [AppBadge]/glass chips and a
 ///   translucent [AppHeroStatRow] (price · cycle · renewal).
-/// - Lists available plans with upgrade/downgrade requests, gated on
+/// - Lists available plans with a self-serve upgrade checkout, gated on
 ///   [Capabilities.manageSubscription] (owner-only; RLS is the real gate).
 /// - Lists past saas_invoices (paid + outstanding).
 ///
-/// Plan changes route through a "request" SnackBar today (super_admin
-/// applies the change manually). True self-serve plan changes wired to
-/// Razorpay subscriptions land in v1.x.
+/// Picking a plan opens Razorpay on PlayHub's PLATFORM account (via the
+/// create-saas-order edge fn); the platform webhook + reactivate trigger flip
+/// the academy to active server-side, so the page just refreshes on success.
 class SubscriptionPage extends ConsumerWidget {
   const SubscriptionPage({super.key});
 
@@ -411,8 +416,8 @@ class _FactRow extends StatelessWidget {
 /// A comparable plan card: aligned price block + a fixed set of limit rows so
 /// cards line up vertically and read as a comparison. The current plan is
 /// highlighted with a brand-light card tint + "Current" badge; other plans
-/// offer a gated "Request change" action ([Capabilities.manageSubscription]).
-class _PlanCard extends StatelessWidget {
+/// offer a gated self-serve checkout action ([Capabilities.manageSubscription]).
+class _PlanCard extends ConsumerStatefulWidget {
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
@@ -423,7 +428,17 @@ class _PlanCard extends StatelessWidget {
   final bool canManage;
 
   @override
+  ConsumerState<_PlanCard> createState() => _PlanCardState();
+}
+
+class _PlanCardState extends ConsumerState<_PlanCard> {
+  bool _busy = false;
+
+  @override
   Widget build(BuildContext context) {
+    final plan = widget.plan;
+    final isCurrent = widget.isCurrent;
+    final canManage = widget.canManage;
     final theme = Theme.of(context);
     final muted = theme.textTheme.bodyMedium?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
@@ -503,8 +518,16 @@ class _PlanCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.tonal(
-                onPressed: () => _requestChange(context, plan),
-                child: const Text('Request change'),
+                onPressed: _busy ? null : _checkout,
+                child: _busy
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        'Upgrade — ${_inrFmt.format(plan.monthlyPrice)}/mo',
+                      ),
               ),
             ),
           ],
@@ -515,12 +538,46 @@ class _PlanCard extends StatelessWidget {
 
   String _limitText(int? max) => max == null ? 'Unlimited' : max.toString();
 
-  void _requestChange(BuildContext context, PlanRow plan) {
-    AppSnackbar.info(
-      context,
-      "We've noted your interest in ${plan.name}. "
-      'Our team will reach out to confirm the change.',
-    );
+  /// Owner self-serve SaaS checkout: pay one month at this plan's price through
+  /// PlayHub's PLATFORM Razorpay account (create-saas-order). The platform
+  /// webhook + reactivate_paid_subscription trigger flip the academy to active
+  /// server-side, so on success we just refresh the subscription + trial caps.
+  Future<void> _checkout() async {
+    final plan = widget.plan;
+    setState(() => _busy = true);
+    try {
+      final client = ref.read(supabaseClientProvider);
+      final result = await PaymentCheckout(client).paySaasSubscription(
+        academyName: 'PlayHub',
+        planCode: plan.code,
+        prefillEmail: client.auth.currentUser?.email,
+      );
+      if (!mounted) return;
+      switch (result) {
+        case CheckoutSuccess():
+          AppSnackbar.success(
+            context,
+            'Payment received — activating ${plan.name}…',
+          );
+          ref
+            ..invalidate(mySubscriptionProvider)
+            ..invalidate(mySaasInvoicesProvider)
+            ..invalidate(availablePlansProvider)
+            ..invalidate(trialLimitsProvider)
+            ..invalidate(currentProfileProvider);
+        case CheckoutExternalWallet():
+          AppSnackbar.info(
+            context,
+            'Complete the payment in your wallet app, then pull to refresh.',
+          );
+        case CheckoutFailure(:final message):
+          AppSnackbar.error(context, message);
+      }
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
