@@ -268,27 +268,41 @@ class SportFilterChipBar extends ConsumerWidget {
 }
 
 /// Multi-select picker rendered as filter chips. Used on the coach form
-/// (which sports does this coach teach). Always sourced from the academy-
-/// wide union — coaches can be qualified for sports across centers.
+/// (which sports does this coach teach). Scoped like [SportPicker]: to a
+/// center's enabled sports when [centerId] is given (else the academy-wide
+/// union), and optionally narrowed to [restrictToSportIds] (a head_coach may
+/// only qualify a coach for sports they own).
 class SportMultiSelect extends ConsumerWidget {
   const SportMultiSelect({
     super.key,
     required this.selectedIds,
     required this.onToggle,
     this.label,
+    this.centerId,
+    this.restrictToSportIds,
   });
 
   final Set<String> selectedIds;
   final void Function(String sportId, bool selected) onToggle;
   final String? label;
 
+  /// Center to scope the picker to. When null, shows the academy-wide union
+  /// (matches [SportPicker]).
+  final String? centerId;
+
+  /// When non-null, only sports whose id is in this set are offered — an empty
+  /// set therefore shows the "no sports" hint.
+  final Set<String>? restrictToSportIds;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sports =
-        _dedup(ref.watch(academyCenterSportsProvider).valueOrNull ?? const []);
+    var sports = _dedup(_resolveSports(ref, centerId));
+    final restrict = restrictToSportIds;
+    if (restrict != null) {
+      sports = sports.where((s) => restrict.contains(s.sport.id)).toList();
+    }
     if (sports.isEmpty) {
-      // Always academy-wide here, so pass a null center scope for the wording.
-      return _SportPickerEmpty(centerId: null, label: label);
+      return _SportPickerEmpty(centerId: centerId, label: label);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

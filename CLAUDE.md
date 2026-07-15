@@ -223,6 +223,20 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — coach form: center-first + sports scoped to the chosen center (role-aware)
+The New/Edit-coach form showed "Sports coached" ABOVE the center and sourced it from
+`academyCenterSportsProvider` (EVERY academy sport), so an owner saw all sports before/without picking a
+center. Reworked [coach_form_page](apps/mobile/lib/features/coaches/presentation/coach_form_page.dart):
+**Center (Assignment) now renders BEFORE Expertise**; the sports block is scoped to the SELECTED center
+(`centerSportsProvider`) and shows a "pick a center first" hint until one is chosen (selection cleared on
+center change). **Role scoping:** center_admin/head_coach get their primary center auto-selected (initState)
++ the center dropdown restricted to their own center(s) (`myCenterIdsProvider`); a **head_coach**'s sports
+are further narrowed to the sports THEY own (`mySportIdsProvider`) — they may only qualify a coach for their
+own sports. `SportMultiSelect` gained `centerId` + `restrictToSportIds` (mirrors `SportPicker`, now uses
+`_resolveSports`); it's coach-form-only, no other caller. **Client UX only — RLS unchanged.** `flutter
+analyze` not run (standing preference; CI compiles it). **Known same-gap, NOT changed:** batch/student forms
+scope sports by center but don't auto-select/restrict the center for center-scoped roles.
+
 ### 2026-07-14 — SaaS upgrade now has verify-on-return (was webhook-only → silent drop)
 Root-caused "upgraded but still capped": the self-serve SaaS upgrade recorded a payment ONLY via the
 PLATFORM Razorpay webhook, so a captured charge silently dropped when the webhook didn't fire — academy

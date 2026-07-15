@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_documents_section.dart';
@@ -78,6 +80,20 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
           if (mounted) setState(() => _sportIds.addAll(ids));
         } finally {
           if (mounted) setState(() => _sportsHydrated = true);
+        }
+      });
+    } else {
+      // New coach: a center-scoped role (center_admin / head_coach) manages a
+      // fixed set of centers, so pre-select their primary center instead of
+      // making them choose — the dropdown is also restricted to their centers
+      // in build(). Owner / academy_admin pick from every center (no default).
+      Future.microtask(() async {
+        final profile = await ref.read(currentProfileProvider.future);
+        if (!mounted || profile == null) return;
+        final scoped =
+            profile.role == 'center_admin' || profile.role == 'head_coach';
+        if (scoped && profile.centerId != null) {
+          setState(() => _centerId = profile.centerId);
         }
       });
     }
@@ -227,6 +243,14 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     final centresAsync = ref.watch(centersProvider);
     final caps = ref.watch(capabilitiesProvider);
     final theme = Theme.of(context);
+    // A center-scoped role (center_admin / head_coach) assigns only into their
+    // OWN center(s) — RLS 42501s the rest — so the center picker is restricted
+    // to them (and their primary is auto-selected in initState). Owner and
+    // academy_admin pick from every center.
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    final centerScoped = role == 'center_admin' || role == 'head_coach';
+    final myCenters =
+        centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
@@ -309,13 +333,69 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
             ),
             const SizedBox(height: AppSpacing.xl),
 
+            // ── Assignment (center FIRST) ─────────────────────────────
+            // The Sports block below is scoped to the chosen center (sports are
+            // per-center), so the center must be picked before sports appear.
+            const AppSectionHeader(title: 'Assignment'),
+            const SizedBox(height: AppSpacing.sm),
+            centresAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                child: AppLoading(),
+              ),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(centersProvider),
+              ),
+              data: (centres) {
+                var active = centres.where((c) => c.isActive).toList();
+                // Center-scoped roles may only assign into their own center(s)
+                // (RLS 42501s the rest); restrict the options to them. Owner /
+                // academy_admin keep the full list.
+                if (centerScoped && myCenters != null) {
+                  active =
+                      active.where((c) => myCenters.contains(c.id)).toList();
+                }
+                // Guard a stored center that's absent from the options (now
+                // inactive, or outside a center-scoped role's centers): the
+                // dropdown asserts on a value not among its items. Fall back to
+                // "— select —"; the validator then flags it.
+                final safeValue =
+                    active.any((c) => c.id == _centerId) ? _centerId : null;
+                return AppDropdownField<String>(
+                  label: 'Center *',
+                  value: safeValue,
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Required' : null,
+                  items: [
+                    const DropdownMenuItem<String>(
+                      child: Text('— select a center —'),
+                    ),
+                    for (final c in active)
+                      DropdownMenuItem(
+                        value: c.id,
+                        child: Text(c.name),
+                      ),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _centerId = v;
+                    // Sports are per-center — clear the selection so a stale
+                    // sport can't carry into a center that doesn't offer it.
+                    _sportIds.clear();
+                  }),
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.xl),
+
             // ── Expertise ─────────────────────────────────────────────
-            // Sports coached is its own labeled block (a structured
-            // multi-select), kept distinct from the free-text sub-specialty
-            // and the comma-separated credential fields below it.
+            // Sports coached is its own labeled block, scoped to the center
+            // chosen above (and to a head_coach's own sports); kept distinct
+            // from the free-text sub-specialty + credential fields below.
             const AppSectionHeader(title: 'Expertise'),
             const SizedBox(height: AppSpacing.sm),
             _SportsField(
+              centerId: _centerId,
               selectedIds: _sportIds,
               onToggle: (sid, sel) => setState(() {
                 if (sel) {
@@ -348,46 +428,6 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
               controller: _certifications,
               label: 'Certifications',
               hint: 'NIS Level 1, ICC Coaching Certificate',
-            ),
-            const SizedBox(height: AppSpacing.xl),
-
-            // ── Assignment ────────────────────────────────────────────
-            const AppSectionHeader(title: 'Assignment'),
-            const SizedBox(height: AppSpacing.sm),
-            centresAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-                child: AppLoading(),
-              ),
-              error: (e, _) => AppErrorView(
-                message: friendlyError(e),
-                onRetry: () => ref.invalidate(centersProvider),
-              ),
-              data: (centres) {
-                final active = centres.where((c) => c.isActive).toList();
-                // Guard a stored center that's now inactive (edit mode): it's
-                // filtered out of the items and the dropdown asserts on a value
-                // not among them. Fall back to "— select —"; validator flags it.
-                final safeValue =
-                    active.any((c) => c.id == _centerId) ? _centerId : null;
-                return AppDropdownField<String>(
-                  label: 'Center *',
-                  value: safeValue,
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? 'Required' : null,
-                  items: [
-                    const DropdownMenuItem<String>(
-                      child: Text('— select a center —'),
-                    ),
-                    for (final c in active)
-                      DropdownMenuItem(
-                        value: c.id,
-                        child: Text(c.name),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => _centerId = v),
-                );
-              },
             ),
             const SizedBox(height: AppSpacing.xl),
 
@@ -536,30 +576,64 @@ class _SaveBar extends StatelessWidget {
   }
 }
 
-/// The "Sports coached" expertise block. Watches the academy-wide sports
-/// source directly so the form can show a real loading / error state while
-/// the catalog resolves — the [SportMultiSelect] itself only sees resolved
-/// data, so it never flashes its "no sports configured" hint during load.
+/// The "Sports coached" expertise block, scoped to the center chosen above
+/// (sports are per-center — a coach can only be qualified for sports the
+/// center actually offers). Until a center is picked it shows a hint rather
+/// than every academy sport. For a head_coach it is further narrowed to the
+/// sports THEY are assigned to — they may only qualify a coach for their own
+/// sports. [SportMultiSelect] handles the center-scoped source + empty state.
 class _SportsField extends ConsumerWidget {
-  const _SportsField({required this.selectedIds, required this.onToggle});
+  const _SportsField({
+    required this.centerId,
+    required this.selectedIds,
+    required this.onToggle,
+  });
 
+  final String? centerId;
   final Set<String> selectedIds;
   final void Function(String sportId, bool selected) onToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sportsAsync = ref.watch(academyCenterSportsProvider);
-    return sportsAsync.when(
+    final theme = Theme.of(context);
+    final cid = centerId;
+    if (cid == null) {
+      // Nothing meaningful to show until a center is chosen — guide the user
+      // there instead of listing every sport in the academy.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Sports coached', style: theme.textTheme.titleSmall),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Pick a center first — sports are chosen per center.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    }
+    // A head_coach may only qualify a coach for a sport they own themselves
+    // (their coach_sports); other roles see the full center list.
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    final Set<String>? restrict = role == 'head_coach'
+        ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
+        : null;
+    // Watch the center's sports here for a real loading / error state; the
+    // SportMultiSelect below re-reads the now-cached provider to render chips.
+    return ref.watch(centerSportsProvider(cid)).when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
         child: AppLoading(),
       ),
       error: (e, _) => AppErrorView(
         message: friendlyError(e),
-        onRetry: () => ref.invalidate(academyCenterSportsProvider),
+        onRetry: () => ref.invalidate(centerSportsProvider(cid)),
       ),
       data: (_) => SportMultiSelect(
         label: 'Sports coached',
+        centerId: cid,
+        restrictToSportIds: restrict,
         selectedIds: selectedIds,
         onToggle: onToggle,
       ),
