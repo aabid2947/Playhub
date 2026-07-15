@@ -12,6 +12,7 @@ import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/coach/data/coach_home_providers.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -167,6 +168,12 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     final centerScoped = role == 'center_admin' || role == 'head_coach';
     final myCenters =
         centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
+    // The coach picker is scoped to the chosen center, then (once a sport is
+    // picked) to the coaches who teach that sport. Null while the sport's
+    // coaches load → the picker stays center-only until it resolves.
+    final sportCoachIds = _sportId == null
+        ? null
+        : ref.watch(coachIdsForSportProvider(_sportId!)).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit batch' : 'New batch')),
@@ -242,9 +249,10 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               labelOf: (c) => c.name,
               onChanged: (v) => setState(() {
                 _centerId = v;
-                // Sport is center-scoped — clear it so it can't persist across a
-                // center change into a list that no longer contains it.
+                // Sport + coach are scoped to the center below — clear them so a
+                // stale value can't persist across a center change.
                 _sportId = null;
+                _coachId = null;
               }),
               onRetry: () => ref.invalidate(centersProvider),
               validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
@@ -256,7 +264,12 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                 final sport = SportPicker(
                   label: 'Sport *',
                   value: _sportId,
-                  onChanged: (v) => setState(() => _sportId = v),
+                  onChanged: (v) => setState(() {
+                    _sportId = v;
+                    // The coach list narrows to this sport's coaches — clear a
+                    // coach who may not teach the newly chosen sport.
+                    _coachId = null;
+                  }),
                   centerId: _centerId,
                   restrictToSportIds: restrictSports,
                   validator: (v) =>
@@ -294,7 +307,20 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               value: _coachId,
               async: coachesAsync,
               emptyOptionLabel: '— select a coach —',
-              optionsOf: (coaches) => coaches,
+              // Scope to the chosen center, then (once a sport is picked) to
+              // coaches who teach that sport (coach_sports). Applies in create
+              // AND edit; the _AsyncDropdownField value-guard falls back to
+              // "— select —" if a saved coach isn't in the narrowed list.
+              optionsOf: (coaches) {
+                Iterable<Coach> list = coaches;
+                if (_centerId != null) {
+                  list = list.where((c) => c.centerId == _centerId);
+                }
+                if (_sportId != null && sportCoachIds != null) {
+                  list = list.where((c) => sportCoachIds.contains(c.id));
+                }
+                return list.toList();
+              },
               idOf: (c) => c.id,
               labelOf: (c) => c.fullName,
               onChanged: (v) => setState(() => _coachId = v),

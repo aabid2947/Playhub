@@ -81,6 +81,21 @@ final coachSportsProvider =
       .toList(growable: false);
 });
 
+/// The coach_ids qualified for one sport — the reverse of [coachSportsProvider].
+/// Used to scope the batch form's coach picker to coaches who teach the chosen
+/// sport (RLS scopes coach_sports to the academy).
+final coachIdsForSportProvider =
+    FutureProvider.family<Set<String>, String>((ref, sportId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('coach_sports')
+      .select('coach_id')
+      .eq('sport_id', sportId);
+  return {
+    for (final r in rows as List) (r as Map)['coach_id'] as String,
+  };
+});
+
 class SportsRepo {
   SportsRepo(this._client, this._academyId);
   final SupabaseClient _client;

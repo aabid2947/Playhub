@@ -223,6 +223,16 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — batch form: coach picker scoped to center (+ sport)
+The batch "Coach *" dropdown listed ALL academy coaches (`optionsOf: (coaches) => coaches`). Now scoped: pick
+a center → coaches IN that center; also pick a sport → coaches in that center who TEACH that sport. New
+`coachIdsForSportProvider(sportId)` (reverse of `coachSportsProvider`) drives the sport filter;
+[batch_form_page](apps/mobile/lib/features/batches/presentation/batch_form_page.dart) filters `optionsOf` by
+`c.centerId == _centerId` + membership in that set, and clears `_coachId` on center/sport change. Applies to
+create AND edit — in edit, a saved coach not in the narrowed center+sport set falls back to "— select —" (the
+`_AsyncDropdownField` value-guard) so the user re-picks. Client UX only; RLS is unchanged (batches don't
+RLS-check coach↔sport, so this is a UI convenience, not a hard gate). `flutter analyze` not run (standing pref).
+
 ### 2026-07-14 — REVERT hide-own-head_coach RLS (it broke head_coach sports); hide own in the LIST instead
 `20260714000100` (hide a head_coach's OWN coach record via RLS) was a REGRESSION. `myCoachRecordProvider`
 reads `coaches where user_id = auth.uid()` to derive a head_coach's sports (`mySportIdsProvider`) + their
