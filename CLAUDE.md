@@ -223,6 +223,18 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — coach form pre-checks the trial coach cap (was a raw 403) + GOTCHA
+Diagnosed a head_coach "database error on coach create": it was the free-trial coach cap
+(RESTRICTIVE policy `trial_quota_coaches_insert`, `TrialLimits.maxCoachRecords = 2`) returning
+`42501` — surfaced raw because the June-30 APK predates the upgrade-prompt gating AND the coach
+FORM didn't pre-check. **GOTCHA (for any future "can't create coach" report): a head_coach's OWN
+auto-minted `coaches` record counts toward the 2-cap**, so a trial head_coach can create only ONE
+more coach; the next insert 403s. Fix: [coach_form_page](apps/mobile/lib/features/coaches/presentation/coach_form_page.dart)
+`_save` now pre-checks `trialLimitsProvider.coachesReached` on CREATE → `showUpgradePrompt`
+(role-aware); the list FAB already did. RLS stays the hard gate; edit is unaffected (quota is
+INSERT-only). Does NOT raise the cap — to add more coaches, flip the academy to `active` or upgrade.
+`flutter analyze` not run (standing preference); needs a rebuild to ship.
+
 ### 2026-07-11 — head_coach can now invite parent/student logins (was owner/admin/center_admin only)
 Owner decision — supersedes the 2026-07-07/07-09 "a head_coach can't mint student/parent logins" notes. A
 head_coach already creates + manages students in their center, so they may now mint those students' parent +

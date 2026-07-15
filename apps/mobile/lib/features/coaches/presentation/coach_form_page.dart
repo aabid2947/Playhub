@@ -10,6 +10,8 @@ import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_documents_section.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:playhub/features/subscription/presentation/upgrade_prompt.dart';
 import 'package:playhub/features/users/presentation/invite_user_sheet.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -136,6 +138,21 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
         'Select at least one sport — enable sports in Settings → Sports first.',
       );
       return;
+    }
+    // Free-trial coach cap (TrialLimits.maxCoachRecords = 2, which INCLUDES a
+    // head_coach's own auto-minted coach record). On CREATE, surface the shared
+    // upgrade prompt instead of letting the insert hit the RLS
+    // `trial_quota_coaches_insert` policy and bubble up as a raw error — the FAB
+    // on the list already gates this, but the form can be reached before
+    // trialLimitsProvider resolves or via direct navigation. RLS stays the hard
+    // gate; editing an existing coach at the cap is unaffected (INSERT-only).
+    if (!isEdit) {
+      final limits = await ref.read(trialLimitsProvider.future);
+      if (!mounted) return;
+      if (limits.coachesReached) {
+        await showUpgradePrompt(context, message: limits.coachesMessage);
+        return;
+      }
     }
     setState(() => _busy = true);
     try {
