@@ -114,9 +114,10 @@ class PaymentCheckout {
 
   /// Owner self-serve SaaS subscription checkout. Calls `create-saas-order`
   /// (which issues a SaaS invoice + a Razorpay order on PlayHub's PLATFORM
-  /// keys), then opens the Razorpay sheet. The platform webhook records the
-  /// payment and the reactivate trigger flips the academy to active — so a
-  /// [CheckoutSuccess] here means "paid"; the activation lands server-side.
+  /// keys), opens the Razorpay sheet, then CONFIRMS the charge server-side via
+  /// `verify-saas-payment` (verify-on-return) — so a captured payment activates
+  /// the academy even if the async platform webhook never fires. A
+  /// [CheckoutSuccess] returned here means the server confirmed `captured`.
   Future<CheckoutResult> paySaasSubscription({
     required String academyName,
     String planCode = 'starter',
@@ -149,12 +150,57 @@ class PaymentCheckout {
       );
     }
 
-    return _payRazorpay(
+    final saasInvoiceId = body['invoice_id'] as String?;
+    final result = await _payRazorpay(
       body,
       academyName: academyName,
       prefillEmail: prefillEmail,
       prefillContact: prefillContact,
     );
+    // Never trust the client sheet's "success" alone (invariant #6): confirm
+    // the charge server-side, which ALSO records it if the platform webhook
+    // never fired — the failure that left an academy stuck on trial.
+    if (result is CheckoutSuccess && saasInvoiceId != null) {
+      return _verifySaas(result, saasInvoiceId);
+    }
+    return result;
+  }
+
+  /// Server-side confirmation of a SaaS Razorpay charge (verify-saas-payment).
+  /// Returns the original success only when the server reports `captured`.
+  Future<CheckoutResult> _verifySaas(
+    CheckoutSuccess s,
+    String saasInvoiceId,
+  ) async {
+    try {
+      final res = await _client.functions.invoke(
+        'verify-saas-payment',
+        body: {
+          'saas_invoice_id': saasInvoiceId,
+          'razorpay_order_id': s.orderId,
+          'razorpay_payment_id': s.paymentId,
+        },
+      );
+      final data = res.data;
+      final status =
+          data is Map<String, dynamic> ? data['status']?.toString() : null;
+      if (status == 'captured') return s;
+      if (status == null) {
+        return const CheckoutFailure(
+          code: -5,
+          message: "Payment is being confirmed — we'll update once it clears.",
+        );
+      }
+      return CheckoutFailure(
+        code: -1,
+        message: 'Payment not completed ($status).',
+      );
+    } on Object {
+      return const CheckoutFailure(
+        code: -5,
+        message: "Payment is being confirmed — we'll update shortly.",
+      );
+    }
   }
 
   // --- Razorpay (native sheet) ------------------------------------------------

@@ -171,6 +171,10 @@ Deno.serve(async (req) => {
     amount_paise: amountPaise,
     currency: 'INR',
     invoice_number: invoiceNumber,
+    // invoice_id lets the client call verify-saas-payment after the sheet
+    // closes (verify-on-return), so a captured charge activates the academy
+    // even if the async platform webhook never fires.
+    invoice_id: invoiceId,
     academy_name: academyName,
   });
 });

@@ -223,6 +223,21 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — SaaS upgrade now has verify-on-return (was webhook-only → silent drop)
+Root-caused "upgraded but still capped": the self-serve SaaS upgrade recorded a payment ONLY via the
+PLATFORM Razorpay webhook, so a captured charge silently dropped when the webhook didn't fire — academy
+stuck on `trial`, caps never lifted (hit live on "Paradox": invoice `issued`, 0 saas_payments). Added
+verify-on-return, mirroring the fee flow: new edge fn [verify-saas-payment](supabase/functions/verify-saas-payment/index.ts)
++ [_shared/saas_razorpay_record.ts](supabase/functions/_shared/saas_razorpay_record.ts) `confirmAndRecordSaasRazorpay`
+re-confirm via the Razorpay Payments API (PLATFORM creds) and record into `saas_payments`;
+[create-saas-order](supabase/functions/create-saas-order/index.ts) now returns `invoice_id`; mobile
+`PaymentCheckout.paySaasSubscription` calls verify after the sheet closes and only reports success on
+`captured`. **Idempotency:** new partial unique index on `saas_payments.razorpay_payment_id`
+([20260714000200](supabase/migrations/20260714000200_saas_payments_unique_razorpay.sql) — applied live) so
+verify + webhook converge (webhook keys on unique_event_id=eventId, verify on `razorpay:<paymentId>`; they'd
+otherwise double-record). **Deployed this session:** verify-saas-payment (JWT on) + create-saas-order. Webhook
+stays the async backstop. Mobile needs a rebuild. `flutter analyze` not run (standing preference).
+
 ### 2026-07-14 — self-serve SaaS upgrade wired into SubscriptionPage (was a request stub)
 Pulled the deferred v1.x self-serve plan-change forward (owner decision). The pricing page's
 "Request change" snackbar (`We've noted your interest…`) is replaced with a real Razorpay checkout:
