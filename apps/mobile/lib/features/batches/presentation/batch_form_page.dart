@@ -312,7 +312,9 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               // AND edit; the _AsyncDropdownField value-guard falls back to
               // "— select —" if a saved coach isn't in the narrowed list.
               optionsOf: (coaches) {
-                Iterable<Coach> list = coaches;
+                // Only 'coach'-kind records can be a batch's PRIMARY coach;
+                // trainers assist via batch_staff, not batches.coach_id.
+                Iterable<Coach> list = coaches.where((c) => c.kind == 'coach');
                 if (_centerId != null) {
                   list = list.where((c) => c.centerId == _centerId);
                 }

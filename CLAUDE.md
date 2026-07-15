@@ -223,6 +223,24 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — Trainers section (trainers = coaches rows, kind='trainer') + removed from Team invite
+Owner decision: trainers get the SAME functionality/access as coaches (for center_admin + head_coach), as a
+separate section. Modeled as coaches rows tagged `kind`
+([20260714000400](supabase/migrations/20260714000400_coaches_kind.sql) — **applied live**; default 'coach'),
+reusing the ENTIRE coaches stack (form, center/sport scoping, RLS `can_manage_coach_record`, documents,
+invite). Mobile: `Coach.kind`; [coach_form_page](apps/mobile/lib/features/coaches/presentation/coach_form_page.dart)
+parameterized by `kind` (labels, saved kind, invite role — a trainer record mints a **role=trainer** login);
+[coaches_tab](apps/mobile/lib/features/coaches/presentation/coaches_tab.dart) gains a **[Coaches | Trainers]**
+`AppPillTabs` toggle (filters by kind, FAB creates that kind) so Trainers is reachable **everywhere Coaches
+is** (owner bottom-tab + head_coach Manage row) with NO shell/nav change. The batch **primary-coach** picker
+filters `kind='coach'` (trainers assist via `batch_staff`, not `batches.coach_id`). Trainer is removed from
+the generic **Team-invite** dropdown (added to `_recordBackedTargets`) — invited from the trainer record's
+"Login & access" instead, like coach. **RLS unchanged** (`can_manage_coach_record` scopes both;
+`can_provision_role(trainer)` allows center_admin/head_coach — both outrank trainer). **OWED: web-admin
+`gen:types`** (coaches.kind). **RIPPLES (not fixed):** `coachesProvider` returns BOTH kinds, so "Coaches"
+counts/stats (home, KPI, growth) now include trainers — scope to `kind='coach'` if it matters; and the trial
+2-coach-record cap now counts coaches+trainers combined. `flutter analyze` not run (standing preference).
+
 ### 2026-07-14 — batch form: coach picker scoped to center (+ sport)
 The batch "Coach *" dropdown listed ALL academy coaches (`optionsOf: (coaches) => coaches`). Now scoped: pick
 a center → coaches IN that center; also pick a sport → coaches in that center who TEACH that sport. New

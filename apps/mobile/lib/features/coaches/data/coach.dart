@@ -17,6 +17,7 @@ class Coach {
     this.certifications = const [],
     this.salary,
     this.paymentType,
+    this.kind = 'coach',
   });
 
   factory Coach.fromMap(Map<String, dynamic> m) => Coach(
@@ -43,6 +44,7 @@ class Coach {
         paymentType: m['payment_type'] as String?,
         joinDate: DateTime.parse(m['join_date'] as String),
         isActive: (m['is_active'] as bool?) ?? true,
+        kind: (m['kind'] as String?) ?? 'coach',
       );
 
   final String id;
@@ -62,6 +64,12 @@ class Coach {
   final String? paymentType;
   final DateTime joinDate;
   final bool isActive;
+
+  /// 'coach' (default) or 'trainer' — which staff section this record belongs
+  /// to. A trainer is a coaches row + a role=trainer login (reuses everything).
+  final String kind;
+
+  bool get isTrainer => kind == 'trainer';
 
   String get fullName => '$firstName $lastName';
 }

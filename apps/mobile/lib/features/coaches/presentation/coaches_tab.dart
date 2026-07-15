@@ -28,6 +28,9 @@ class CoachesTab extends ConsumerStatefulWidget {
 class _CoachesTabState extends ConsumerState<CoachesTab> {
   final _search = TextEditingController();
   _CoachStatusFilter _status = _CoachStatusFilter.all;
+  // Which staff section: 'coach' (default) or 'trainer'. Both are coaches rows,
+  // discriminated by `kind`; toggled via the pill tabs in the filter bar.
+  String _kind = 'coach';
 
   @override
   void dispose() {
@@ -37,7 +40,9 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
 
   void _openForm({Coach? existing}) {
     Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => CoachFormPage(existing: existing)),
+      MaterialPageRoute(
+        builder: (_) => CoachFormPage(existing: existing, kind: _kind),
+      ),
     );
   }
 
@@ -63,6 +68,7 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
     final isHeadCoach = ref.read(capabilitiesProvider).role == 'head_coach';
     final myUserId = isHeadCoach ? ref.read(currentUserIdProvider) : null;
     return coaches.where((c) {
+      if (c.kind != _kind) return false;
       if (myUserId != null && c.userId == myUserId) return false;
       switch (_status) {
         case _CoachStatusFilter.active:
@@ -104,6 +110,8 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
             controller: _search,
             status: _status,
             count: headerCount,
+            kind: _kind,
+            onKindChanged: (k) => setState(() => _kind = k),
             onSearch: () => setState(() {}),
             onStatusChanged: (v) => setState(() => _status = v),
             // Bulk import creates NEW coaches — onboarding, so it follows the
@@ -122,16 +130,20 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
                 onRetry: () => ref.invalidate(coachesProvider),
               ),
               data: (coaches) {
-                if (coaches.isEmpty) {
-                  return const _EmptyState();
-                }
                 final results = _filter(coaches);
                 if (results.isEmpty) {
-                  return const AppEmptyState(
-                    icon: Icons.search_off_outlined,
-                    title: 'No matches',
-                    subtitle: 'Try a different name or clear the filters.',
-                  );
+                  // Distinguish "no records of this kind" from "search/filter
+                  // hid them all", scoped to the active Coaches/Trainers tab.
+                  final filtering = _search.text.trim().isNotEmpty ||
+                      _status != _CoachStatusFilter.all;
+                  return filtering
+                      ? const AppEmptyState(
+                          icon: Icons.search_off_outlined,
+                          title: 'No matches',
+                          subtitle:
+                              'Try a different name or clear the filters.',
+                        )
+                      : _EmptyState(kind: _kind);
                 }
                 return RefreshIndicator(
                   onRefresh: () async => ref.invalidate(coachesProvider),
@@ -163,7 +175,7 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
                   ? () => _showTrialLimit(limits!.coachesMessage)
                   : _openForm,
               icon: Icon(coachesBlocked ? Icons.lock_outline : Icons.add),
-              label: const Text('New coach'),
+              label: Text(_kind == 'trainer' ? 'New trainer' : 'New coach'),
             )
           : null,
     );
@@ -178,6 +190,8 @@ class _FilterBar extends StatelessWidget {
     required this.controller,
     required this.status,
     required this.count,
+    required this.kind,
+    required this.onKindChanged,
     required this.onSearch,
     required this.onStatusChanged,
     required this.onImport,
@@ -187,6 +201,9 @@ class _FilterBar extends StatelessWidget {
   final _CoachStatusFilter status;
   // Live count of the filtered results, shown in the header badge.
   final int? count;
+  // 'coach' | 'trainer' — the active staff section (the pill toggle).
+  final String kind;
+  final ValueChanged<String> onKindChanged;
   final VoidCallback onSearch;
   final ValueChanged<_CoachStatusFilter> onStatusChanged;
   // Null hides the CSV-import action (roles that can't manage coaches).
@@ -210,13 +227,21 @@ class _FilterBar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Coaches vs Trainers — both are coaches rows (kind); this toggles
+            // the section, and is reachable everywhere CoachesTab is shown.
             Row(
               children: [
-                Text('Coaches', style: theme.textTheme.headlineSmall),
+                Expanded(
+                  child: AppPillTabs(
+                    tabs: const ['Coaches', 'Trainers'],
+                    index: kind == 'trainer' ? 1 : 0,
+                    onChanged: (i) =>
+                        onKindChanged(i == 1 ? 'trainer' : 'coach'),
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 if (count != null)
                   AppBadge(text: '$count', tone: AppBadgeTone.brand),
-                const Spacer(),
                 if (onImport != null)
                   IconButton(
                     tooltip: 'Import CSV',
@@ -304,7 +329,9 @@ class _CoachTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  facts.isEmpty ? 'Coach' : facts.join(' • '),
+                  facts.isEmpty
+                      ? (coach.isTrainer ? 'Trainer' : 'Coach')
+                      : facts.join(' • '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -336,14 +363,18 @@ class _StatusBadge extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.kind});
+  final String kind;
 
   @override
   Widget build(BuildContext context) {
-    return const AppEmptyState(
+    final trainer = kind == 'trainer';
+    return AppEmptyState(
       icon: Icons.sports_outlined,
-      title: 'No coaches yet',
-      subtitle: 'Tap "New coach" to onboard your first one.',
+      title: trainer ? 'No trainers yet' : 'No coaches yet',
+      subtitle: trainer
+          ? 'Tap "New trainer" to add your first one.'
+          : 'Tap "New coach" to onboard your first one.',
     );
   }
 }

@@ -19,9 +19,15 @@ import 'package:playhub/shared/widgets/avatar_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class CoachFormPage extends ConsumerStatefulWidget {
-  const CoachFormPage({super.key, this.existing});
+  const CoachFormPage({super.key, this.existing, this.kind = 'coach'});
 
   final Coach? existing;
+
+  /// 'coach' or 'trainer' — the staff kind to CREATE (ignored in edit, which
+  /// keeps the existing record's kind). Drives the labels, the saved
+  /// coaches.kind, and the role of the login minted from "Login & access"
+  /// (a trainer record mints a role=trainer login).
+  final String kind;
 
   @override
   ConsumerState<CoachFormPage> createState() => _CoachFormPageState();
@@ -61,6 +67,11 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
   bool _busy = false;
 
   bool get isEdit => widget.existing != null;
+
+  /// Effective staff kind: the existing record's (edit) else the requested one.
+  String get _kind => widget.existing?.kind ?? widget.kind;
+  String get _label => _kind == 'trainer' ? 'trainer' : 'coach';
+  String get _labelCap => _kind == 'trainer' ? 'Trainer' : 'Coach';
 
   @override
   void initState() {
@@ -189,6 +200,9 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
         'payment_type': _paymentType,
         'center_id': _centerId,
         'photo': _photo,
+        // Discriminates the Coaches vs Trainers section. Only meaningful on
+        // create; on edit it re-sends the existing kind (a harmless no-op).
+        'kind': _kind,
       };
       final saved = isEdit
           ? await updateCoach(ref, widget.existing!.id, patch)
@@ -201,7 +215,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
       if (!mounted) return;
       AppSnackbar.success(
         context,
-        isEdit ? 'Coach updated.' : 'Coach created.',
+        isEdit ? '$_labelCap updated.' : '$_labelCap created.',
       );
       context.pop();
     } on Object catch (e) {
@@ -216,9 +230,9 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
   Future<void> _confirmArchive() async {
     final ok = await confirmAction(
       context,
-      title: 'Archive this coach?',
+      title: 'Archive this $_label?',
       message:
-          'They will be marked inactive and hidden from coach pickers, and '
+          'They will be marked inactive and hidden from pickers, and '
           'unassigned from new work. Their record, documents and history are '
           'kept — you can reactivate later.',
       confirmLabel: 'Archive',
@@ -229,7 +243,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     try {
       await archiveCoach(ref, widget.existing!.id);
       if (!mounted) return;
-      AppSnackbar.success(context, 'Coach archived.');
+      AppSnackbar.success(context, '$_labelCap archived.');
       context.pop();
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));
@@ -253,11 +267,11 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
         centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
 
     return Scaffold(
-      appBar: AppBar(title: Text(isEdit ? 'Edit coach' : 'New coach')),
+      appBar: AppBar(title: Text(isEdit ? 'Edit $_label' : 'New $_label')),
       // v1 archetype D: the primary action is pinned to a soft-floating bottom
       // bar so it's always reachable above the long edit-mode form.
       bottomNavigationBar: _SaveBar(
-        label: isEdit ? 'Save changes' : 'Create coach',
+        label: isEdit ? 'Save changes' : 'Create $_label',
         busy: _busy,
         onPressed: _busy ? null : _save,
       ),
@@ -480,6 +494,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
               const SizedBox(height: AppSpacing.sm),
               _LoginAccessCard(
                 coach: widget.existing!,
+                kindLabel: _label,
                 onInvite: () => _invite(context),
               ),
               if (caps.manageCoaches) ...[
@@ -487,7 +502,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
                 const AppSectionHeader(title: 'Danger zone'),
                 const SizedBox(height: AppSpacing.sm),
                 _ArchiveButton(
-                  label: 'Archive coach',
+                  label: 'Archive $_label',
                   busy: _busy,
                   onPressed: _confirmArchive,
                 ),
@@ -508,7 +523,7 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
     if (email.isEmpty) {
       AppSnackbar.info(
         context,
-        "Set the coach's email above first, then save before inviting.",
+        "Set the $_label's email above first, then save before inviting.",
       );
       return;
     }
@@ -517,7 +532,9 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
       isScrollControlled: true,
       builder: (_) => InviteUserSheet(
         preset: InvitePreset(
-          role: 'coach',
+          // A trainer record mints a role=trainer login; a coach record a
+          // role=coach one. Both link the login to this coaches row.
+          role: _kind == 'trainer' ? 'trainer' : 'coach',
           title: 'Invite ${coach.firstName} to log in',
           email: coach.email,
           firstName: coach.firstName,
@@ -648,36 +665,44 @@ class _SportsField extends ConsumerWidget {
 ///   • email, no user_id → invite available (warning "Not invited" badge)
 ///   • user_id present    → already has a login (success "Active" badge)
 class _LoginAccessCard extends StatelessWidget {
-  const _LoginAccessCard({required this.coach, required this.onInvite});
+  const _LoginAccessCard({
+    required this.coach,
+    required this.kindLabel,
+    required this.onInvite,
+  });
 
   final Coach coach;
+  final String kindLabel;
   final VoidCallback onInvite;
 
   @override
   Widget build(BuildContext context) {
     final hasLogin = coach.userId != null;
     final hasEmail = (coach.email ?? '').trim().isNotEmpty;
+    final cap = kindLabel.isEmpty
+        ? kindLabel
+        : '${kindLabel[0].toUpperCase()}${kindLabel.substring(1)}';
 
     final (IconData icon, String title, String subtitle, Widget badge) =
         switch ((hasLogin, hasEmail)) {
       (true, _) => (
           Icons.verified_user_outlined,
-          'Coach has a login',
-          'They can already sign in as a coach.',
+          '$cap has a login',
+          'They can already sign in as a $kindLabel.',
           const AppBadge(text: 'Active', tone: AppBadgeTone.success),
         ),
       (false, true) => (
           Icons.lock_open_outlined,
-          'Invite this coach to log in',
+          'Invite this $kindLabel to log in',
           'Sends a magic-link to the email above so they can sign in as a '
-              'coach.',
+              '$kindLabel.',
           const AppBadge(text: 'Not invited', tone: AppBadgeTone.warning),
         ),
       (false, false) => (
           Icons.mark_email_unread_outlined,
           'Add an email to invite',
-          "Set the coach's email above and save first, then you can invite "
-              'them to log in.',
+          "Set the $kindLabel's email above and save first, then you can "
+              'invite them to log in.',
           const AppBadge(text: 'No email', tone: AppBadgeTone.info),
         ),
     };

@@ -88,16 +88,17 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   static const _centerRequiredTargets = {'center_admin', 'head_coach'};
 
   // Roles that must be invited FROM their own record so the login links to a
-  // real row — a coach from a coaches record, a student/parent from a student
-  // record (+ parent_link). Inviting them via this GENERIC sheet would make a
-  // dangling login (a coach with no coaches row → invisible in the coach list &
-  // can't own batches; a student with no students row; a parent linked to no
-  // student). So they're hidden from the role dropdown and invited from the
-  // record's own profile instead (Coaches → "invite login"; a student's
-  // "Logins & access"). head_coach is NOT here — its invite mints the coach
-  // record in _submit. (Kept in capabilities.invitableRoles so canInvite() still
-  // gates those record-backed invite tiles.)
-  static const _recordBackedTargets = {'coach', 'parent', 'student'};
+  // real row — a coach/trainer from a coaches record (trainers are coaches rows
+  // with kind='trainer'), a student/parent from a student record (+ parent_link).
+  // Inviting them via this GENERIC sheet would make a dangling login (a coach/
+  // trainer with no coaches row → invisible in its section & unassignable; a
+  // student with no students row; a parent linked to no student). So they're
+  // hidden from the role dropdown and invited from the record's own profile
+  // instead (Coaches/Trainers → "invite login"; a student's "Logins & access").
+  // head_coach is NOT here — its invite mints the coach record in _submit.
+  // (Kept in capabilities.invitableRoles so canInvite() still gates those
+  // record-backed invite tiles.)
+  static const _recordBackedTargets = {'coach', 'parent', 'student', 'trainer'};
 
   @override
   void initState() {
