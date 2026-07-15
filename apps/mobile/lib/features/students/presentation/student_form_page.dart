@@ -5,6 +5,7 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/presentation/student_discounts_section.dart';
 import 'package:playhub/features/billing/presentation/student_fees_section.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
@@ -82,6 +83,19 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     _status = widget.existing?.status ?? 'active';
     _dob = widget.existing?.dateOfBirth;
     _photo = widget.existing?.photo;
+    // New student by a center-scoped role (center_admin / head_coach):
+    // pre-select their primary center (dropdown also restricted in build).
+    if (widget.existing == null) {
+      Future.microtask(() async {
+        final profile = await ref.read(currentProfileProvider.future);
+        if (!mounted || profile == null) return;
+        final scoped =
+            profile.role == 'center_admin' || profile.role == 'head_coach';
+        if (scoped && profile.centerId != null) {
+          setState(() => _centerId = profile.centerId);
+        }
+      });
+    }
   }
 
   @override
@@ -281,6 +295,13 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     final restrictSports = sportScoped
         ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
         : null;
+    // A center-scoped role places a student only in their own center(s)
+    // (can_manage_student is center-scoped → RLS 42501s the rest); restrict the
+    // center picker to them (their primary is auto-selected in initState).
+    final centerScoped =
+        caps.role == 'center_admin' || caps.role == 'head_coach';
+    final myCenters =
+        centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit student' : 'New student')),
@@ -467,10 +488,16 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               loading: () => const LinearProgressIndicator(minHeight: 2),
               error: (e, _) => Text(friendlyError(e)),
               data: (centres) {
-                final active = centres.where((c) => c.isActive).toList();
-                // Guard a stored center that's now inactive (edit mode): it's
-                // filtered out of the items and the dropdown asserts on a value
-                // not among them. Fall back to "— select —"; validator flags it.
+                var active = centres.where((c) => c.isActive).toList();
+                // Center-scoped roles place a student only in their own
+                // center(s); restrict the options to them. Owner/admin see all.
+                if (centerScoped && myCenters != null) {
+                  active =
+                      active.where((c) => myCenters.contains(c.id)).toList();
+                }
+                // Guard a stored center absent from the options (inactive, or
+                // outside a center-scoped role's centers): the dropdown asserts
+                // on a value not among items. Fall back to "— select —".
                 final safeValue =
                     active.any((c) => c.id == _centerId) ? _centerId : null;
                 return AppDropdownField<String>(
@@ -485,7 +512,12 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                     for (final c in active)
                       DropdownMenuItem(value: c.id, child: Text(c.name)),
                   ],
-                  onChanged: (v) => setState(() => _centerId = v),
+                  onChanged: (v) => setState(() {
+                    _centerId = v;
+                    // Sports are center-scoped in the picker below — clear so a
+                    // stale sport can't carry across a center change.
+                    _sportId = null;
+                  }),
                 );
               },
             ),

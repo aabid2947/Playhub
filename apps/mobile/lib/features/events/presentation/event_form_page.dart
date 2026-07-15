@@ -150,6 +150,25 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
                   : (v) => setState(() => _kind = v ?? EventKind.tournament),
             ),
             const SizedBox(height: AppSpacing.md),
+            // Center FIRST so the Sport picker below scopes to it (a null center
+            // = academy-wide event → the academy-wide sport list).
+            AppDropdownField<String?>(
+              label: 'Center (optional)',
+              value: _centerId,
+              items: [
+                const DropdownMenuItem<String?>(child: Text('— None —')),
+                for (final c in centers)
+                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (v) => setState(() {
+                      _centerId = v;
+                      // Re-scope sports to the chosen center.
+                      _sportId = null;
+                    }),
+            ),
+            const SizedBox(height: AppSpacing.md),
             SportPicker(
               value: _sportId,
               onChanged: (v) => setState(() => _sportId = v),
@@ -240,17 +259,6 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
               label: 'Location',
               enabled: !_saving,
               textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppDropdownField<String?>(
-              label: 'Center (optional)',
-              value: _centerId,
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final c in centers)
-                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: _saving ? null : (v) => setState(() => _centerId = v),
             ),
             const SizedBox(height: AppSpacing.md),
             // Capacity + fee sit side-by-side on wide layouts and stack to full

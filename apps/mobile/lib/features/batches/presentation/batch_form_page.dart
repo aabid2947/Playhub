@@ -52,6 +52,20 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     _sportId = widget.existing?.sportId;
     _skillLevel = widget.existing?.skillLevel;
     _schedule = widget.existing?.schedule ?? const BatchSchedule();
+    // New batch by a center-scoped role (center_admin / head_coach): pre-select
+    // their primary center (the dropdown is also restricted to their centers in
+    // build). Owner / academy_admin choose from every center.
+    if (widget.existing == null) {
+      Future.microtask(() async {
+        final profile = await ref.read(currentProfileProvider.future);
+        if (!mounted || profile == null) return;
+        final scoped =
+            profile.role == 'center_admin' || profile.role == 'head_coach';
+        if (scoped && profile.centerId != null) {
+          setState(() => _centerId = profile.centerId);
+        }
+      });
+    }
   }
 
   @override
@@ -147,6 +161,12 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     final restrictSports = sportScoped
         ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
         : null;
+    // A center-scoped role (center_admin / head_coach) assigns only into their
+    // own center(s) — RLS 42501s the rest — so restrict the center picker to
+    // them (their primary is auto-selected in initState).
+    final centerScoped = role == 'center_admin' || role == 'head_coach';
+    final myCenters =
+        centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit batch' : 'New batch')),
@@ -210,7 +230,14 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               async: centresAsync,
               emptyOptionLabel: '— select a center —',
               // Inactive centers can't take new assignments; hide them.
-              optionsOf: (centres) => centres.where((c) => c.isActive).toList(),
+              optionsOf: (centres) {
+                var active = centres.where((c) => c.isActive).toList();
+                if (centerScoped && myCenters != null) {
+                  active =
+                      active.where((c) => myCenters.contains(c.id)).toList();
+                }
+                return active;
+              },
               idOf: (c) => c.id,
               labelOf: (c) => c.name,
               onChanged: (v) => setState(() {

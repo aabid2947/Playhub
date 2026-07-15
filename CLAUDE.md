@@ -223,6 +223,19 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — batch/student/event forms: same center scoping as the coach form
+Swept the sibling create forms for the coach-form problem. **batch_form + student_form** now restrict the
+Center dropdown to a center-scoped role's own center(s) (`myCenterIdsProvider`) + auto-select their primary
+center in initState — the center IS RLS-gated for both (batch via `can_manage_batch_fields`, student via
+`can_manage_student`), so a head_coach/center_admin picking a foreign center previously 42501'd on save
+(the change log had flagged this for students). Their sport pickers were already center-scoped +
+head_coach-restricted. **event_form**: moved the (optional) Center picker ABOVE the Sport picker so sports
+scope to the chosen center instead of flashing the academy-wide union first (event center is optional +
+sport isn't RLS-gated → cosmetic). All three clear the selected sport on center change. Client UX only, RLS
+unchanged. Supersedes the "batch/student NOT changed" note in the coach entry below. **NOT changed:** the
+secondary center pickers (coach/student bulk import, inventory forms, lead-convert). `flutter analyze` not
+run (standing preference; CI compiles).
+
 ### 2026-07-14 — coach form: center-first + sports scoped to the chosen center (role-aware)
 The New/Edit-coach form showed "Sports coached" ABOVE the center and sourced it from
 `academyCenterSportsProvider` (EVERY academy sport), so an owner saw all sports before/without picking a
