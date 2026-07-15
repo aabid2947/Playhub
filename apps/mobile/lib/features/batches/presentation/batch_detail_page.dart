@@ -37,19 +37,32 @@ class BatchDetailPage extends ConsumerWidget {
     final caps = ref.watch(capabilitiesProvider);
     final profile = ref.watch(currentProfileProvider).valueOrNull;
     final role = profile?.role;
-    // center_admin & head_coach are center-scoped writers (can_manage_batches /
-    // can_mark_attendance gate on batch_in_my_center) but can *see* the whole
-    // academy. Hide write controls for a batch outside their center rather than
-    // letting the action fail under RLS. Admins are academy-wide; coach/trainer
-    // only ever reach their own batches, so they're unaffected.
+    // center_admin & head_coach are center-scoped writers but can *see* the whole
+    // academy. Hide write controls for a batch they can't manage under RLS rather
+    // than letting the action 42501. Admins are academy-wide; coach/trainer only
+    // ever reach their own batches, so they're unaffected.
+    //   • center_admin → gates on CENTER (batch_in_my_center); manages every
+    //     sport in their center(s).
+    //   • head_coach   → can_manage_batch_fields gates on CENTER *and* SPORT, so
+    //     a cross-sport in-center batch would 42501 on edit/enrol/attendance —
+    //     check the sport too (mirrors myBatchesProvider).
     final isCenterScoped = role == 'center_admin' || role == 'head_coach';
+    final isHeadCoach = role == 'head_coach';
     // center_admin may manage MULTIPLE centers (user_centers) — check the batch
     // against the full grant set, not just the primary center.
     final myCenters =
         ref.watch(myCenterIdsProvider).valueOrNull ?? const <String>{};
     final inMyCenter =
         batch.centerId == null || myCenters.contains(batch.centerId);
-    final scopeOk = !isCenterScoped || inMyCenter;
+    // A head_coach's sports = the coach_sports of their linked coaches row; a
+    // null-sport batch falls back to center scope (matches the RLS relaxation).
+    final mySports = isHeadCoach
+        ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
+        : const <String>{};
+    final inMySport = !isHeadCoach ||
+        batch.sportId == null ||
+        mySports.contains(batch.sportId);
+    final scopeOk = !isCenterScoped || (inMyCenter && inMySport);
     final canManageEnroll = caps.manageBatches && scopeOk;
     final canMarkAttendance = caps.markAttendance && scopeOk;
     // Fees/discounts are finance: admin-only write, center_admin view-only.

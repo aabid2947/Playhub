@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/events/data/event.dart';
 import 'package:playhub/features/events/data/event_providers.dart';
@@ -114,7 +115,27 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final centers = ref.watch(centersProvider).valueOrNull ?? [];
+    // A center-scoped role (center_admin / head_coach) may only create events in
+    // their OWN center(s): events_write_insert gates on can_manage_batches, so a
+    // foreign (or inactive) center 42501s on save. Restrict the picker to their
+    // active centers; owner / academy_admin pick from every active one. The
+    // "— None —" (null / academy-wide) option stays available to everyone.
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    final centerScoped = role == 'center_admin' || role == 'head_coach';
+    final myCenters =
+        centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
+    var centers = (ref.watch(centersProvider).valueOrNull ?? const [])
+        .where((c) => c.isActive)
+        .toList();
+    if (centerScoped && myCenters != null) {
+      centers = centers.where((c) => myCenters.contains(c.id)).toList();
+    }
+    // Guard a selection that isn't among the options (fall back to "— None —");
+    // null is always valid (academy-wide).
+    final safeCenterId =
+        _centerId == null || centers.any((c) => c.id == _centerId)
+            ? _centerId
+            : null;
     final scheduleError = _autoValidate ? _scheduleError : null;
     return Scaffold(
       appBar: AppBar(title: const Text('New event')),
@@ -154,7 +175,7 @@ class _EventFormPageState extends ConsumerState<EventFormPage> {
             // = academy-wide event → the academy-wide sport list).
             AppDropdownField<String?>(
               label: 'Center (optional)',
-              value: _centerId,
+              value: safeCenterId,
               items: [
                 const DropdownMenuItem<String?>(child: Text('— None —')),
                 for (final c in centers)

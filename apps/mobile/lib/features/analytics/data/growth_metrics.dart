@@ -87,7 +87,13 @@ final growthMetricsProvider = Provider<GrowthMetrics?>((ref) {
 
   return GrowthMetrics(
     students: _countStat(students, (s) => s.enrollmentDate, cutoff),
-    coaches: _countStat(coaches, (c) => c.joinDate, cutoff),
+    // coachesProvider returns coaches AND trainers; "Coaches" growth counts
+    // kind='coach' only so the headcount (and its baseline) isn't inflated.
+    coaches: _countStat(
+      coaches.where((c) => c.isCoach).toList(),
+      (c) => c.joinDate,
+      cutoff,
+    ),
     centers: _countStat(centers, (c) => c.createdAt, cutoff),
     revenue: revenue,
   );

@@ -223,6 +223,16 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-15 — FIX: head_coach attendance list was center-only (42501 on cross-sport save) + review log
+`todaysBatchesProvider` ([attendance_providers.dart](apps/mobile/lib/features/attendance/data/attendance_providers.dart))
+scoped a head_coach by CENTER only, but `can_mark_attendance` for head_coach = `batch_in_my_center` AND
+`batch_in_my_sport`, so today's cross-sport in-center sessions were listed and 42501'd on save. Split the
+merged `center_admin || head_coach` branch: **center_admin stays center-only; head_coach now also sport-filters**
+via `mySportIdsProvider` (mirrors `myBatchesProvider`). **Don't re-merge those two branches.** A max-effort
+`/code-review` of this session's diff (15 findings — a `create-saas-order` stale-invoice money bug, `event_form`
+center still unrestricted, trial cap counts trainers, + more) is logged in [HANDOFF.md](HANDOFF.md) →
+"Code review — 2026-07-15". `flutter analyze` not run (standing preference).
+
 ### 2026-07-14 — Trainers section (trainers = coaches rows, kind='trainer') + removed from Team invite
 Owner decision: trainers get the SAME functionality/access as coaches (for center_admin + head_coach), as a
 separate section. Modeled as coaches rows tagged `kind`

@@ -71,5 +71,9 @@ class Coach {
 
   bool get isTrainer => kind == 'trainer';
 
+  /// True for a "real" coach (kind='coach'). Use to keep "Coaches" counts /
+  /// lists from including trainers — coachesProvider returns BOTH kinds.
+  bool get isCoach => kind == 'coach';
+
   String get fullName => '$firstName $lastName';
 }

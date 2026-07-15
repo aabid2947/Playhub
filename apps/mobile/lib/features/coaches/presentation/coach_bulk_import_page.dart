@@ -52,7 +52,14 @@ class _RowFailure {
 }
 
 class CoachBulkImportPage extends ConsumerStatefulWidget {
-  const CoachBulkImportPage({super.key});
+  const CoachBulkImportPage({super.key, this.kind = 'coach'});
+
+  /// 'coach' (default) or 'trainer' — the staff kind written to `coaches.kind`
+  /// for every imported row (and the noun shown throughout the flow). Without
+  /// it, an import launched from the Trainers tab would fall back to the DB
+  /// default ('coach') and silently create coaches. Both kinds are `coaches`
+  /// rows reusing the same importer.
+  final String kind;
 
   @override
   ConsumerState<CoachBulkImportPage> createState() =>
@@ -60,6 +67,11 @@ class CoachBulkImportPage extends ConsumerStatefulWidget {
 }
 
 class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
+  // Kind-aware nouns so a Trainers-tab import reads "trainer(s)" everywhere
+  // (the rows are still `coaches` table rows, discriminated by `kind`).
+  bool get _isTrainer => widget.kind == 'trainer';
+  String get _kindSingular => _isTrainer ? 'trainer' : 'coach';
+  String get _kindPlural => _isTrainer ? 'trainers' : 'coaches';
   List<Map<String, String>>? _rows;
   String? _error;
   String? _filename;
@@ -171,14 +183,14 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
     if (centerId == null) {
       setState(() {
         _busy = false;
-        _error = 'Pick a center to import coaches into.';
+        _error = 'Pick a center to import $_kindPlural into.';
       });
       return;
     }
     if (_sportIds.isEmpty) {
       setState(() {
         _busy = false;
-        _error = 'Select at least one sport for the imported coaches.';
+        _error = 'Select at least one sport for the imported $_kindPlural.';
       });
       return;
     }
@@ -208,6 +220,7 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
         final inserted = await client.from('coaches').insert({
           'academy_id': academyId,
           'center_id': centerId,
+          'kind': widget.kind,
           'first_name': r['first_name'],
           'last_name': r['last_name'],
           if (r['email'] != null) 'email': r['email'],
@@ -277,7 +290,7 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import coaches'),
+        title: Text('Import $_kindPlural'),
         actions: [
           TextButton.icon(
             icon: const Icon(Icons.help_outline),
@@ -409,13 +422,16 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
                   )
                 else ...[
                   if (limits != null && limits.isTrial) ...[
+                    // The trial coach-record cap is SHARED across coaches +
+                    // trainers (coachCount counts both), so the "left" figure is
+                    // accurate for either kind; only the noun reflects the tab.
                     Text(
                       (TrialLimits.maxCoachRecords - limits.coachCount) <= 0
-                          ? 'Free trial: your ${TrialLimits.maxCoachRecords}-coach '
+                          ? 'Free trial: your ${TrialLimits.maxCoachRecords}-$_kindSingular '
                               "limit is reached — rows won't import until you "
                               'upgrade.'
                           : 'Free trial: at most ${TrialLimits.maxCoachRecords} '
-                              'coaches '
+                              '$_kindPlural '
                               '(${TrialLimits.maxCoachRecords - limits.coachCount} '
                               "left) — extra rows won't import. Upgrade to add "
                               'more.',
@@ -427,11 +443,14 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
                     const SizedBox(height: AppSpacing.md),
                   ],
                   _CenterSelect(
+                    kindPlural: _kindPlural,
                     value: _centerId,
                     onChanged: (v) => setState(() => _centerId = v),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   _SportSelect(
+                    kindSingular: _kindSingular,
+                    kindPlural: _kindPlural,
                     selectedIds: _sportIds,
                     onToggle: (sid, sel) => setState(() {
                       if (sel) {
@@ -499,8 +518,14 @@ class _CoachBulkImportPageState extends ConsumerState<CoachBulkImportPage> {
 /// Required target-center dropdown applied to the whole import (coaches.center_id
 /// is NOT NULL at the DB). Blocks with guidance when the academy has no center.
 class _CenterSelect extends ConsumerWidget {
-  const _CenterSelect({required this.value, required this.onChanged});
+  const _CenterSelect({
+    required this.kindPlural,
+    required this.value,
+    required this.onChanged,
+  });
 
+  /// 'coaches' | 'trainers' — the noun for the records being imported.
+  final String kindPlural;
   final String? value;
   final ValueChanged<String?> onChanged;
 
@@ -512,13 +537,13 @@ class _CenterSelect extends ConsumerWidget {
           data: (centres) {
             final active = centres.where((c) => c.isActive).toList();
             if (active.isEmpty) {
-              return const _InlineError(
-                message: 'Create a center first — imported coaches must '
+              return _InlineError(
+                message: 'Create a center first — imported $kindPlural must '
                     'belong to a center.',
               );
             }
             return AppDropdownField<String>(
-              label: 'Import all coaches into center *',
+              label: 'Import all $kindPlural into center *',
               value: value,
               items: [
                 for (final c in active)
@@ -535,8 +560,16 @@ class _CenterSelect extends ConsumerWidget {
 /// coach. Deduped by catalog sport id (a sport may be enabled at many centers).
 /// Blocks with guidance when no sport is enabled (every coach needs >=1 sport).
 class _SportSelect extends ConsumerWidget {
-  const _SportSelect({required this.selectedIds, required this.onToggle});
+  const _SportSelect({
+    required this.kindSingular,
+    required this.kindPlural,
+    required this.selectedIds,
+    required this.onToggle,
+  });
 
+  /// 'coach' | 'trainer' and its plural — the noun for the imported records.
+  final String kindSingular;
+  final String kindPlural;
   final Set<String> selectedIds;
   final void Function(String sportId, bool selected) onToggle;
 
@@ -552,16 +585,16 @@ class _SportSelect extends ConsumerWidget {
               byId.putIfAbsent(cs.sport.id, () => cs.sport.name);
             }
             if (byId.isEmpty) {
-              return const _InlineError(
+              return _InlineError(
                 message: 'Enable a sport first (Settings → Sports) — every '
-                    'imported coach must have at least one sport.',
+                    'imported $kindSingular must have at least one sport.',
               );
             }
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sports for all imported coaches *',
+                  'Sports for all imported $kindPlural *',
                   style: theme.textTheme.labelLarge,
                 ),
                 const SizedBox(height: AppSpacing.sm),

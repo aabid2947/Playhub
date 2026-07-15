@@ -48,7 +48,9 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
 
   void _openImport() {
     Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const CoachBulkImportPage()),
+      // Carry the active section's kind so a Trainers-tab import creates
+      // trainers (not coaches via the DB default).
+      MaterialPageRoute(builder: (_) => CoachBulkImportPage(kind: _kind)),
     );
   }
 

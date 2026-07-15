@@ -71,6 +71,36 @@ final myBatchesProvider = FutureProvider<List<Batch>>((ref) async {
 
   final coach = await ref.watch(myCoachRecordProvider.future);
   if (coach == null) return const [];
+
+  // Trainers are coaches rows too, but they're NEVER a batch's primary coach
+  // (batches.coach_id points at a kind='coach' record — the app enforces this),
+  // so keying "my batches" on coach_id would always be empty and make the coach
+  // shell look broken. A trainer assists via batch_staff, so their manageable
+  // batches are the ones they're assigned to as staff — mirroring the RLS
+  // `staff_on_batch` gate. batch_staff.user_id is the auth user id, which is the
+  // coaches row's user_id (myCoachRecordProvider matched on user_id = auth.uid).
+  if (coach.isTrainer) {
+    final uid = coach.userId;
+    if (uid == null) return const [];
+    final staffRows = await client
+        .from('batch_staff')
+        .select('batch_id')
+        .eq('user_id', uid);
+    final batchIds = [
+      for (final r in staffRows as List) (r as Map)['batch_id'] as String,
+    ];
+    if (batchIds.isEmpty) return const [];
+    final rows = await client
+        .from('batches')
+        .select()
+        .inFilter('id', batchIds)
+        .eq('is_active', true)
+        .order('name');
+    return (rows as List)
+        .map((r) => Batch.fromMap(r as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
   final rows = await client
       .from('batches')
       .select()

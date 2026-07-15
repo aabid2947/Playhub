@@ -56,7 +56,11 @@ class HomeTab extends ConsumerWidget {
     final academy = ref.watch(myAcademyProvider).valueOrNull;
     final centers = ref.watch(centersProvider).valueOrNull ?? const [];
     final students = ref.watch(studentsProvider).valueOrNull ?? const [];
-    final coaches = ref.watch(coachesProvider).valueOrNull ?? const [];
+    // coachesProvider returns coaches AND trainers (both are coaches rows);
+    // the home "Coaches" stats mean coaches only, so drop trainers here.
+    final coaches = (ref.watch(coachesProvider).valueOrNull ?? const [])
+        .where((c) => c.isCoach)
+        .toList();
     final batches = ref.watch(batchesProvider).valueOrNull ?? const [];
     final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? const [];
     final lowStock = ref.watch(lowStockItemsProvider).length;

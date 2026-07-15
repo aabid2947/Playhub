@@ -308,9 +308,7 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
               async: coachesAsync,
               emptyOptionLabel: '— select a coach —',
               // Scope to the chosen center, then (once a sport is picked) to
-              // coaches who teach that sport (coach_sports). Applies in create
-              // AND edit; the _AsyncDropdownField value-guard falls back to
-              // "— select —" if a saved coach isn't in the narrowed list.
+              // coaches who teach that sport (coach_sports).
               optionsOf: (coaches) {
                 // Only 'coach'-kind records can be a batch's PRIMARY coach;
                 // trainers assist via batch_staff, not batches.coach_id.
@@ -321,7 +319,20 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
                 if (_sportId != null && sportCoachIds != null) {
                   list = list.where((c) => sportCoachIds.contains(c.id));
                 }
-                return list.toList();
+                final result = list.toList();
+                // Keep the currently-selected coach selectable even if they fall
+                // outside the center/sport narrowing — e.g. editing a batch whose
+                // saved coach no longer teaches its sport. Without this the
+                // value-guard blanks the field and the required validator blocks
+                // re-saving an unrelated edit. Changing the center/sport clears
+                // _coachId, so this only preserves an intentional selection; and
+                // coach↔sport isn't RLS-gated, so it can't cause a 42501.
+                if (_coachId != null && !result.any((c) => c.id == _coachId)) {
+                  final current =
+                      coaches.where((c) => c.id == _coachId).toList();
+                  if (current.isNotEmpty) result.insert(0, current.first);
+                }
+                return result;
               },
               idOf: (c) => c.id,
               labelOf: (c) => c.fullName,

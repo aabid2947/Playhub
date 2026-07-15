@@ -49,7 +49,12 @@ final attendanceForBatchProvider = FutureProvider.family<
 /// offers a batch whose save the backend would reject with a permission error
 /// (see `migrations/…_role_capabilities.sql`):
 ///   - admin tier (owner/admin)   → every academy batch
-///   - center_admin / head_coach  → batches in their own center
+///   - center_admin               → batches in their own center(s)
+///     (`batch_in_my_center`)
+///   - head_coach                 → batches in their own center(s) AND one of
+///     their sports (`batch_in_my_center` AND `batch_in_my_sport`); a
+///     sport-less batch in-center also qualifies. Without the sport filter the
+///     list would offer cross-sport sessions that 42501 on save.
 ///   - coach / trainer            → only batches they're assigned to
 ///     (`coach_id == own coaches.id`); none if not linked to a coaches row
 final todaysBatchesProvider = FutureProvider<List<Batch>>((ref) async {
@@ -63,12 +68,24 @@ final todaysBatchesProvider = FutureProvider<List<Batch>>((ref) async {
       role == 'academy_owner' ||
       role == 'academy_admin') {
     scoped = batches;
-  } else if (role == 'center_admin' || role == 'head_coach') {
-    // center_admin may span multiple centers (user_centers); head_coach stays
-    // single-center but reads the same set (its grant set is just its home).
+  } else if (role == 'center_admin') {
+    // center_admin may span multiple centers (user_centers); attendance is
+    // center-scoped only (`batch_in_my_center`), no sport gate.
     final myCenters = await ref.watch(myCenterIdsProvider.future);
     scoped = batches
         .where((b) => b.centerId == null || myCenters.contains(b.centerId))
+        .toList();
+  } else if (role == 'head_coach') {
+    // head_coach is center + sport scoped: mirror `can_mark_attendance` =
+    // `batch_in_my_center` AND `batch_in_my_sport`. mySportIds = the
+    // coach_sports of the linked coaches row (empty when unlinked → only
+    // sport-less in-center batches remain), matching myBatchesProvider.
+    final myCenters = await ref.watch(myCenterIdsProvider.future);
+    final mySports = (await ref.watch(mySportIdsProvider.future)).toSet();
+    scoped = batches
+        .where((b) =>
+            (b.centerId == null || myCenters.contains(b.centerId)) &&
+            (b.sportId == null || mySports.contains(b.sportId)))
         .toList();
   } else if (role == 'coach' || role == 'trainer') {
     final coach = await ref.watch(myCoachRecordProvider.future);

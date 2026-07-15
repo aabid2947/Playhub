@@ -566,10 +566,13 @@ final academyStudentsProvider =
 final academyCoachesProvider =
     FutureProvider.family<List<Coach>, String>((ref, academyId) async {
   final client = ref.watch(supabaseClientProvider);
+  // Coaches only — trainers are also coaches rows (kind='trainer') but this is
+  // the super-admin People → "Coaches" list; a trainers view is separate.
   final rows = await client
       .from('coaches')
       .select()
       .eq('academy_id', academyId)
+      .eq('kind', 'coach')
       .order('first_name');
   return (rows as List)
       .map((r) => Coach.fromMap(r as Map<String, dynamic>))

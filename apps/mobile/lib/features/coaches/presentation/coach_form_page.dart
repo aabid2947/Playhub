@@ -95,17 +95,32 @@ class _CoachFormPageState extends ConsumerState<CoachFormPage> {
       });
     } else {
       // New coach: a center-scoped role (center_admin / head_coach) manages a
-      // fixed set of centers, so pre-select their primary center instead of
-      // making them choose — the dropdown is also restricted to their centers
-      // in build(). Owner / academy_admin pick from every center (no default).
+      // fixed set of centers, so pre-select a sensible default instead of making
+      // them choose — the dropdown is also restricted to their centers in
+      // build(). Owner / academy_admin pick from every center (no default).
       Future.microtask(() async {
         final profile = await ref.read(currentProfileProvider.future);
         if (!mounted || profile == null) return;
         final scoped =
             profile.role == 'center_admin' || profile.role == 'head_coach';
-        if (scoped && profile.centerId != null) {
-          setState(() => _centerId = profile.centerId);
-        }
+        if (!scoped) return;
+        // Default to a center this role can actually assign into — the SAME set
+        // build() offers (their centers ∩ active). Prefer their primary center,
+        // but fall back to the sole assignable one so a role whose primary is
+        // inactive / absent from their granted set (or null with a single grant)
+        // still gets a preselection; otherwise build()'s value-guard blanks it.
+        final myCenters = await ref.read(myCenterIdsProvider.future);
+        final centres = await ref.read(centersProvider.future);
+        if (!mounted) return;
+        final assignable = [
+          for (final c in centres)
+            if (c.isActive && myCenters.contains(c.id)) c.id,
+        ];
+        final primary = profile.centerId;
+        final pick = (primary != null && assignable.contains(primary))
+            ? primary
+            : (assignable.length == 1 ? assignable.first : null);
+        if (pick != null) setState(() => _centerId = pick);
       });
     }
   }
