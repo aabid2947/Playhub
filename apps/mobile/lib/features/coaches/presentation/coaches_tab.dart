@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
@@ -55,7 +56,14 @@ class _CoachesTabState extends ConsumerState<CoachesTab> {
   /// the data layer stays untouched.
   List<Coach> _filter(List<Coach> coaches) {
     final query = _search.text.trim().toLowerCase();
+    // A head_coach's OWN coach record is readable (the app derives their sports
+    // + batches from it via myCoachRecordProvider) but they don't manage
+    // themselves, so hide it from the list. Peer head coaches are already
+    // excluded by RLS; this drops the only head_coach row a head_coach can see.
+    final isHeadCoach = ref.read(capabilitiesProvider).role == 'head_coach';
+    final myUserId = isHeadCoach ? ref.read(currentUserIdProvider) : null;
     return coaches.where((c) {
+      if (myUserId != null && c.userId == myUserId) return false;
       switch (_status) {
         case _CoachStatusFilter.active:
           if (!c.isActive) return false;

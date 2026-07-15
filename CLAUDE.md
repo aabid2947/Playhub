@@ -223,6 +223,19 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — REVERT hide-own-head_coach RLS (it broke head_coach sports); hide own in the LIST instead
+`20260714000100` (hide a head_coach's OWN coach record via RLS) was a REGRESSION. `myCoachRecordProvider`
+reads `coaches where user_id = auth.uid()` to derive a head_coach's sports (`mySportIdsProvider`) + their
+manageable batches — so with their own row RLS-hidden they got ZERO sports in the batch/student/coach sport
+pickers (reported: "selected north but no sports show") and an empty coach-shell batch list.
+[20260714000300](supabase/migrations/20260714000300_head_coach_own_coach_readable.sql) — **applied live +
+verified** (own row readable=1, sees_own=t) — reverts `coach_is_foreign_head_coach` to **PEER-ONLY** (own is
+readable/manageable again; OTHER head coaches still hidden). Hiding the own record from the Coaches LIST is
+now **client-side** ([coaches_tab](apps/mobile/lib/features/coaches/presentation/coaches_tab.dart) `_filter`
+drops `c.userId == currentUserId` for a head_coach viewer). **LESSON: RLS gates data ACCESS, not list
+PRESENTATION — never hide a row via RLS that the app must read for its own scoping.** RLS fix is live (any
+APK); the list filter needs a rebuild. **Supersedes the `20260714000100` entry below.**
+
 ### 2026-07-14 — batch/student/event forms: same center scoping as the coach form
 Swept the sibling create forms for the coach-form problem. **batch_form + student_form** now restrict the
 Center dropdown to a center-scoped role's own center(s) (`myCenterIdsProvider`) + auto-select their primary
