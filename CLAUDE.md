@@ -223,6 +223,18 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-14 — head_coach can no longer see/edit a PEER head_coach (RLS)
+Org-hierarchy: a head_coach manages coaches/trainers under them, not other head coaches.
+Was NOT enforced — `can_manage_coach_record` is center-scoped, so a head_coach could edit
+any coach in their center incl. another head_coach. New `coach_is_foreign_head_coach(coach_id)`
+(true only when the ACTOR is a head_coach and the target is a DIFFERENT head_coach) is AND-ed
+(negated) into `head_coach_sees_coach` (read → peer drops out of the coaches list automatically,
+no Dart change), `coaches_update` (can't edit a peer), and `can_manage_coach` (can't retag a
+peer's sports). Own record + plain coaches unaffected; owner/admin/center_admin never restricted.
+[20260714000000](supabase/migrations/20260714000000_head_coach_no_peer_coach_mgmt.sql) — **applied
+live via the Management API this session** + verified by reproduction (sees_peer=f, peer_update_rows=0;
+sees_own/plain=t). RLS-only, no APK rebuild. **OWED: commit the migration file** (pgTAP not added).
+
 ### 2026-07-14 — coach form pre-checks the trial coach cap (was a raw 403) + GOTCHA
 Diagnosed a head_coach "database error on coach create": it was the free-trial coach cap
 (RESTRICTIVE policy `trial_quota_coaches_insert`, `TrialLimits.maxCoachRecords = 2`) returning
