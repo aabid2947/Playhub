@@ -2,14 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:playhub/features/subscription/presentation/upgrade_prompt.dart';
 import 'package:playhub/features/users/data/invite_repo.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Bottom-sheet form to invite a team member by email.
 ///
 /// Modes:
-///   - normal team invite (default) — pick role, optional center.
+///   - normal team invite (default) — pick role + center (required for
+///     center_admin/head_coach); a head_coach also picks sport(s), which mint a
+///     linked coach record so they own them.
 ///   - parent-link mode (preset)    — role=parent, locks studentId.
 ///   - coach-login mode (preset)    — role=coach, locks coachId.
 ///   - student-login mode (preset)  — role=student, locks studentId.
@@ -55,16 +63,42 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   final _last = TextEditingController();
   String _role = 'coach';
   String? _centerId;
+  // Additional centers a center_admin manages beyond [_centerId] (the primary).
+  // Persisted to user_centers after the invite (multi-center admins).
+  final Set<String> _extraCenterIds = {};
+  // Sports for a head_coach invite — REQUIRED. A head_coach owns sports only via
+  // a linked coach record, which we mint on submit and tag with these.
+  final Set<String> _sportIds = {};
   bool _busy = false;
-  String? _error;
 
-  static const _normalRoles = [
-    ('academy_admin', 'Admin'),
-    ('center_admin', 'Center admin'),
-    ('head_coach', 'Head coach'),
-    ('coach', 'Coach'),
-    ('trainer', 'Trainer'),
-  ];
+  // Center-scoped staff roles: when an ADMIN-tier inviter picks one of these,
+  // surface the center picker so the new staffer lands in a center (else they're
+  // academy-wide). center-scoped inviters never see it — the invite-user fn
+  // forces their own center.
+  static const _centerScopedTargets = {
+    'center_admin', 'head_coach', 'coach', 'trainer',
+  };
+
+  // Of those, the roles whose authority is *center-gated* and therefore can't
+  // function without one — so a center is REQUIRED, not optional. A center_admin
+  // administers a center; a head_coach is scoped to their center + sport via
+  // current_user_in_center(), so a center-less head_coach can manage nothing
+  // (it is NOT "academy-wide"). coach/trainer are batch-assignment scoped, so
+  // they work fine center-less — center stays optional for them.
+  static const _centerRequiredTargets = {'center_admin', 'head_coach'};
+
+  // Roles that must be invited FROM their own record so the login links to a
+  // real row — a coach/trainer from a coaches record (trainers are coaches rows
+  // with kind='trainer'), a student/parent from a student record (+ parent_link).
+  // Inviting them via this GENERIC sheet would make a dangling login (a coach/
+  // trainer with no coaches row → invisible in its section & unassignable; a
+  // student with no students row; a parent linked to no student). So they're
+  // hidden from the role dropdown and invited from the record's own profile
+  // instead (Coaches/Trainers → "invite login"; a student's "Logins & access").
+  // head_coach is NOT here — its invite mints the coach record in _submit.
+  // (Kept in capabilities.invitableRoles so canInvite() still gates those
+  // record-backed invite tiles.)
+  static const _recordBackedTargets = {'coach', 'parent', 'student', 'trainer'};
 
   @override
   void initState() {
@@ -88,16 +122,86 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
-    if (widget.preset == null && _role == 'center_admin' && _centerId == null) {
-      setState(() => _error = 'Pick a center for the center admin.');
+    // Free-trial cap on staff logins (head_coach / coach / trainer = 1 each).
+    // The invite-user edge fn enforces this server-side too; this is the early,
+    // friendly stop before we fire the request.
+    final limits = await ref.read(trialLimitsProvider.future);
+    if (!mounted) return;
+    if (limits.staffRoleReached(_role)) {
+      await showUpgradePrompt(
+        context,
+        message: 'Free trial limit reached — one '
+            '${_roleLabel(_role).toLowerCase()}. '
+            'Upgrade your plan to add more.',
+      );
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    final caps = ref.read(capabilitiesProvider);
+    if (widget.preset == null &&
+        !caps.inviteScopedToOwnCenter &&
+        _centerRequiredTargets.contains(_role) &&
+        _centerId == null) {
+      AppSnackbar.error(
+        context,
+        'Pick a center for the ${_roleLabel(_role).toLowerCase()}.',
+      );
+      return;
+    }
+    // A head_coach owns sports only through a linked coach record, which we mint
+    // below — so require a name (coaches.first/last_name are NOT NULL) and >=1
+    // sport, else the head_coach would be powerless (can't manage any batch).
+    if (widget.preset == null && _role == 'head_coach') {
+      if (_first.text.trim().isEmpty || _last.text.trim().isEmpty) {
+        AppSnackbar.error(
+          context,
+          "Enter the head coach's first and last name.",
+        );
+        return;
+      }
+      if (_sportIds.isEmpty) {
+        AppSnackbar.error(
+          context,
+          'Pick at least one sport for the head coach.',
+        );
+        return;
+      }
+      // Provisioning a head_coach also mints a coach RECORD to carry the sports,
+      // which consumes a coach-record slot distinct from the head_coach LOGIN
+      // cap checked above. Prompt to upgrade now rather than letting createCoach
+      // fail with a misleading center-scope error at the trial coach cap.
+      if (limits.coachesReached) {
+        await showUpgradePrompt(context, message: limits.coachesMessage);
+        return;
+      }
+    }
+    setState(() => _busy = true);
+    // Tracks a coach record minted for a head_coach invite so the catch below
+    // can roll it back if a later step (sports/invite) fails — no orphan record,
+    // no consumed trial slot, no duplicate on retry.
+    String? mintedCoachId;
     try {
       final repo = ref.read(inviteRepoProvider);
+      // For a head_coach, mint a linked coach record carrying the chosen sports
+      // FIRST, then invite the login linked to it — the auth trigger stamps
+      // coaches.user_id on accept, so the head_coach owns those sports
+      // (head_coach_owns_sport). If a later step fails, the catch rolls this
+      // record back (see mintedCoachId) so a failed invite leaves no orphan.
+      var linkCoachId = widget.preset?.linkCoachId;
+      if (widget.preset == null && _role == 'head_coach') {
+        // Admin-tier inviters pick _centerId; a center-scoped inviter
+        // (center_admin) has the picker hidden, so the record lands in their own
+        // center — matching the login center the edge fn forces.
+        final profile = await ref.read(currentProfileProvider.future);
+        final coach = await createCoach(ref, {
+          'first_name': _first.text.trim(),
+          'last_name': _last.text.trim(),
+          'center_id': _centerId ?? profile?.centerId,
+        });
+        mintedCoachId = coach.id;
+        final sportsRepo = await ref.read(sportsRepoProvider.future);
+        await sportsRepo?.setCoachSports(coach.id, _sportIds.toList());
+        linkCoachId = coach.id;
+      }
       final result = await repo.invite(
         email: _email.text.trim(),
         role: _role,
@@ -106,22 +210,42 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         centerId: _centerId,
         linkToStudentId: widget.preset?.linkToStudentId,
         linkRelationship: widget.preset?.linkRelationship,
-        linkCoachId: widget.preset?.linkCoachId,
+        linkCoachId: linkCoachId,
         linkStudentLoginId: widget.preset?.linkStudentLoginId,
       );
-      if (mounted) {
-        final email = _email.text.trim();
-        final msg = result.resent
-            ? (result.hasSignedIn
-                  ? '$email has already signed in once. A fresh invite link '
-                        'was sent — they can use it as a magic-link login.'
-                  : 'Resent invite to $email')
-            : 'Invite sent to $email';
-        AppSnackbar.success(context, msg);
-        Navigator.of(context).pop(true);
+      // Invite dispatched — keep the linked coach record (no rollback).
+      mintedCoachId = null;
+      // Multi-center admins: persist the additional centers (beyond the primary
+      // center_id the invite already set) to user_centers.
+      if (_role == 'center_admin' &&
+          _extraCenterIds.isNotEmpty &&
+          result.userId != null) {
+        await repo.grantCenters(result.userId!, _extraCenterIds.toList());
       }
-    } catch (e) {
-      setState(() => _error = '$e');
+      ref.invalidate(trialLimitsProvider); // refresh trial-cap counts
+      if (!mounted) return;
+      final email = _email.text.trim();
+      final msg = result.resent
+          ? (result.hasSignedIn
+                ? '$email has already signed in once. A fresh invite link '
+                      'was sent — they can use it as a magic-link login.'
+                : 'Resent invite to $email')
+          : 'Invite sent to $email';
+      AppSnackbar.success(context, msg);
+      Navigator.of(context).pop(true);
+    } on Object catch (e) {
+      // A head_coach coach record was minted but a later step (sports/invite)
+      // failed — roll it back so no orphan record or trial coach-record slot is
+      // left behind, and a retry starts clean.
+      final mintedId = mintedCoachId;
+      if (mintedId != null) {
+        try {
+          await deleteCoachRecord(ref, mintedId);
+        } on Object {
+          // Best-effort rollback; surface the original error regardless.
+        }
+      }
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -130,114 +254,365 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
   @override
   Widget build(BuildContext context) {
     final preset = widget.preset;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    // Role options mirror the DB provisioning ladder (capabilities.invitableRoles
+    // → can_provision_role). Capabilities load with the profile, so the default
+    // _role may not be invitable for this user — clamp it to a valid option so
+    // the dropdown's value is always one of its items.
+    final caps = ref.watch(capabilitiesProvider);
+    // Generic invite offers only staff/login roles — coach/parent/student are
+    // invited from their own record's profile (see _recordBackedTargets), never
+    // here, to avoid dangling logins with no linked record.
+    final roleOptions = caps.invitableRoles
+        .where((r) => !_recordBackedTargets.contains(r))
+        .toList();
+    if (preset == null &&
+        roleOptions.isNotEmpty &&
+        !roleOptions.contains(_role)) {
+      _role = roleOptions.first;
+    }
+    // For a head_coach invite the coach record lands in the picked center (or,
+    // for a center-scoped inviter whose picker is hidden, their own center).
+    // Scope the sport chips to THAT center's enabled sports so the head_coach
+    // can't be tagged with a sport the center doesn't offer.
+    final headCoachCenterId =
+        _centerId ?? ref.watch(currentProfileProvider).valueOrNull?.centerId;
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        16 + MediaQuery.of(context).viewInsets.bottom,
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      child: Form(
-        key: _form,
-        child: ListView(
-          shrinkWrap: true,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              preset?.title ?? 'Invite team member',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'They\'ll get a magic-link email to set their password and '
-              'sign in.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppFormField(
-              controller: _email,
-              label: 'Email *',
-              keyboardType: TextInputType.emailAddress,
-              validator: (v) => (v == null || !v.contains('@'))
-                  ? 'Valid email required'
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: AppFormField(controller: _first, label: 'First name'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: AppFormField(controller: _last, label: 'Last name'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (preset == null)
-              DropdownButtonFormField<String>(
-                initialValue: _role,
-                decoration: const InputDecoration(labelText: 'Role'),
-                items: [
-                  for (final r in _normalRoles)
-                    DropdownMenuItem(value: r.$1, child: Text(r.$2)),
-                ],
-                onChanged: (v) => setState(() {
-                  _role = v ?? _role;
-                  if (_role != 'center_admin') _centerId = null;
-                }),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Chip(label: Text('Role: ${_roleLabel(_role)}')),
-              ),
-            // A center admin must be scoped to a center — otherwise the
-            // center-narrowed RLS leaves them seeing nothing. Required.
-            if (preset == null && _role == 'center_admin') ...[
-              const SizedBox(height: 12),
-              ref
-                  .watch(centersProvider)
-                  .when(
-                    loading: () => const LinearProgressIndicator(minHeight: 2),
-                    error: (e, _) => Text(friendlyError(e)),
-                    data: (centres) {
-                      final active = centres.where((c) => c.isActive).toList();
-                      if (active.isEmpty) {
-                        return Text(
-                          'Create a center first — a center admin must be '
-                          'assigned to one.',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        );
-                      }
-                      return DropdownButtonFormField<String>(
-                        initialValue: _centerId,
-                        decoration: const InputDecoration(
-                          labelText: 'Center *',
-                        ),
-                        items: [
-                          for (final c in active)
-                            DropdownMenuItem(value: c.id, child: Text(c.name)),
-                        ],
-                        onChanged: (v) => setState(() => _centerId = v),
-                      );
-                    },
+            const _SheetHandle(),
+            _Header(title: preset?.title ?? 'Invite team member'),
+            const Divider(height: 1),
+            Flexible(
+              child: Form(
+                key: _form,
+                // Scrollable + height-bounded so a tall (center field +
+                // keyboard) layout never clips behind the keyboard.
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
                   ),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  shrinkWrap: true,
+                  children: [
+                    // In preset mode the role is locked, so surface it as a
+                    // clear labeled "Assigned role" row (badge, not a tiny
+                    // inline label) before the editable fields.
+                    if (preset != null) ...[
+                      _AssignedRoleRow(label: _roleLabel(_role)),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    const AppSectionHeader(
+                      title: 'Details',
+                      icon: Icons.person_add_alt_1_outlined,
+                    ),
+                    AppFormField(
+                      controller: _email,
+                      label: 'Email *',
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) => (v == null || !v.contains('@'))
+                          ? 'Valid email required'
+                          : null,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: AppFormField(
+                            controller: _first,
+                            // Required for a head_coach — its coach record needs
+                            // a name (coaches.first/last_name are NOT NULL).
+                            label: _role == 'head_coach'
+                                ? 'First name *'
+                                : 'First name',
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: AppFormField(
+                            controller: _last,
+                            label: _role == 'head_coach'
+                                ? 'Last name *'
+                                : 'Last name',
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Normal mode: the admin picks the role; preset mode locks
+                    // it (shown above), so no picker.
+                    if (preset == null) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      AppDropdownField<String>(
+                        label: 'Role',
+                        value: _role,
+                        items: [
+                          for (final r in roleOptions)
+                            DropdownMenuItem(
+                              value: r,
+                              child: Text(_roleLabel(r)),
+                            ),
+                        ],
+                        onChanged: (v) => setState(() {
+                          _role = v ?? _role;
+                          if (!_centerScopedTargets.contains(_role)) {
+                            _centerId = null;
+                          }
+                          // Extra centers only apply to a (multi-center) admin.
+                          if (_role != 'center_admin') {
+                            _extraCenterIds.clear();
+                          }
+                          // Sports only apply to a head_coach invite.
+                          if (_role != 'head_coach') {
+                            _sportIds.clear();
+                          }
+                        }),
+                      ),
+                    ],
+                    // Center-scoped staff need a center. Admin-tier inviters
+                    // pick it here (required for center_admin, optional for
+                    // head_coach/coach/trainer). center-scoped inviters never
+                    // see this — the invite-user fn forces their own center.
+                    if (preset == null &&
+                        !caps.inviteScopedToOwnCenter &&
+                        _centerScopedTargets.contains(_role)) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      ref
+                          .watch(centersProvider)
+                          .when(
+                            loading: () =>
+                                const LinearProgressIndicator(minHeight: 2),
+                            error: (e, _) => Text(
+                              friendlyError(e),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppSemanticColors.of(context).danger,
+                              ),
+                            ),
+                            data: (centres) {
+                              final active = centres
+                                  .where((c) => c.isActive)
+                                  .toList();
+                              if (active.isEmpty) {
+                                return Text(
+                                  _centerRequiredTargets.contains(_role)
+                                      ? 'Create a center first — a '
+                                            '${_roleLabel(_role).toLowerCase()} '
+                                            'must be assigned to one.'
+                                      : 'No centers yet. This staffer will be '
+                                            'academy-wide until you assign a '
+                                            'center.',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: AppSemanticColors.of(context).danger,
+                                  ),
+                                );
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AppDropdownField<String>(
+                                    label: _role == 'center_admin'
+                                        ? 'Primary center *'
+                                        : _centerRequiredTargets.contains(_role)
+                                            ? 'Center *'
+                                            : 'Center',
+                                    value: _centerId,
+                                    items: [
+                                      for (final c in active)
+                                        DropdownMenuItem(
+                                          value: c.id,
+                                          child: Text(c.name),
+                                        ),
+                                    ],
+                                    onChanged: (v) => setState(() {
+                                      _centerId = v;
+                                      // The primary can't also be an "extra".
+                                      if (v != null) _extraCenterIds.remove(v);
+                                      // Sports are center-scoped — clear the
+                                      // head_coach selection when the center
+                                      // changes so it can't keep a sport the new
+                                      // center doesn't offer.
+                                      _sportIds.clear();
+                                    }),
+                                  ),
+                                  // A center_admin may manage MULTIPLE centers
+                                  // (user_centers). Offer the rest as toggles.
+                                  if (_role == 'center_admin') ...[
+                                    const SizedBox(height: AppSpacing.md),
+                                    Text(
+                                      'Also manages',
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                        fontWeight: AppType.semibold,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xs),
+                                    Wrap(
+                                      spacing: AppSpacing.sm,
+                                      runSpacing: AppSpacing.xs,
+                                      children: [
+                                        for (final c in active
+                                            .where((c) => c.id != _centerId))
+                                          FilterChip(
+                                            label: Text(c.name),
+                                            selected:
+                                                _extraCenterIds.contains(c.id),
+                                            onSelected: (sel) => setState(() {
+                                              if (sel) {
+                                                _extraCenterIds.add(c.id);
+                                              } else {
+                                                _extraCenterIds.remove(c.id);
+                                              }
+                                            }),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
+                          ),
+                    ],
+                    // A head_coach owns sports only via a linked coach record —
+                    // require >=1 here; the record is minted (with these) on
+                    // submit. Scoped to the coach record's center so the
+                    // head_coach can't be tagged with a sport that center lacks.
+                    if (preset == null && _role == 'head_coach') ...[
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'Sports *',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: AppType.semibold,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      if (headCoachCenterId == null)
+                        Text(
+                          'Pick a center first — sports are chosen per center.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppSemanticColors.of(context).danger,
+                          ),
+                        )
+                      else
+                        ref
+                            .watch(centerSportsProvider(headCoachCenterId))
+                            .when(
+                              loading: () =>
+                                  const LinearProgressIndicator(minHeight: 2),
+                              error: (e, _) => Text(
+                                friendlyError(e),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppSemanticColors.of(context).danger,
+                                ),
+                              ),
+                              data: (list) {
+                                if (list.isEmpty) {
+                                  return Text(
+                                    'No sports at this center yet — enable one in '
+                                    'Settings → Sports; a head coach must own at '
+                                    'least one.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color:
+                                          AppSemanticColors.of(context).danger,
+                                    ),
+                                  );
+                                }
+                                return Wrap(
+                                  spacing: AppSpacing.sm,
+                                  runSpacing: AppSpacing.xs,
+                                  children: [
+                                    for (final cs in list)
+                                      FilterChip(
+                                        label: Text(cs.sport.name),
+                                        selected:
+                                            _sportIds.contains(cs.sport.id),
+                                        onSelected: (sel) => setState(() {
+                                          if (sel) {
+                                            _sportIds.add(cs.sport.id);
+                                          } else {
+                                            _sportIds.remove(cs.sport.id);
+                                          }
+                                        }),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
+                    ],
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      "They'll get a magic-link email to set their password "
+                      'and sign in.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    // Free-trial cap warning for the selected staff role.
+                    if (ref
+                            .watch(trialLimitsProvider)
+                            .valueOrNull
+                            ?.staffRoleReached(_role) ??
+                        false) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Free trial limit reached — one '
+                        '${_roleLabel(_role).toLowerCase()}. '
+                        'Upgrade your plan to add more.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppSemanticColors.of(context).danger,
+                          fontWeight: AppType.semibold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ],
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              icon: const Icon(Icons.send),
-              label: Text(_busy ? 'Sending…' : 'Send invite'),
-              onPressed: _busy ? null : _submit,
+            ),
+            // Pinned action bar with a floating lift so it reads as a
+            // deliberate commit, separate from the scrolling form above.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                boxShadow: AppShadows.floating,
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: _busy
+                          ? const SizedBox(
+                              width: AppSpacing.md,
+                              height: AppSpacing.md,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
+                      label: Text(_busy ? 'Sending…' : 'Send invite'),
+                      onPressed: _busy ? null : _submit,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -256,4 +631,88 @@ class _InviteUserSheetState extends ConsumerState<InviteUserSheet> {
         'student': 'Student',
       }[r] ??
       r;
+}
+
+/// The rounded drag affordance at the top of the sheet.
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 36,
+        height: 4,
+        margin: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.outlineVariant,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+      ),
+    );
+  }
+}
+
+/// Title row: the task title plus a close button so the sheet reads as a
+/// deliberate action.
+class _Header extends StatelessWidget {
+  const _Header({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(title, style: theme.textTheme.titleLarge),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close',
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Labeled, read-only row that makes the locked invite role obvious in preset
+/// mode — a small overline plus a prominent brand [AppBadge] (vs. a tiny
+/// inline label the admin could miss).
+class _AssignedRoleRow extends StatelessWidget {
+  const _AssignedRoleRow({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Assigned role',
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: AppType.semibold,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppBadge(text: label, tone: AppBadgeTone.brand),
+        ),
+      ],
+    );
+  }
 }

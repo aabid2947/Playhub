@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/performance/data/performance.dart';
 import 'package:playhub/features/performance/data/performance_providers.dart';
@@ -7,12 +9,17 @@ import 'package:playhub/features/performance/presentation/performance_detail_pag
 import 'package:playhub/features/performance/presentation/performance_form_page.dart';
 import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/students/data/student.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class PerformanceHistoryPage extends ConsumerWidget {
-  const PerformanceHistoryPage({required this.student, super.key});
+  const PerformanceHistoryPage({required this.student, this.batchId, super.key});
 
   final Student student;
+
+  /// The batch this student was opened from, if any. Threaded into the new
+  /// assessment so a trainer's record (which RLS requires to be batch-scoped via
+  /// staff_on_batch) carries a batch_id instead of a NULL that RLS rejects.
+  final String? batchId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -24,24 +31,50 @@ class PerformanceHistoryPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: Text('Performance · ${student.fullName}')),
       body: assessmentsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
+        loading: () => const AppLoading(),
+        error: (e, _) => AppErrorView(
+          message: friendlyError(e),
+          onRetry: () =>
+              ref.invalidate(assessmentsForStudentProvider(student.id)),
+        ),
         data: (list) {
           if (list.isEmpty) {
-            return const _EmptyState();
+            // Single create path lives in the FAB; the empty state only
+            // explains, it does not offer a duplicate CTA.
+            return const AppEmptyState(
+              icon: Icons.insights_outlined,
+              title: 'No assessments yet',
+              subtitle:
+                  "Record this student's first assessment to start tracking.",
+            );
           }
           return RefreshIndicator(
-            onRefresh: () async => ref
-                .invalidate(assessmentsForStudentProvider(student.id)),
+            onRefresh: () async =>
+                ref.invalidate(assessmentsForStudentProvider(student.id)),
             child: ListView(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.xxxl,
+              ),
               children: [
-                if (trend != null) _TrendCard(trend: trend),
-                const SizedBox(height: 8),
-                Card(
+                _TrendSummary(student: student, trend: trend, count: list.length),
+                const SizedBox(height: AppSpacing.xl),
+                AppSectionHeader(
+                  title: 'Assessments',
+                  icon: Icons.history_rounded,
+                  trailing: AppBadge(text: '${list.length}'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppCard(
+                  padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      for (final a in list) _AssessmentTile(assessment: a),
+                      for (var i = 0; i < list.length; i++) ...[
+                        if (i > 0) const Divider(height: 1),
+                        _AssessmentTile(assessment: list[i]),
+                      ],
                     ],
                   ),
                 ),
@@ -54,7 +87,8 @@ class PerformanceHistoryPage extends ConsumerWidget {
           ? FloatingActionButton.extended(
               onPressed: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) => PerformanceFormPage(student: student),
+                  builder: (_) =>
+                      PerformanceFormPage(student: student, batchId: batchId),
                 ),
               ),
               icon: const Icon(Icons.add_chart_outlined),
@@ -65,40 +99,101 @@ class PerformanceHistoryPage extends ConsumerWidget {
   }
 }
 
-class _TrendCard extends StatelessWidget {
-  const _TrendCard({required this.trend});
-  final Map<String, dynamic> trend;
+/// Archetype-G summary: a navy ranking-style card headlining the recent average
+/// with the score out of 10 drawn as a progress meter, plus the supporting
+/// facts (window size, latest sport, last assessed) as glass chips. Stays
+/// present (reading "No score yet") when the trend view has no average so the
+/// page always opens on a consistent header.
+class _TrendSummary extends StatelessWidget {
+  const _TrendSummary({
+    required this.student,
+    required this.trend,
+    required this.count,
+  });
+
+  final Student student;
+  final Map<String, dynamic>? trend;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
-    final avg = (trend['avg_recent_score'] as num?)?.toDouble();
-    final n = (trend['recent_assessments'] as num?)?.toInt() ?? 0;
-    final lastDate = trend['last_assessed_date'] as String?;
-    final sport = trend['latest_sport'] as String?;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+    final theme = Theme.of(context);
+    final avg = (trend?['avg_recent_score'] as num?)?.toDouble();
+    final n = (trend?['recent_assessments'] as num?)?.toInt() ?? count;
+    final lastDate = trend?['last_assessed_date'] as String?;
+    final sport = trend?['latest_sport'] as String?;
+    final scored = avg != null;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        boxShadow: AppShadows.floating,
+      ),
+      child: AppCard(
+        shadow: false,
+        color: AppPalette.ink,
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Row(
               children: [
-                Text('Last $n assessments',
-                    style: Theme.of(context).textTheme.bodySmall),
-                Text(
-                  avg == null ? '—' : avg.toStringAsFixed(2),
-                  style: Theme.of(context).textTheme.headlineMedium,
+                AppAvatar(student.fullName, size: 40, color: Colors.white),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recent average',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.75),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        scored ? avg.toStringAsFixed(2) : 'No score yet',
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: AppType.heavy,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                if (scored)
+                  Text(
+                    '/ 10',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
               ],
             ),
-            const Spacer(),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            if (scored) ...[
+              const SizedBox(height: AppSpacing.md),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                child: LinearProgressIndicator(
+                  value: (avg / 10).clamp(0, 1),
+                  minHeight: 8,
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppPalette.brandPrimary,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
-                if (sport != null) Text(sport),
+                AppGlassChip('Last $n assessments', icon: Icons.bar_chart),
+                if (sport != null && sport.isNotEmpty)
+                  AppGlassChip(sport, icon: Icons.sports),
                 if (lastDate != null)
-                  Text(lastDate,
-                      style: Theme.of(context).textTheme.bodySmall),
+                  AppGlassChip(lastDate, icon: Icons.event_outlined),
               ],
             ),
           ],
@@ -114,34 +209,36 @@ class _AssessmentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dateStr = assessment.assessmentDate.toIso8601String().substring(0, 10);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dateStr =
+        assessment.assessmentDate.toIso8601String().substring(0, 10);
     final sportLabel = ref.watch(sportDisplayProvider((
       sportId: assessment.sportId,
     )));
-    return ListTile(
-      leading: CircleAvatar(
-        child: Text(
-          assessment.overallScore == null
-              ? '—'
-              : assessment.overallScore!.toStringAsFixed(1),
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
+    final feedback = assessment.qualitativeFeedback;
+    final hasFeedback = feedback != null && feedback.isNotEmpty;
+
+    return AppListTile(
+      wrapLeading: false,
+      isThreeLine: hasFeedback,
+      leading: _ScoreChip(score: assessment.overallScore),
+      title: Text(sportLabel == '—' ? 'General' : sportLabel),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(dateStr, style: theme.textTheme.bodySmall),
+          if (hasFeedback)
+            Text(
+              feedback,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+        ],
       ),
-      title: Text(sportLabel == '—' ? 'general' : sportLabel),
-      subtitle: Text(
-        [
-          dateStr,
-          if (assessment.qualitativeFeedback != null &&
-              assessment.qualitativeFeedback!.isNotEmpty)
-            assessment.qualitativeFeedback!,
-        ].join(' · '),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: const Icon(Icons.chevron_right),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => PerformanceDetailPage(assessment: assessment),
@@ -151,29 +248,33 @@ class _AssessmentTile extends ConsumerWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+/// Prominent per-row score chip. Reads as a filled brand pill so the overall
+/// score is the first thing the eye lands on; an unscored row shows a clear
+/// "n/a" rather than an ambiguous dash.
+class _ScoreChip extends StatelessWidget {
+  const _ScoreChip({required this.score});
+  final double? score;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.insights_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'No assessments yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap "New assessment" to record this student\'s first.',
-              textAlign: TextAlign.center,
-            ),
-          ],
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final scored = score != null;
+    return Container(
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: scored
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Text(
+        scored ? score!.toStringAsFixed(1) : 'n/a',
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: AppType.bold,
+          color: scored ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
         ),
       ),
     );

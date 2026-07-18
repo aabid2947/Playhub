@@ -130,7 +130,36 @@ Future<void> assignFee(
     'start_date': startDate.toIso8601String().substring(0, 10),
     if (billingDay != null) 'billing_day': billingDay,
   });
-  ref.invalidate(assignmentsForStudentProvider(studentId));
+  await _generateInvoicesNow(ref, academyId: academyId, studentId: studentId);
+  ref
+    ..invalidate(assignmentsForStudentProvider(studentId))
+    ..invalidate(invoicesProvider);
+}
+
+/// Fire the recurring-invoice generator scoped to a single student or batch so
+/// the current period's invoice (and its Pay button) appears immediately rather
+/// than after the next daily cron. Idempotent — the cron's per-period dedupe
+/// means this can't double-bill. Non-fatal: if it fails the assignment is still
+/// saved and the daily cron will generate the invoice as the backstop.
+Future<void> _generateInvoicesNow(
+  WidgetRef ref, {
+  required String academyId,
+  String? studentId,
+  String? batchId,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  try {
+    await client.functions.invoke(
+      'recur-invoice-generation',
+      body: {
+        'academy_id': academyId,
+        if (studentId != null) 'student_id': studentId,
+        if (batchId != null) 'batch_id': batchId,
+      },
+    );
+  } on Object {
+    // Swallow — the daily cron is the backstop; don't fail the assignment.
+  }
 }
 
 Future<void> deactivateAssignment(
@@ -218,7 +247,10 @@ Future<void> assignFeeToBatch(
     'start_date': startDate.toIso8601String().substring(0, 10),
     if (billingDay != null) 'billing_day': billingDay,
   });
-  ref.invalidate(assignmentsForBatchProvider(batchId));
+  await _generateInvoicesNow(ref, academyId: academyId, batchId: batchId);
+  ref
+    ..invalidate(assignmentsForBatchProvider(batchId))
+    ..invalidate(invoicesProvider);
 }
 
 Future<void> deactivateBatchAssignment(
@@ -266,6 +298,25 @@ final invoicesProvider = FutureProvider<List<Invoice>>((ref) async {
     query = query.eq('student_id', filter.studentId!);
   }
   final rows = await query.order('issued_at', ascending: false);
+  return (rows as List)
+      .map((r) => Invoice.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
+/// Academy-wide invoices, NOT scoped by [invoiceFilterProvider]. The financial
+/// report derives its figures from this so that pivoting the invoice-list
+/// filter (e.g. via the report's by-status tap-through) never re-scopes or
+/// corrupts the report's academy-wide totals.
+final allInvoicesProvider = FutureProvider<List<Invoice>>((ref) async {
+  final profile = await ref.watch(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return [];
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('invoices')
+      .select()
+      .eq('academy_id', academyId)
+      .order('issued_at', ascending: false);
   return (rows as List)
       .map((r) => Invoice.fromMap(r as Map<String, dynamic>))
       .toList();
@@ -362,6 +413,29 @@ Future<Invoice> updateInvoice(
 // =============================================================================
 // Payments + refunds
 // =============================================================================
+
+/// Sum of completed payments recorded today (academy-wide), for the home
+/// "Today" overview. Owner/admin finance reads are RLS-allowed; center_admin
+/// is RLS-narrowed to its own center automatically.
+final todaysCollectedProvider = FutureProvider<double>((ref) async {
+  final profile = await ref.watch(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return 0;
+  final client = ref.read(supabaseClientProvider);
+  final now = DateTime.now();
+  final startOfDay =
+      DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
+  final rows = await client
+      .from('payments')
+      .select('amount')
+      .eq('academy_id', academyId)
+      .eq('status', 'completed')
+      .gte('paid_at', startOfDay);
+  return (rows as List).fold<double>(
+    0,
+    (sum, r) => sum + ((r as Map)['amount'] as num).toDouble(),
+  );
+});
 
 final paymentsForInvoiceProvider =
     FutureProvider.family<List<Payment>, String>((ref, invoiceId) async {

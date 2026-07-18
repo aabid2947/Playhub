@@ -255,6 +255,159 @@ class StorageService {
     );
   }
 
+  // ---------------- Standalone student media ----------------
+  // A trainer/coach attaches a photo/video straight to a student, with no
+  // scored assessment. Stored in the same performance_media bucket under
+  // <academyId>/students/<studentId>/<uuid>.<ext>.
+
+  Future<PickedDocument?> pickAndUploadStudentMediaPhoto({
+    required String academyId,
+    required String studentId,
+  }) async {
+    // image_picker requires `source`; lint flags it as redundant default.
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 80,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/students/$studentId/${const Uuid().v4()}$ext';
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: picked.name,
+      mimeType: _contentTypeOf(ext),
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<PickedDocument?> pickAndUploadStudentMediaVideo({
+    required String academyId,
+    required String studentId,
+  }) async {
+    final picked = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 5),
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    final name = picked.name;
+    final ext = _extensionOf(name);
+    final path = '$academyId/students/$studentId/${const Uuid().v4()}$ext';
+    final mime = _videoContentTypeOf(ext);
+    await _client.storage.from('performance_media').uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: name,
+      mimeType: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  // ---------------- Announcement media ----------------
+  // Photo/video attached to an announcement. Private bucket, signed-URL reads.
+  // Path layout: <academyId>/announcements/<announcementId>/<uuid>.<ext>
+
+  static const _announcementBucket = 'announcement_media';
+  // Matches the announcement_media bucket's file_size_limit (100 MiB,
+  // 20260608000400). Checked client-side so an oversized file fails instantly
+  // instead of uploading for ages on mobile data before the server 413s.
+  static const _maxAnnouncementMediaBytes = 100 * 1024 * 1024;
+
+  Future<PickedDocument?> pickAndUploadAnnouncementPhoto({
+    required String academyId,
+    required String announcementId,
+  }) async {
+    // image_picker requires `source`; lint flags it as redundant default.
+    // ignore: avoid_redundant_argument_values
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 80,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    _ensureUnderAnnouncementLimit(bytes.length);
+    final ext = _extensionOf(picked.name);
+    final path = '$academyId/announcements/$announcementId/'
+        '${const Uuid().v4()}$ext';
+    await _client.storage.from(_announcementBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: _contentTypeOf(ext)),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: picked.name,
+      mimeType: _contentTypeOf(ext),
+      sizeBytes: bytes.length,
+    );
+  }
+
+  Future<PickedDocument?> pickAndUploadAnnouncementVideo({
+    required String academyId,
+    required String announcementId,
+  }) async {
+    // Short clips for a broadcast — keeps the file under the bucket limit.
+    final picked = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 2),
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    _ensureUnderAnnouncementLimit(bytes.length);
+    final name = picked.name;
+    final ext = _extensionOf(name);
+    final path = '$academyId/announcements/$announcementId/'
+        '${const Uuid().v4()}$ext';
+    final mime = _videoContentTypeOf(ext);
+    await _client.storage.from(_announcementBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mime),
+        );
+    return PickedDocument(
+      path: path,
+      originalFilename: name,
+      mimeType: mime,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  /// Throws a [StorageException] (mapped to "File is too large." by
+  /// friendlyError) when a picked announcement file exceeds the bucket limit,
+  /// before any bytes are uploaded.
+  void _ensureUnderAnnouncementLimit(int sizeBytes) {
+    if (sizeBytes > _maxAnnouncementMediaBytes) {
+      throw StorageException(
+        'The selected file exceeded the maximum allowed size '
+        '(${_maxAnnouncementMediaBytes ~/ (1024 * 1024)} MB).',
+        statusCode: '413',
+      );
+    }
+  }
+
+  Future<String> signedAnnouncementMediaUrl(String path,
+          {int expiresInSeconds = 540}) =>
+      _signedUrl(_announcementBucket, path,
+          expiresInSeconds: expiresInSeconds);
+
+  Future<void> deleteAnnouncementMedia(String path) =>
+      _deleteFromBucket(_announcementBucket, path);
+
   // ---------------- Chat attachments ----------------
   // Layout: <academyId>/<threadId>/<uuid>.<ext>
   // Bucket is private; reads via signed URL (10-min TTL by default).

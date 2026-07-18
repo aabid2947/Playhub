@@ -1,26 +1,49 @@
 // Shared Razorpay helpers: REST client + HMAC-SHA256 webhook verification.
+//
+// Credentials are passed in explicitly (see _shared/payment_gateway.ts) so the
+// same client can charge through either a per-academy merchant account or the
+// platform-wide keys. `platformRazorpayCreds()` / `platformWebhookSecret()`
+// read the Deno.env fallback used when an academy hasn't configured its own.
 
 const RAZORPAY_API = 'https://api.razorpay.com/v1';
 
-function basicAuthHeader(): string {
-  const id = Deno.env.get('RAZORPAY_KEY_ID');
-  const secret = Deno.env.get('RAZORPAY_KEY_SECRET');
-  if (!id || !secret) {
-    throw new Error('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not configured');
-  }
-  return 'Basic ' + btoa(`${id}:${secret}`);
+export interface RazorpayCreds {
+  keyId: string;
+  keySecret: string;
 }
 
-export async function createRazorpayOrder(args: {
-  amount_paise: number;
-  currency: string;
-  receipt: string;
-  notes?: Record<string, string>;
-}): Promise<{ id: string; status: string; amount: number; currency: string }> {
+export function platformRazorpayCreds(): RazorpayCreds {
+  const keyId = Deno.env.get('RAZORPAY_KEY_ID');
+  const keySecret = Deno.env.get('RAZORPAY_KEY_SECRET');
+  if (!keyId || !keySecret) {
+    throw new Error('RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not configured');
+  }
+  return { keyId, keySecret };
+}
+
+export function platformWebhookSecret(): string {
+  const secret = Deno.env.get('RAZORPAY_WEBHOOK_SECRET');
+  if (!secret) throw new Error('RAZORPAY_WEBHOOK_SECRET not configured');
+  return secret;
+}
+
+function basicAuthHeader(creds: RazorpayCreds): string {
+  return 'Basic ' + btoa(`${creds.keyId}:${creds.keySecret}`);
+}
+
+export async function createRazorpayOrder(
+  args: {
+    amount_paise: number;
+    currency: string;
+    receipt: string;
+    notes?: Record<string, string>;
+  },
+  creds: RazorpayCreds,
+): Promise<{ id: string; status: string; amount: number; currency: string }> {
   const res = await fetch(`${RAZORPAY_API}/orders`, {
     method: 'POST',
     headers: {
-      'authorization': basicAuthHeader(),
+      'authorization': basicAuthHeader(creds),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -37,17 +60,42 @@ export async function createRazorpayOrder(args: {
   return await res.json();
 }
 
-export async function refundRazorpayPayment(args: {
-  razorpay_payment_id: string;
-  amount_paise: number;
-  notes?: Record<string, string>;
-}): Promise<{ id: string; status: string; amount: number }> {
+/// Authoritative fetch of a payment by id. Used by verify-on-return to confirm
+/// a charge server-side (the client-reported success is never trusted on its
+/// own — invariant #6).
+export async function fetchRazorpayPayment(
+  paymentId: string,
+  creds: RazorpayCreds,
+): Promise<{
+  id: string;
+  status: string; // created | authorized | captured | refunded | failed
+  amount: number; // paise
+  currency: string;
+  order_id: string | null;
+}> {
+  const res = await fetch(`${RAZORPAY_API}/payments/${paymentId}`, {
+    headers: { authorization: basicAuthHeader(creds) },
+  });
+  if (!res.ok) {
+    throw new Error(`razorpay fetch payment failed: ${res.status} ${await res.text()}`);
+  }
+  return await res.json();
+}
+
+export async function refundRazorpayPayment(
+  args: {
+    razorpay_payment_id: string;
+    amount_paise: number;
+    notes?: Record<string, string>;
+  },
+  creds: RazorpayCreds,
+): Promise<{ id: string; status: string; amount: number }> {
   const res = await fetch(
     `${RAZORPAY_API}/payments/${args.razorpay_payment_id}/refund`,
     {
       method: 'POST',
       headers: {
-        'authorization': basicAuthHeader(),
+        'authorization': basicAuthHeader(creds),
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -62,14 +110,14 @@ export async function refundRazorpayPayment(args: {
   return await res.json();
 }
 
-/// HMAC-SHA256 of the raw body using `RAZORPAY_WEBHOOK_SECRET`. Constant-time
+/// HMAC-SHA256 of the raw body using the given webhook `secret`. Constant-time
 /// compared to the `X-Razorpay-Signature` header.
 export async function verifyWebhookSignature(
   rawBody: string,
   signatureHex: string,
+  secret: string,
 ): Promise<boolean> {
-  const secret = Deno.env.get('RAZORPAY_WEBHOOK_SECRET');
-  if (!secret) throw new Error('RAZORPAY_WEBHOOK_SECRET not configured');
+  if (!secret) throw new Error('razorpay webhook secret not configured');
 
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(

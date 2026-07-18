@@ -9,6 +9,7 @@ import { fmtDate, humanize } from "@/lib/format";
 import { getAcademy } from "@/lib/data/academies";
 import { listAcademyInvoices } from "@/lib/data/billing";
 import { AcademyActiveToggle } from "./academy-active-toggle";
+import { ReactivateSubscription } from "./subscription-reactivate";
 import { InvoicesPanel } from "./invoices-panel";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,9 @@ export default async function AcademyDetailPage({
               </Badge>
             </div>
             <AcademyActiveToggle id={academy.id} isActive={academy.isActive} />
+            {academy.subscriptionStatus === "suspended" && (
+              <ReactivateSubscription id={academy.id} />
+            )}
           </div>
         }
       />

@@ -2,6 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Reads from the `batches_with_counts` view so each row carries
 /// `enrolled_count` without an N+1 fetch.
@@ -45,8 +48,30 @@ Future<Batch> createBatch(WidgetRef ref, Map<String, dynamic> data) async {
       .from('batches')
       .insert({...data, 'academy_id': academyId})
       .select()
-      .single();
-  ref.invalidate(batchesProvider);
+      .maybeSingle();
+  // Null = insert blocked by RLS — a head_coach/center_admin can only add
+  // batches in their own center + sport (can_manage_batch_fields), or the
+  // free-trial batch cap / write-freeze applies. Throw a clean 42501 instead of
+  // the opaque PGRST116 that .single() raises on zero rows (matches
+  // createStudent / createCoach).
+  if (row == null) {
+    // Frozen subscription (writes off for everyone incl. owners) vs the
+    // center/sport-scope gate — same 0-row result. Name the plan one when it
+    // applies so an owner whose trial lapsed doesn't see a wrong "own center"
+    // message.
+    final paused =
+        ref.read(mySubscriptionProvider).valueOrNull?.isBlocked ?? false;
+    throw PostgrestException(
+      message: paused
+          ? "Your academy's plan is paused — renew it to add or edit records."
+          : 'Create blocked by row-level security '
+              '(you can only add batches in your own center).',
+      code: '42501',
+    );
+  }
+  ref
+    ..invalidate(batchesProvider)
+    ..invalidate(trialLimitsProvider); // refresh trial-cap counts
   return Batch.fromMap(row);
 }
 
@@ -61,9 +86,47 @@ Future<Batch> updateBatch(
       .update(patch)
       .eq('id', batchId)
       .select()
-      .single();
+      .maybeSingle();
+  // A null row means the UPDATE matched nothing under RLS — i.e. the caller
+  // can't write this batch (a head_coach / center_admin can only edit batches
+  // in their own center; see can_manage_batches()). Surface a clean
+  // permission error instead of the opaque PGRST116 "cannot coerce" that
+  // `.single()` would throw on zero rows.
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Update blocked by row-level security '
+          '(you can only edit batches in your own center).',
+      code: '42501',
+    );
+  }
   ref.invalidate(batchesProvider);
   return Batch.fromMap(row);
+}
+
+/// Soft-delete a batch by archiving it (`is_active = false`). A hard delete
+/// cascades and wipes enrollments + attendance for the batch; archiving keeps
+/// that history and is reversible via [restoreBatch]. Returns the updated row;
+/// a null result means RLS blocked the write (center/sport out of scope).
+Future<void> setBatchActive(
+  WidgetRef ref,
+  String batchId, {
+  required bool isActive,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final row = await client
+      .from('batches')
+      .update({'is_active': isActive})
+      .eq('id', batchId)
+      .select()
+      .maybeSingle();
+  if (row == null) {
+    throw const PostgrestException(
+      message: 'Blocked by row-level security '
+          '(you can only manage batches in your own center/sport).',
+      code: '42501',
+    );
+  }
+  ref.invalidate(batchesProvider);
 }
 
 Future<void> enrollStudent(

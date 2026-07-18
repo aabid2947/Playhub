@@ -30,8 +30,8 @@ class AppLoading extends StatelessWidget {
   }
 }
 
-/// A shimmering placeholder box used while content is loading. Animates
-/// opacity between 0.5 and 1.0 over 1.2s.
+/// A shimmering placeholder box used while content is loading. A highlight
+/// band sweeps left-to-right across a neutral base every 1.4s.
 class AppSkeleton extends StatefulWidget {
   const AppSkeleton({
     this.width,
@@ -51,18 +51,14 @@ class AppSkeleton extends StatefulWidget {
 class _AppSkeletonState extends State<AppSkeleton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _animation;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.5, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
   }
 
   @override
@@ -73,23 +69,43 @@ class _AppSkeletonState extends State<AppSkeleton>
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
+    final theme = Theme.of(context);
+    final base = theme.colorScheme.surfaceContainerHighest;
+    final isDark = theme.brightness == Brightness.dark;
+    // A highlight lighter than the base — subtle in dark, brighter in light.
+    final highlight = Color.alphaBlend(
+      Colors.white.withValues(alpha: isDark ? 0.10 : 0.55),
+      base,
+    );
     return AnimatedBuilder(
-      animation: _animation,
+      animation: _controller,
       builder: (context, _) {
-        return Opacity(
-          opacity: _animation.value,
-          child: Container(
-            width: widget.width,
-            height: widget.height,
-            decoration: BoxDecoration(
-              color: base,
-              borderRadius: BorderRadius.circular(widget.radius),
+        return Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.radius),
+            gradient: LinearGradient(
+              colors: [base, highlight, base],
+              stops: const [0.35, 0.5, 0.65],
+              transform: _SlidingGradient(_controller.value * 2 - 1),
             ),
           ),
         );
       },
     );
+  }
+}
+
+/// Translates a gradient horizontally by a fraction of the bounds width.
+class _SlidingGradient extends GradientTransform {
+  const _SlidingGradient(this.slidePercent);
+
+  final double slidePercent;
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.translationValues(bounds.width * slidePercent, 0, 0);
   }
 }
 

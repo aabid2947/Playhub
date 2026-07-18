@@ -27,10 +27,10 @@ class AppErrorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.error_outline,
               size: 64,
-              color: AppPalette.danger,
+              color: AppSemanticColors.of(context).danger,
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(

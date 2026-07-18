@@ -108,8 +108,11 @@ port = 54324
 
 [storage]
 enabled = true
-# The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MiB"
+# The maximum file size allowed (e.g. "5MB", "500KB"). Raised to fit short
+# announcement videos; the announcement_media bucket caps individual uploads
+# at 100 MiB (20260608000400). HOSTED projects must raise this separately in
+# Dashboard → Project Settings → Storage → "Upload file size limit".
+file_size_limit = "100MiB"
 
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]

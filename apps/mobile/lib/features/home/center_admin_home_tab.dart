@@ -4,6 +4,7 @@ import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/features/attendance/data/attendance_providers.dart';
 import 'package:playhub/features/attendance/presentation/admin_attendance_overview.dart';
 import 'package:playhub/features/attendance/presentation/todays_sessions_page.dart';
+import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
@@ -13,27 +14,71 @@ import 'package:playhub/features/leads/presentation/leads_kanban_page.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
-/// Center-scoped home dashboard for the `center_admin` role.
+/// Center-scoped home dashboard for the `center_admin` role — v1 "Sports-Light".
 ///
-/// Reads are already narrowed to the admin's own center by RLS
-/// (center_admin_sees_*), so student/batch counts here reflect just their
-/// center. Revenue is view-only for center admins, so this surface links to
-/// operational tools but omits subscription/KPI-revenue management.
+/// Reads are narrowed to the admin's own center by RLS (center_admin_sees_*),
+/// so the counts here reflect just their center. Revenue is view-only for
+/// center admins, so this surface links to operational tools but omits
+/// subscription / KPI-revenue management. Management entry points stay gated by
+/// the capability mirror even though center_admin holds them (defensive +
+/// RLS is the real gate).
 class CenterAdminHomeTab extends ConsumerWidget {
   const CenterAdminHomeTab({super.key});
 
+  void _push(BuildContext context, Widget page) {
+    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => page));
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final caps = ref.watch(capabilitiesProvider);
     final profile = ref.watch(currentProfileProvider).valueOrNull;
-    final centers = ref.watch(centersProvider).valueOrNull ?? [];
-    final students = ref.watch(studentsProvider).valueOrNull ?? [];
-    final batches = ref.watch(batchesProvider).valueOrNull ?? [];
-    final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? [];
+    final centers = ref.watch(centersProvider).valueOrNull ?? const [];
+    final students = ref.watch(studentsProvider).valueOrNull ?? const [];
+    final batches = ref.watch(batchesProvider).valueOrNull ?? const [];
+    final todays = ref.watch(todaysBatchesProvider).valueOrNull ?? const [];
 
-    final centerName = centers
-        .where((c) => c.id == profile?.centerId)
+    // A center_admin may manage several centers (user_centers). Label the
+    // greeting with all of them ("Andheri · Bandra"); falls back to the primary
+    // while the grant set loads.
+    final myCenters = ref.watch(myCenterIdsProvider).valueOrNull ??
+        {if (profile?.centerId != null) profile!.centerId!};
+    final centerNames = centers
+        .where((c) => myCenters.contains(c.id))
         .map((c) => c.name)
-        .firstOrNull;
+        .toList(growable: false);
+    final centerName = centerNames.isNotEmpty ? centerNames.join(' · ') : null;
+    final firstName =
+        (profile?.displayName ?? '').split(' ').firstOrNull ?? 'there';
+
+    // Secondary "Manage" destinations, each gated. Rendered as grouped rows.
+    final manageRows = <Widget>[
+      if (caps.manageLeads)
+        _ManageTile(
+          icon: Icons.person_search_outlined,
+          tint: AppPalette.success,
+          title: 'Leads',
+          subtitle: 'Funnel for your center',
+          onTap: () => _push(context, const LeadsKanbanPage()),
+        ),
+      if (caps.manageEvents)
+        _ManageTile(
+          icon: Icons.emoji_events_outlined,
+          tint: AppPalette.categorySwatch[3],
+          title: 'Events',
+          subtitle: 'Tournaments, workshops',
+          onTap: () => _push(context, const EventsPage()),
+        ),
+      if (caps.manageInventory)
+        _ManageTile(
+          icon: Icons.inventory_2_outlined,
+          tint: AppPalette.categorySwatch[5],
+          title: 'Inventory',
+          subtitle: 'Equipment for your center',
+          onTap: () => _push(context, const InventoryPage()),
+        ),
+    ];
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -44,107 +89,169 @@ class CenterAdminHomeTab extends ConsumerWidget {
           ..invalidate(centersProvider);
       },
       child: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: EdgeInsets.zero,
         children: [
-          AppCard(
+          // Greeting hero with a center sub-line and a quick-glance stat row.
+          AppGradientHeader(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Hello, ${profile?.displayName ?? '...'}',
-                  style: Theme.of(context).textTheme.titleLarge,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hello, $firstName 👋',
+                            style: theme.textTheme.titleLarge
+                                ?.copyWith(color: Colors.white),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on,
+                                size: 15,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  centerName ?? 'No center assigned',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    const AppUserAvatar(size: 44, onGradient: true),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  centerName == null
-                      ? 'Center admin'
-                      : 'Center admin · $centerName',
-                  style: Theme.of(context).textTheme.bodySmall,
+                const SizedBox(height: AppSpacing.lg),
+                AppHeroStatRow(
+                  stats: [
+                    ('${students.length}', 'Students'),
+                    ('${batches.length}', 'Batches'),
+                    ('${todays.length}', 'Today'),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.group_outlined,
-                  label: 'Students',
-                  value: '${students.length}',
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppStatTile(
-                  icon: Icons.schedule_outlined,
-                  label: 'Batches',
-                  value: '${batches.length}',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Card(
-            child: Column(
-              children: [
-                AppListTile(
-                  leading: const Icon(Icons.event_available_outlined),
-                  title: const Text("Today's sessions"),
-                  subtitle: Text(
-                    todays.isEmpty
-                        ? 'No batches scheduled today'
-                        : '${todays.length} ${todays.length == 1 ? 'batch' : 'batches'} to mark',
+          // Body overlaps the hero band upward, v1-style.
+          Transform.translate(
+            offset: const Offset(0, -AppSpacing.lg),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const AppSectionHeader(
+                    title: 'Daily ops',
+                    icon: Icons.event_available_outlined,
                   ),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const TodaysSessionsPage(),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: AppSpacing.md,
+                    crossAxisSpacing: AppSpacing.md,
+                    childAspectRatio: 1.5,
+                    children: [
+                      AppFeatureCard(
+                        title: "Today's sessions",
+                        subtitle: todays.isEmpty
+                            ? 'Nothing scheduled today'
+                            : '${todays.length} to mark',
+                        icon: Icons.fact_check_rounded,
+                        tint: AppPalette.brandPrimary,
+                        badge: todays.isEmpty ? null : '${todays.length}',
+                        onTap: () =>
+                            _push(context, const TodaysSessionsPage()),
+                      ),
+                      AppFeatureCard(
+                        title: 'Live attendance',
+                        subtitle: 'Realtime across your center',
+                        icon: Icons.dashboard_rounded,
+                        tint: AppPalette.accent,
+                        onTap: () =>
+                            _push(context, const AdminAttendanceOverview()),
+                      ),
+                    ],
+                  ),
+                  if (manageRows.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    const AppSectionHeader(
+                      title: 'Manage',
+                      icon: Icons.tune_rounded,
                     ),
-                  ),
-                ),
-                const Divider(height: 1),
-                AppListTile(
-                  leading: const Icon(Icons.dashboard_outlined),
-                  title: const Text('Live attendance overview'),
-                  subtitle: const Text('Realtime view across your center'),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => const AdminAttendanceOverview(),
+                    AppCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < manageRows.length; i++) ...[
+                            manageRows[i],
+                            if (i != manageRows.length - 1)
+                              const Divider(height: 1),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-                const Divider(height: 1),
-                AppListTile(
-                  leading: const Icon(Icons.person_search_outlined),
-                  title: const Text('Leads'),
-                  subtitle: const Text('Funnel for your center'),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(builder: (_) => const LeadsKanbanPage()),
-                  ),
-                ),
-                const Divider(height: 1),
-                AppListTile(
-                  leading: const Icon(Icons.emoji_events_outlined),
-                  title: const Text('Events'),
-                  subtitle: const Text('Tournaments, workshops'),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(builder: (_) => const EventsPage()),
-                  ),
-                ),
-                const Divider(height: 1),
-                AppListTile(
-                  leading: const Icon(Icons.inventory_2_outlined),
-                  title: const Text('Inventory'),
-                  subtitle: const Text('Equipment for your center'),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(builder: (_) => const InventoryPage()),
-                  ),
-                ),
-              ],
+                  ],
+                  const SizedBox(height: AppSpacing.xl),
+                ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A grouped "Manage" destination row: a sport-color-tinted leading icon, a
+/// title + one-line subtitle, and a chevron. Renders a real [AppListTile].
+class _ManageTile extends StatelessWidget {
+  const _ManageTile({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppListTile(
+      wrapLeading: false,
+      leading: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Icon(icon, color: tint, size: 20),
+      ),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      onTap: onTap,
     );
   }
 }

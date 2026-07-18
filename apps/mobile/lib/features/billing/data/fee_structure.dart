@@ -1,5 +1,6 @@
 /// Type of fee structure — controls how the cron generates invoices.
 enum FeeType {
+  weekly('weekly', 'Weekly'),
   monthly('monthly', 'Monthly'),
   quarterly('quarterly', 'Quarterly'),
   annual('annual', 'Annual'),
@@ -33,6 +34,8 @@ class FeeStructure {
     this.batchId,
     this.lateFeePct,
     this.lateFeeFlat,
+    this.pricePerDay,
+    this.daysPerWeek,
   });
 
   factory FeeStructure.fromMap(Map<String, dynamic> m) => FeeStructure(
@@ -52,6 +55,8 @@ class FeeStructure {
         lateFeePolicy:
             (m['late_fee_policy'] as String?) ?? 'one_time',
         isActive: (m['is_active'] as bool?) ?? true,
+        pricePerDay: (m['price_per_day'] as num?)?.toDouble(),
+        daysPerWeek: (m['days_per_week'] as num?)?.toInt(),
       );
 
   final String id;
@@ -68,6 +73,12 @@ class FeeStructure {
   final int lateFeeGraceDays;
   final String lateFeePolicy; // 'none' | 'one_time' | 'daily'
   final bool isActive;
+  /// Non-null when the fee was set up with per-day pricing. Informational —
+  /// [baseAmount] is what gets billed.
+  final double? pricePerDay;
+  /// Stored alongside [pricePerDay] so the calculation can be reconstructed
+  /// when editing.
+  final int? daysPerWeek;
 
   double get totalAmount => baseAmount + (baseAmount * taxPct / 100);
 }

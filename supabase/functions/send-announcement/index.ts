@@ -45,8 +45,9 @@ Deno.serve(async (req) => {
   const { data: ann, error: annErr } = await admin
     .from('announcements')
     .select(
-      'id, academy_id, subject, body, target_roles, target_batches, '
-      + 'target_centers, via_push, via_email, via_in_app, sent_at',
+      'id, academy_id, subject, body, created_by, target_roles, '
+      + 'target_batches, target_centers, target_sports, '
+      + 'via_push, via_email, via_in_app, sent_at',
     )
     .eq('id', body.announcement_id).single();
   if (annErr || !ann) return j({ error: 'announcement not found' }, 404);
@@ -143,21 +144,28 @@ Deno.serve(async (req) => {
 
 interface Announcement {
   academy_id: string;
+  created_by: string | null;
   target_roles: string[];
   target_batches: string[];
   target_centers: string[];
+  target_sports: string[];
 }
 
+// Batch / sport / center targeting all resolve to the FAMILIES in that scope:
+// enrolled students' own logins (when linked) + their parents. Role targeting
+// (admin-only, validated by can_target_announcement) is the way to reach staff.
 async function resolveTargets(
   admin: ReturnType<typeof createClient>,
   ann: Announcement,
 ): Promise<Set<string>> {
   const out = new Set<string>();
-  const noTargets = (ann.target_roles ?? []).length === 0
-    && (ann.target_batches ?? []).length === 0
-    && (ann.target_centers ?? []).length === 0;
+  const roles = ann.target_roles ?? [];
+  const batches = [...(ann.target_batches ?? [])];
+  const centers = ann.target_centers ?? [];
+  const sports = ann.target_sports ?? [];
 
-  if (noTargets) {
+  if (roles.length === 0 && batches.length === 0
+    && centers.length === 0 && sports.length === 0) {
     const { data } = await admin.from('users').select('id')
       .eq('academy_id', ann.academy_id).eq('is_active', true);
     (data ?? []).forEach(u => out.add(u.id));
@@ -165,51 +173,65 @@ async function resolveTargets(
   }
 
   // Role-targeted users in the academy.
-  if ((ann.target_roles ?? []).length > 0) {
+  if (roles.length > 0) {
     const { data } = await admin.from('users').select('id')
       .eq('academy_id', ann.academy_id).eq('is_active', true)
-      .in('role', ann.target_roles);
+      .in('role', roles);
     (data ?? []).forEach(u => out.add(u.id));
   }
 
-  // Batch-targeted: the batch's coach + parents of enrolled students.
-  if ((ann.target_batches ?? []).length > 0) {
-    const { data: batches } = await admin.from('batches')
-      .select('id, coach_id, coaches:coach_id(user_id)')
-      .in('id', ann.target_batches);
-    for (const b of (batches ?? []) as Array<{ coaches: { user_id: string | null } | null }>) {
-      const cu = b.coaches?.user_id;
-      if (cu) out.add(cu);
+  // Sport targeting → batches of that sport. Scope the resolution to the
+  // creator's center when the creator is center-bound (center_admin /
+  // head_coach), so a center-scoped sport post can't reach other centers.
+  if (sports.length > 0) {
+    let creatorCenter: string | null = null;
+    if (ann.created_by) {
+      const { data: creator } = await admin.from('users')
+        .select('role, center_id').eq('id', ann.created_by).maybeSingle();
+      if (creator && (creator.role === 'center_admin' || creator.role === 'head_coach')) {
+        creatorCenter = creator.center_id as string | null;
+      }
     }
-
-    const { data: parents } = await admin
-      .from('parent_links')
-      .select('parent_user_id, batch_enrollments:student_id(batch_id)')
-      .in('student_id', await batchEnrolledStudentIds(admin, ann.target_batches));
-    (parents ?? []).forEach(p => out.add(p.parent_user_id as string));
+    let q = admin.from('batches').select('id')
+      .eq('academy_id', ann.academy_id).in('sport_id', sports);
+    if (creatorCenter) q = q.eq('center_id', creatorCenter);
+    const { data } = await q;
+    (data ?? []).forEach(b => batches.push((b as { id: string }).id));
   }
 
-  // Center-targeted: users in that center.
-  if ((ann.target_centers ?? []).length > 0) {
-    const { data } = await admin.from('users').select('id')
-      .eq('academy_id', ann.academy_id).eq('is_active', true)
-      .in('center_id', ann.target_centers);
-    (data ?? []).forEach(u => out.add(u.id));
+  // Collect the student set across batch + center targeting.
+  const studentIds = new Set<string>();
+
+  if (batches.length > 0) {
+    const { data } = await admin.from('batch_enrollments')
+      .select('student_id')
+      .in('batch_id', batches)
+      .eq('enrollment_status', 'active');
+    (data ?? []).forEach(e => studentIds.add((e as { student_id: string }).student_id));
+  }
+
+  if (centers.length > 0) {
+    const { data } = await admin.from('students').select('id')
+      .eq('academy_id', ann.academy_id).in('center_id', centers);
+    (data ?? []).forEach(s => studentIds.add((s as { id: string }).id));
+  }
+
+  // Resolve students → their own logins + their parents.
+  if (studentIds.size > 0) {
+    const ids = [...studentIds];
+    const { data: students } = await admin.from('students')
+      .select('user_id').in('id', ids).not('user_id', 'is', null);
+    (students ?? []).forEach(s => {
+      const uid = (s as { user_id: string | null }).user_id;
+      if (uid) out.add(uid);
+    });
+
+    const { data: parents } = await admin.from('parent_links')
+      .select('parent_user_id').in('student_id', ids);
+    (parents ?? []).forEach(p => out.add((p as { parent_user_id: string }).parent_user_id));
   }
 
   return out;
-}
-
-async function batchEnrolledStudentIds(
-  admin: ReturnType<typeof createClient>,
-  batchIds: string[],
-): Promise<string[]> {
-  const { data } = await admin
-    .from('batch_enrollments')
-    .select('student_id')
-    .in('batch_id', batchIds)
-    .eq('enrollment_status', 'active');
-  return (data ?? []).map(e => e.student_id);
 }
 
 function j(b: unknown, status = 200) {

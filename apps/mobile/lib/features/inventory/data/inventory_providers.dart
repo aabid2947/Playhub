@@ -54,6 +54,20 @@ final vendorsProvider = FutureProvider<List<Vendor>>((ref) async {
       .toList(growable: false);
 });
 
+/// Per-location balances for an item (HO + each center). Read-only; the rows
+/// are maintained by the movement triggers (migration 20260614000100).
+final itemStockProvider =
+    FutureProvider.family<List<InventoryStock>, String>((ref, itemId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('inventory_stock')
+      .select()
+      .eq('item_id', itemId);
+  return (rows as List)
+      .map((r) => InventoryStock.fromMap(r as Map<String, dynamic>))
+      .toList(growable: false);
+});
+
 final itemMovementsProvider =
     FutureProvider.family<List<InventoryMovement>, String>((ref, itemId) async {
   final client = ref.watch(supabaseClientProvider);
@@ -127,6 +141,20 @@ class InventoryRepo {
     return InventoryCategory.fromMap(r);
   }
 
+  /// Hard-delete an inventory item. Its movement ledger (inventory_movements)
+  /// is FK-cascaded away with it — acceptable, the ledger has no meaning once
+  /// the item is gone. RLS (`can_admin_center_scope`) gates this to admin tier
+  /// + center_admin for their own center.
+  Future<void> deleteItem(String id) async {
+    await _client.from('inventory_items').delete().eq('id', id);
+  }
+
+  /// Hard-delete a vendor. Items/movements that referenced it keep their row
+  /// (the FK is `on delete set null`). RLS gates this to center_admin and above.
+  Future<void> deleteVendor(String id) async {
+    await _client.from('vendors').delete().eq('id', id);
+  }
+
   Future<Vendor> upsertVendor({
     String? id,
     required String name,
@@ -158,11 +186,18 @@ class InventoryRepo {
     return Vendor.fromMap(r);
   }
 
-  /// Records a movement; on_hand is updated server-side via trigger.
+  /// Records a movement; per-location balances + the item total are updated
+  /// server-side by the triggers (migration 20260614000100).
+  ///
+  /// `centerId` is the location the entry affects (null = head office). For a
+  /// `transfer`, `centerId` is the SOURCE and `toCenterId` the DESTINATION; the
+  /// qty stays positive and the trigger moves it between the two balances.
   Future<void> recordMovement({
     required String itemId,
-    required String kind, // 'in' | 'out' | 'adjustment' | 'return'
+    required String kind, // 'in' | 'out' | 'adjustment' | 'return' | 'transfer'
     required double qty,
+    String? centerId,
+    String? toCenterId,
     String? studentId,
     String? coachId,
     String? vendorId,
@@ -170,8 +205,9 @@ class InventoryRepo {
     String? reference,
     String? notes,
   }) async {
-    // Sign convention enforced server-side; mirror it client-side so the
-    // user picks a positive number and the kind decides the sign.
+    // Sign convention enforced server-side; mirror it client-side so the user
+    // picks a positive number and the kind decides the sign. 'transfer' (like
+    // 'in'/'return') is a positive qty — the trigger applies the direction.
     final signedQty = (kind == 'out')
         ? -qty.abs()
         : (kind == 'adjustment' ? qty : qty.abs());
@@ -181,6 +217,8 @@ class InventoryRepo {
       'item_id': itemId,
       'kind': kind,
       'qty': signedQty,
+      'center_id': centerId,
+      'to_center_id': toCenterId,
       'student_id': studentId,
       'coach_id': coachId,
       'vendor_id': vendorId,

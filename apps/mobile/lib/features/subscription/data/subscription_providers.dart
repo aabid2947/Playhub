@@ -44,6 +44,29 @@ class AcademySubscription {
   final DateTime currentPeriodEnd;
   final DateTime? trialEndsAt;
   final DateTime? cancelledAt;
+
+  /// Mirrors the DB `academy_writes_allowed()` gate: management writes are
+  /// allowed while active/past_due, or on a trial that has not yet expired.
+  bool get writesAllowed =>
+      status == 'active' ||
+      status == 'past_due' ||
+      (status == 'trial' &&
+          (trialEndsAt == null || trialEndsAt!.isAfter(DateTime.now())));
+
+  /// Frozen — suspended, cancelled, or an expired trial. Owners/admins are
+  /// routed to the paywall; everyone else stays read-only (RLS enforces it).
+  bool get isBlocked => !writesAllowed;
+
+  bool get isTrial => status == 'trial';
+
+  /// Whole days until the trial ends (negative once expired); null if not a trial.
+  int? get trialDaysLeft => trialEndsAt?.difference(DateTime.now()).inDays;
+
+  /// Still operational but the trial lapses within 3 days — warn the owner.
+  bool get isTrialEndingSoon {
+    final d = trialDaysLeft;
+    return isTrial && writesAllowed && d != null && d <= 3;
+  }
 }
 
 class SaasInvoice {

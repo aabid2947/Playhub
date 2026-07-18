@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
   if (pre) return pre;
   if (req.method !== 'POST') return j({ error: 'method not allowed' }, 405);
 
+  try {
   const auth = req.headers.get('authorization') ?? '';
   if (!auth.toLowerCase().startsWith('bearer ')) {
     return j({ error: 'unauthorised' }, 401);
@@ -78,8 +79,8 @@ Deno.serve(async (req) => {
     ['Student', `${student?.first_name ?? ''} ${student?.last_name ?? ''}`.trim()],
     ['Parent', student?.parent_name ?? '—'],
     ['Period', invoice.period_start && invoice.period_end
-      ? `${invoice.period_start} → ${invoice.period_end}`
-      : '—'],
+      ? `${invoice.period_start} - ${invoice.period_end}`
+      : '-'],
     ['Due date', invoice.due_date ?? '—'],
     ['Status', String(invoice.status ?? '').toUpperCase()],
     ['Contact', [academy?.phone, academy?.email].filter(Boolean).join(' · ')],
@@ -108,7 +109,7 @@ Deno.serve(async (req) => {
     { label: 'Subtotal', value: money(invoice.base_amount) },
     { label: 'Tax', value: money(invoice.tax_amount) },
     { label: 'Late fee', value: money(invoice.late_fee_amount) },
-    { label: 'Discount', value: `−${money(invoice.discount_amount)}` },
+    { label: 'Discount', value: `-${money(invoice.discount_amount)}` },
     { label: 'Total', value: money(invoice.amount), bold: true },
     { label: 'Paid', value: money(invoice.amount_paid) },
     { label: 'Balance', value: money(balance), bold: true },
@@ -129,6 +130,13 @@ Deno.serve(async (req) => {
   if (sErr) return j({ error: sErr.message }, 500);
 
   return j({ ok: true, signed_url: signed?.signedUrl, expires_in: 600 });
+  } catch (e) {
+    // Surface the real cause: returns it in the response (so the app snackbar
+    // shows it) and logs it for the Dashboard. An unhandled throw here would
+    // otherwise be an opaque 500.
+    console.error('generate-invoice-pdf failed', e);
+    return j({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 function money(n: unknown): string {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/features/auth/presentation/auth_scaffold.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 class SignupPage extends ConsumerStatefulWidget {
@@ -21,6 +22,7 @@ class _SignupPageState extends ConsumerState<SignupPage> {
   final _academyName = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
+  bool _obscure = true;
   String? _message;
   bool _isError = false;
 
@@ -82,20 +84,16 @@ class _SignupPageState extends ConsumerState<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create your academy')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Form(
+    return AuthScaffold(
+      title: 'Create your academy',
+      subtitle: "You'll be the owner — set it up in a minute.",
+      onBack: () => context.go('/login'),
+      children: [
+        Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: AppSpacing.sm),
-              const Text(
-                'Sign up to create a new sports academy. You will be the owner.',
-              ),
-              const SizedBox(height: AppSpacing.xl),
               AppFormField(
                 controller: _academyName,
                 label: 'Academy name',
@@ -145,40 +143,56 @@ class _SignupPageState extends ConsumerState<SignupPage> {
               AppFormField(
                 controller: _password,
                 label: 'Password',
-                obscureText: true,
+                obscureText: _obscure,
                 textInputAction: TextInputAction.done,
                 prefixIcon: const Icon(Icons.lock_outline),
-                validator: (v) => (v == null || v.length < 8)
-                    ? 'At least 8 characters'
-                    : null,
-              ),
-              if (_message != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  _message!,
-                  style: TextStyle(color: _isError ? Colors.red : Colors.green),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                  onPressed: () => setState(() => _obscure = !_obscure),
                 ),
-              ],
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton(
-                onPressed: _busy ? null : _signUp,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Create academy'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextButton(
-                onPressed: () => context.go('/login'),
-                child: const Text('Already have an account? Sign in'),
+                validator: (v) =>
+                    (v == null || v.length < 8) ? 'At least 8 characters' : null,
               ),
             ],
           ),
         ),
-      ),
+        if (_message != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          AuthMessage(message: _message!, isError: _isError),
+        ],
+        const SizedBox(height: AppSpacing.lg),
+        FilledButton(
+          onPressed: _busy ? null : _signUp,
+          child: _busy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create academy'),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Already have an account?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            TextButton(
+              onPressed: () => context.go('/login'),
+              child: const Text('Sign in'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

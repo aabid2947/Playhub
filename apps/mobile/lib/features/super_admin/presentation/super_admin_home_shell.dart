@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:playhub/core/supabase_providers.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/features/home/owner_home_shell.dart';
 import 'package:playhub/features/super_admin/presentation/academies_page.dart';
 import 'package:playhub/features/super_admin/presentation/global_health_page.dart';
 import 'package:playhub/features/super_admin/presentation/plans_page.dart';
 import 'package:playhub/features/super_admin/presentation/super_tickets_page.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Top-level shell for super_admin role. Lives on its own routes (separate
-/// from per-academy shells per PLAN.md §3.10) — the user can sign out via
-/// the Health tab's AppBar.
+/// from per-academy shells per PLAN.md §3.10).
+///
+/// Follows the canonical shell contract (see [OwnerHomeShell]): a single,
+/// constant AppBar (brand wordmark + an "Admin" badge — never per-tab, since
+/// the bottom nav already labels the active tab) and one [AccountAction] entry
+/// point exposing Profile + Sign out. The four hosted tabs are app-bar-less
+/// bodies in an [IndexedStack]; do not give them their own Scaffold AppBar.
 class SuperAdminHomeShell extends ConsumerStatefulWidget {
   const SuperAdminHomeShell({super.key});
 
@@ -24,12 +31,19 @@ class _SuperAdminHomeShellState extends ConsumerState<SuperAdminHomeShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PlayHub · admin'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => ref.read(supabaseClientProvider).auth.signOut(),
-          ),
+        // Constant title on every tab: brand wordmark + an "Admin" badge. The
+        // bottom nav labels the active tab, so the header never changes.
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            BrandWordmark(),
+            SizedBox(width: AppSpacing.sm),
+            AppBadge(text: 'Admin', tone: AppBadgeTone.brand),
+          ],
+        ),
+        actions: const [
+          AccountAction(),
+          SizedBox(width: AppSpacing.xs),
         ],
       ),
       body: IndexedStack(

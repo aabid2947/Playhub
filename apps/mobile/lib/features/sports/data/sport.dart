@@ -1,4 +1,5 @@
-/// Global sports catalog row (`public.sports`).
+/// Sports catalog row (`public.sports`). A null [academyId] is a global catalog
+/// sport; a set [academyId] is that academy's own custom sport (created in-app).
 class Sport {
   const Sport({
     required this.id,
@@ -6,6 +7,7 @@ class Sport {
     required this.name,
     required this.isActive,
     this.category,
+    this.academyId,
   });
 
   factory Sport.fromMap(Map<String, dynamic> m) => Sport(
@@ -14,6 +16,7 @@ class Sport {
         name: m['name'] as String,
         category: m['category'] as String?,
         isActive: m['is_active'] as bool? ?? true,
+        academyId: m['academy_id'] as String?,
       );
 
   final String id;
@@ -21,6 +24,10 @@ class Sport {
   final String name;
   final String? category;
   final bool isActive;
+  final String? academyId;
+
+  /// True for an academy-created custom sport (vs the global catalog).
+  bool get isCustom => academyId != null;
 }
 
 class SportSkill {

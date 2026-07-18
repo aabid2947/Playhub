@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0F2540</color>
+    <!-- Tint for notification accents (app name / small-icon background). -->
+    <color name="notification_color">#FF6A2C</color>
+</resources>

@@ -3,54 +3,72 @@ import 'package:playhub/core/design_tokens.dart';
 
 enum AppBadgeTone { neutral, success, warning, danger, info, brand }
 
-/// Tinted pill label.
+/// Tinted pill label. Colors resolve through [AppSemanticColors] so the tone
+/// adapts to light/dark automatically.
 class AppBadge extends StatelessWidget {
   const AppBadge({
     required this.text,
     this.tone = AppBadgeTone.neutral,
+    this.icon,
     super.key,
   });
 
   final String text;
   final AppBadgeTone tone;
 
-  Color _baseColor(BuildContext context) {
+  /// Optional leading glyph (e.g. a check on "Done", a clock on "Pending").
+  final IconData? icon;
+
+  ({Color fg, Color bg}) _colors(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final semantics = AppSemanticColors.of(context);
     switch (tone) {
       case AppBadgeTone.success:
-        return AppPalette.success;
+        return (fg: semantics.success, bg: semantics.successContainer);
       case AppBadgeTone.warning:
-        return AppPalette.warning;
+        return (fg: semantics.warning, bg: semantics.warningContainer);
       case AppBadgeTone.danger:
-        return AppPalette.danger;
+        return (fg: semantics.danger, bg: semantics.dangerContainer);
       case AppBadgeTone.info:
-        return AppPalette.info;
+        return (fg: semantics.info, bg: semantics.infoContainer);
       case AppBadgeTone.brand:
-        return AppPalette.brandPrimary;
+        return (fg: scheme.primary, bg: scheme.primaryContainer);
       case AppBadgeTone.neutral:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
+        return (
+          fg: scheme.onSurfaceVariant,
+          bg: scheme.surfaceContainerHighest,
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final base = _baseColor(context);
+    final colors = _colors(context);
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
+      padding: EdgeInsets.symmetric(
+        horizontal: icon == null ? AppSpacing.sm : 7,
         vertical: 2,
       ),
       decoration: BoxDecoration(
-        // ignore: deprecated_member_use
-        color: base.withOpacity(0.12),
+        color: colors.bg,
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: base,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 13, color: colors.fg),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.fg,
+              fontWeight: AppType.semibold,
+            ),
+          ),
+        ],
       ),
     );
   }

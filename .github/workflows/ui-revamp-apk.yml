@@ -1,0 +1,54 @@
+name: ui-revamp-apk
+
+# Builds an installable Android APK on every push to the `ui-revamp` branch
+# (or via manual run), and uploads it as a downloadable artifact — so the UI
+# revamp can be tried on a real device without a local Flutter toolchain.
+on:
+  push:
+    branches: [ui-revamo]
+  workflow_dispatch:
+
+# A newer push to the branch cancels an in-flight build.
+concurrency:
+  group: ui-revamo-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/mobile
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.7'
+          cache: true
+
+      - run: flutter pub get
+
+      # The `release` build type is debug-signed (see android/app/build.gradle.kts),
+      # so no keystore is needed — the APK installs for internal testing. Supabase
+      # config rides in via repo secrets so the app boots past the config guard to
+      # the login screen (instead of the "Missing configuration" screen). If the
+      # secrets are unset the APK still builds; it just can't reach the backend.
+      - name: Build release APK
+        run: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playhub-apk-${{ github.sha }}
+          path: apps/mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

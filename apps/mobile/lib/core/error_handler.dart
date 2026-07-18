@@ -3,6 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/shared/widgets/app_snackbar.dart';
 
 /// Global keys + handlers for non-breaking error reporting.
 ///
@@ -39,13 +41,19 @@ class AppErrorHandler {
     if (_runningUnderTest) return;
     _installed = true;
 
-    // 1) Replace the red error widget on build-time errors. In debug we keep
-    //    Flutter's default so devs see the stack; in release we render a
-    //    quiet placeholder so a single broken widget never takes over the UI.
+    // Framework/build/async errors are surfaced ONLY in debug — a labeled
+    // toast with the real exception so the cause is visible while developing.
+    // In RELEASE these are fully silent: a quiet placeholder for build errors
+    // and no toast at all (not even "Something went wrong"). The default
+    // handlers still run, so crashes are written to the system log / any
+    // crash-reporter — we only suppress the on-screen surface.
+
+    // 1) Build-time errors. Debug: Flutter's red box + a toast. Release: a
+    //    quiet placeholder, no toast.
     final defaultErrorBuilder = ErrorWidget.builder;
     ErrorWidget.builder = (details) {
-      _scheduleToast('Something went wrong.');
       if (kDebugMode) {
+        _scheduleToast(_toastFor('UI build error', details.exception));
         return defaultErrorBuilder(details);
       }
       return const _QuietErrorPlaceholder();
@@ -54,16 +62,29 @@ class AppErrorHandler {
     // 2) Framework errors (synchronous widget/render failures).
     final defaultOnError = FlutterError.onError;
     FlutterError.onError = (details) {
-      defaultOnError?.call(details);
-      _scheduleToast('Something went wrong.');
+      defaultOnError?.call(details); // logs to console/crash-reporter
+      if (kDebugMode) {
+        _scheduleToast(_toastFor('Framework error', details.exception));
+      }
     };
 
     // 3) Async errors that escape the framework (futures, streams, etc.).
     PlatformDispatcher.instance.onError = (error, stack) {
-      debugPrint('Uncaught async error: $error\n$stack');
-      _scheduleToast('Something went wrong.');
+      if (kDebugMode) {
+        debugPrint('Uncaught async error: $error\n$stack');
+        _scheduleToast(_toastFor('Async error', error));
+      }
+      // Returning true marks it handled — in release it's swallowed silently
+      // (no crash, no toast).
       return true;
     };
+  }
+
+  /// Debug-only toast text — only ever called from `kDebugMode` paths, so it
+  /// always surfaces the real exception (truncated) for on-device diagnosis.
+  static String _toastFor(String label, Object error) {
+    final s = error.toString();
+    return '$label: ${s.length > 400 ? '${s.substring(0, 400)}…' : s}';
   }
 
   /// True when running under `flutter test` (unit or integration).
@@ -112,6 +133,21 @@ class AppErrorHandler {
     // Defer to the next frame — toast may be invoked during build, layout,
     // or before the first frame is painted.
     SchedulerBinding.instance.addPostFrameCallback((_) {
+      // Prefer the top overlay toast (sits above bottom sheets / dialogs).
+      // Fall back to a bottom SnackBar only if the navigator isn't mounted yet.
+      final overlay = rootNavigatorKey.currentState?.overlay;
+      final ctx = rootNavigatorKey.currentContext;
+      if (overlay != null && ctx != null) {
+        final semantics = AppSemanticColors.of(ctx);
+        TopToast.show(
+          overlay,
+          message: message,
+          icon: Icons.error_outline,
+          color: semantics.danger,
+          onColor: semantics.onDanger,
+        );
+        return;
+      }
       final messenger = rootScaffoldMessengerKey.currentState;
       if (messenger == null) return;
       messenger

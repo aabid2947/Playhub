@@ -51,22 +51,27 @@ Academy-wide coaching oversight. Open the **Cricket Juniors** batch — it alrea
 coach can manage batches and record attendance/performance.
 
 ### Coach — `coach@playhubdemo.in`
-Sees **only their own batch** (Football Evening). Mark attendance and record a
-performance assessment for an enrolled student.
+Sees **only their own batch** (Football Evening). Mark attendance, record a
+performance assessment, and **share photos & videos** of an enrolled student
+(student page → **Photos & videos**).
 
 ### Trainer — `trainer@playhubdemo.in`
-Sees their own batch (Swimming Beginners) and can **mark attendance**, but **cannot
-record performance** — the "New assessment" action is intentionally unavailable
-(trainer is one rung below coach).
+Sees their own batch (Swimming Beginners) and can **mark attendance**. A trainer still
+**cannot record a scored assessment** — the "New assessment" action is intentionally
+unavailable (trainer is one rung below coach) — but they **can share photos & videos**
+of a student: open a student → **Photos & videos → Add photo / Add video**. These show up
+on that student's and their parent's dashboard.
 
 ### Parent — `parent@playhubdemo.in`
 Linked to **two children** (Aarav & Diya). View each child's batches, **attendance %**,
-**performance trend**, and **invoices**. Try **registering a child** for the upcoming
-*Annual Cricket Tournament*, and open the chat.
+**performance trend**, **photos & videos** shared by their coach/trainer, and
+**invoices**. Try **registering a child** for the upcoming *Annual Cricket Tournament*,
+and open the chat.
 
 ### Student — `student@playhubdemo.in`
 The student's own view (Aarav): **upcoming sessions** (next 7 days, from the batch
-schedule), **weekly attendance**, and **performance**.
+schedule), **weekly attendance**, **performance**, and **photos & videos** shared by
+their coach/trainer.
 
 ---
 

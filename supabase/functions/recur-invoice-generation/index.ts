@@ -11,9 +11,11 @@ import { authoriseCron, corsHeaders, preflight } from '../_shared/cors.ts';
 import {
   anchorPeriodStart,
   computeDiscounts,
+  currentPeriodStart,
   isoDate,
   nextPeriodStart,
   round2,
+  weeklyPeriodStart,
 } from '../_shared/billing.ts';
 
 interface Assignment {
@@ -24,11 +26,18 @@ interface Assignment {
   end_date: string | null;
   billing_day: number | null;
   fee: {
-    type: 'monthly' | 'quarterly' | 'annual' | 'one_time';
+    type: 'weekly' | 'monthly' | 'quarterly' | 'annual' | 'one_time';
     base_amount: number;
     tax_pct: number;
     name: string;
   };
+}
+
+/** Optional scope for an ad-hoc (app-triggered) run; all empty = full cron. */
+interface Filter {
+  studentId?: string;
+  batchId?: string;
+  academyId?: string;
 }
 
 Deno.serve(async (req) => {
@@ -42,30 +51,82 @@ Deno.serve(async (req) => {
   if (!url || !key) return j({ error: 'missing env' }, 500);
   const admin = createClient(url, key);
 
+  // Optional scope. The scheduled cron sends no body → full run across every
+  // academy. The app sends `{ academy_id, student_id }` or `{ academy_id,
+  // batch_id }` right after assigning a fee, to materialise just that scope's
+  // current-period invoice immediately (no 24h wait). Same idempotent dedupe,
+  // so eager + scheduled runs can never double-bill.
+  const filter: Filter = {};
+  try {
+    const body = await req.json();
+    if (body && typeof body === 'object') {
+      if (typeof body.student_id === 'string') filter.studentId = body.student_id;
+      if (typeof body.batch_id === 'string') filter.batchId = body.batch_id;
+      if (typeof body.academy_id === 'string') filter.academyId = body.academy_id;
+    }
+  } catch (_) {
+    // No / non-JSON body → unscoped full run (the scheduled cron).
+  }
+  // A scoped run is the app's eager call right after assigning a fee / enrolling
+  // a student. It materialises the CURRENT period immediately (no day-of-month
+  // gate); the unscoped scheduled cron keeps the gate so it only issues on the
+  // billing day. Dedupe makes the two safe to overlap.
+  const scoped = !!(filter.studentId || filter.batchId);
+
   const today = new Date();
   const todayUtc = new Date(Date.UTC(
     today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(),
   ));
 
-  const studentLevel = await collectStudentLevel(admin);
-  const batchLevel = await collectBatchLevel(admin);
+  const studentLevel = await collectStudentLevel(admin, filter);
+  const batchLevel = await collectBatchLevel(admin, filter);
   const all: Assignment[] = [...studentLevel, ...batchLevel];
 
   let scanned = all.length;
   let created = 0;
   for (const a of all) {
-    if (a.fee.type === 'one_time') continue;
     if (a.end_date && new Date(a.end_date) < todayUtc) continue;
 
     const start = new Date(a.start_date + 'T00:00:00Z');
-    const billingDay = a.billing_day ?? start.getUTCDate();
+    // An assignment that hasn't begun yet bills nothing.
+    if (todayUtc < start) continue;
 
-    const periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
-    if (todayUtc.getUTCDate() !== billingDay) continue;
-    if (periodStart < start) continue;
-
-    const periodEnd = nextPeriodStart(periodStart, a.fee.type);
-    periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    // Resolve the [periodStart, periodEnd] this run should try to invoice.
+    // Each fee type anchors its period differently:
+    //   one_time → a single charge dated on the assignment start_date
+    //   weekly   → rolling 7-day windows counted from the start_date (no
+    //              day-of-month gate; billing_day is ignored)
+    //   monthly/quarterly/annual → day-of-month anchored; only fires when
+    //              today is the billing_day, dedup-guarded across the period
+    // The per-(student, fee, period_start) dedupe below makes every branch
+    // safe to re-run daily — it never double-bills a period.
+    let periodStart: Date;
+    let periodEnd: Date;
+    if (a.fee.type === 'one_time') {
+      periodStart = start;
+      periodEnd = start;
+    } else if (a.fee.type === 'weekly') {
+      periodStart = weeklyPeriodStart(start, todayUtc);
+      periodEnd = nextPeriodStart(periodStart, 'weekly');
+      periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    } else {
+      const billingDay = a.billing_day ?? start.getUTCDate();
+      if (scoped) {
+        // Eager: bill the period that contains today, on any day of the month.
+        // today >= start (checked above) and today is within this period, so a
+        // mid-cycle join bills the full current period; dedupe stops the
+        // scheduled run from re-billing it on the billing day.
+        periodStart = currentPeriodStart(todayUtc, a.fee.type, billingDay);
+      } else {
+        // Scheduled cron: only issue on the billing day, and never for a period
+        // that started before the assignment.
+        if (todayUtc.getUTCDate() !== billingDay) continue;
+        periodStart = anchorPeriodStart(todayUtc, a.fee.type, billingDay);
+        if (periodStart < start) continue;
+      }
+      periodEnd = nextPeriodStart(periodStart, a.fee.type);
+      periodEnd.setUTCDate(periodEnd.getUTCDate() - 1);
+    }
 
     // Skip if invoice already exists for this (student, fee, period_start) —
     // dedupes across both assignment sources.
@@ -244,28 +305,56 @@ async function applyDiscounts(
 
 async function collectStudentLevel(
   admin: ReturnType<typeof createClient>,
+  filter: Filter,
 ): Promise<Assignment[]> {
-  const { data } = await admin
+  // A batch-scoped run (a batch-fee trigger) has no student-level component.
+  if (filter.batchId && !filter.studentId) return [];
+
+  let q = admin
     .from('student_fee_assignments')
     .select('academy_id, student_id, fee_structure_id, start_date, '
         + 'end_date, billing_day, '
         + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
     .eq('is_active', true);
+  if (filter.studentId) q = q.eq('student_id', filter.studentId);
+  if (filter.academyId) q = q.eq('academy_id', filter.academyId);
+
+  const { data } = await q;
   return ((data ?? []) as unknown as Assignment[])
     .filter((r) => r.fee !== null);
 }
 
 async function collectBatchLevel(
   admin: ReturnType<typeof createClient>,
+  filter: Filter,
 ): Promise<Assignment[]> {
+  // When scoped to a single student, restrict to the batches they're actually
+  // enrolled in (and emit only that student below).
+  let restrictBatchIds: string[] | null = null;
+  if (filter.studentId && !filter.batchId) {
+    const { data: enrolls } = await admin
+      .from('batch_enrollments')
+      .select('batch_id')
+      .eq('student_id', filter.studentId)
+      .eq('enrollment_status', 'active');
+    restrictBatchIds = ((enrolls ?? []) as Array<{ batch_id: string }>)
+      .map((e) => e.batch_id);
+    if (restrictBatchIds.length === 0) return [];
+  }
+
   // Batch-level fee assignments + active enrollments → expand to per-student
   // pseudo-assignments that share the per-student code path.
-  const { data: bfas } = await admin
+  let q = admin
     .from('batch_fee_assignments')
     .select('academy_id, batch_id, fee_structure_id, start_date, '
         + 'end_date, billing_day, '
         + 'fee:fee_structure_id(type, base_amount, tax_pct, name)')
     .eq('is_active', true);
+  if (filter.batchId) q = q.eq('batch_id', filter.batchId);
+  if (restrictBatchIds) q = q.in('batch_id', restrictBatchIds);
+  if (filter.academyId) q = q.eq('academy_id', filter.academyId);
+
+  const { data: bfas } = await q;
 
   const out: Assignment[] = [];
   for (const bfa of (bfas ?? []) as unknown as Array<{
@@ -278,11 +367,13 @@ async function collectBatchLevel(
     fee: Assignment['fee'] | null;
   }>) {
     if (!bfa.fee) continue;
-    const { data: enrolls } = await admin
+    let eq = admin
       .from('batch_enrollments')
       .select('student_id')
       .eq('batch_id', bfa.batch_id)
       .eq('enrollment_status', 'active');
+    if (filter.studentId) eq = eq.eq('student_id', filter.studentId);
+    const { data: enrolls } = await eq;
     for (const e of (enrolls ?? []) as Array<{ student_id: string }>) {
       out.push({
         academy_id: bfa.academy_id,

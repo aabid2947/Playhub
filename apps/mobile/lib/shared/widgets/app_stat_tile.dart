@@ -10,6 +10,7 @@ class AppStatTile extends StatelessWidget {
     required this.label,
     required this.value,
     this.trend,
+    this.trendUp = true,
     this.color,
     super.key,
   });
@@ -18,13 +19,19 @@ class AppStatTile extends StatelessWidget {
   final String label;
   final String value;
   final String? trend;
+
+  /// Direction of [trend]: up → success/green pill, down → danger/red pill.
+  final bool trendUp;
   final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final accent = color ?? AppPalette.brandPrimary;
+    final semantics = AppSemanticColors.of(context);
+    final accent = color ?? scheme.primary;
+    final trendFg = trendUp ? semantics.success : semantics.danger;
+    final trendBg = trendUp ? semantics.successContainer : semantics.dangerContainer;
 
     return AppCard(
       child: Column(
@@ -37,8 +44,7 @@ class AppStatTile extends StatelessWidget {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  // ignore: deprecated_member_use
-                  color: accent.withOpacity(0.12),
+                  color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 alignment: Alignment.center,
@@ -52,16 +58,26 @@ class AppStatTile extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    // ignore: deprecated_member_use
-                    color: AppPalette.success.withOpacity(0.12),
+                    color: trendBg,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
-                  child: Text(
-                    trend!,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppPalette.success,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        trendUp ? Icons.trending_up : Icons.trending_down,
+                        size: 13,
+                        color: trendFg,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        trend!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: trendFg,
+                          fontWeight: AppType.semibold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -78,7 +94,7 @@ class AppStatTile extends StatelessWidget {
           Text(
             value,
             style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: AppType.bold,
             ),
           ),
         ],

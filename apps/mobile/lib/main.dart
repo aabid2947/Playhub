@@ -56,6 +56,9 @@ class PlayHubApp extends ConsumerWidget {
       title: 'PlayHub',
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      // v1 "Sports-Light" ships LIGHT ONLY (per client). Pin light mode so the
+      // device's dark setting is ignored. The dark theme is retained but dormant.
+      themeMode: ThemeMode.light,
       routerConfig: router,
       scaffoldMessengerKey: AppErrorHandler.rootScaffoldMessengerKey,
       debugShowCheckedModeBanner: false,

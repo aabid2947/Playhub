@@ -130,9 +130,20 @@ class LeadsRepo {
   Future<String> convert({
     required String leadId,
     String? batchId,
+    String? centerId,
     String? parentUserId,
     DateTime? startDate,
   }) async {
+    // students.center_id is NOT NULL, and convert_lead derives the student's
+    // center from the lead's preferred_center_id (falling back to the batch's
+    // center). The in-app lead form never captured a center, so stamp the picked
+    // one onto the lead first — leads_write_update lets an admin set it.
+    if (centerId != null) {
+      await _client
+          .from('leads')
+          .update({'preferred_center_id': centerId})
+          .eq('id', leadId);
+    }
     final res = await _client.functions.invoke(
       'convert-lead-to-student',
       body: {

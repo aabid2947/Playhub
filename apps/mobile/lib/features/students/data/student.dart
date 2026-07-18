@@ -7,6 +7,7 @@ class Student {
     required this.parentName,
     required this.status,
     required this.enrollmentDate,
+    this.feeOverdue = false,
     this.userId,
     this.centerId,
     this.dateOfBirth,
@@ -59,6 +60,7 @@ class Student {
         skillLevel: m['skill_level'] as String?,
         status: m['status'] as String,
         enrollmentDate: DateTime.parse(m['enrollment_date'] as String),
+        feeOverdue: m['fee_overdue'] as bool? ?? false,
       );
 
   final String id;
@@ -89,6 +91,11 @@ class Student {
   final String? skillLevel;
   final String status;
   final DateTime enrollmentDate;
+
+  /// Derived: the student has at least one OVERDUE invoice. Maintained DB-side
+  /// (20260608000300) so the coaching roles — who can't read finance — can
+  /// still see an "unpaid" indicator. Not the same as [status] (lifecycle).
+  final bool feeOverdue;
 
   String get fullName => '$firstName $lastName';
 }

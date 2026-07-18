@@ -12,10 +12,10 @@ void main() {
   const matrix = <String, List<bool>>{
     'academy_owner': [true, true, true, true, true, true, true, true, true, true, true, true, true, false],
     'academy_admin': [false, false, true, true, true, true, true, true, true, true, true, true, true, false],
-    'center_admin': [false, false, false, true, true, true, true, true, true, false, true, true, true, true],
-    'head_coach': [false, false, false, false, false, false, false, true, true, false, false, true, true, false],
-    'coach': [false, false, false, false, false, false, false, false, false, false, false, true, true, false],
-    'trainer': [false, false, false, false, false, false, false, false, false, false, false, true, false, false],
+    'center_admin': [false, false, false, true, true, true, true, true, true, true, true, true, true, true],
+    'head_coach': [false, false, false, true, true, false, false, true, true, false, false, true, true, false],
+    'coach': [false, false, false, true, false, false, false, false, false, false, false, true, true, false],
+    'trainer': [false, false, false, false, false, false, false, false, false, false, false, true, true, false],
     'parent': [false, false, false, false, false, false, false, false, false, false, false, false, false, false],
     'student': [false, false, false, false, false, false, false, false, false, false, false, false, false, false],
     // super_admin uses a separate shell; none of the academy capabilities apply.
@@ -47,16 +47,19 @@ void main() {
     });
   });
 
-  // The two ladder distinctions most likely to regress:
-  test('trainer marks attendance but cannot record performance', () {
+  // The ladder distinctions most likely to regress:
+  test('trainer marks attendance and records performance (own batches)', () {
+    // Scope (their batches' students) is enforced by RLS via staff_on_batch;
+    // the capability just shows the entry point.
     expect(const Capabilities('trainer').markAttendance, isTrue);
-    expect(const Capabilities('trainer').recordPerformance, isFalse);
+    expect(const Capabilities('trainer').recordPerformance, isTrue);
   });
 
-  test('center_admin can view revenue but not manage finance, and is center-scoped', () {
+  test('center_admin manages finance (own center) + views revenue, but not refunds', () {
     const ca = Capabilities('center_admin');
     expect(ca.viewRevenue, isTrue);
-    expect(ca.manageFinance, isFalse);
+    expect(ca.manageFinance, isTrue); // scoped to own-center students by RLS
+    expect(ca.manageRefunds, isFalse); // money-out stays academy_admin+
     expect(ca.isCenterScoped, isTrue);
   });
 

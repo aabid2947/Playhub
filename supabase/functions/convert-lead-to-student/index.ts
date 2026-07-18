@@ -59,6 +59,19 @@ Deno.serve(async (req) => {
     return j({ error: 'lead already converted' }, 409);
   }
 
+  // Converting a lead CREATES a student record — gate it on the same authority
+  // as managing the lead (admin-tier, or center_admin of the lead's preferred
+  // center). A bare same-academy read is not enough: coaches/trainers can read
+  // leads but must not be able to mint student records.
+  const { data: canConvert, error: gateErr } = await callerClient.rpc(
+    'can_admin_lead',
+    { p_lead_id: body.lead_id },
+  );
+  if (gateErr) return j({ error: gateErr.message }, 400);
+  if (canConvert !== true) {
+    return j({ error: 'not allowed to convert this lead' }, 403);
+  }
+
   // Service role: do the actual writes atomically via a single RPC.
   const admin = createClient(url, key);
   const { data: result, error: rpcErr } = await admin.rpc('convert_lead', {

@@ -6,13 +6,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Realtime stream — drives the bell badge live.
 final notificationsStreamProvider =
     StreamProvider<List<AppNotification>>((ref) {
+  final userId = ref.watch(currentUserIdProvider);
   final client = ref.watch(supabaseClientProvider);
-  final user = client.auth.currentUser;
-  if (user == null) return const Stream<List<AppNotification>>.empty();
+  if (userId == null) return const Stream<List<AppNotification>>.empty();
   return client
       .from('notifications')
       .stream(primaryKey: ['id'])
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('created_at')
       .map((rows) {
         final list =
@@ -32,13 +32,13 @@ final unreadNotificationCountProvider = Provider<int>((ref) {
 
 final notificationPreferencesProvider =
     FutureProvider<List<NotificationPreference>>((ref) async {
+  final userId = ref.watch(currentUserIdProvider);
   final client = ref.watch(supabaseClientProvider);
-  final user = client.auth.currentUser;
-  if (user == null) return const [];
+  if (userId == null) return const [];
   final rows = await client
       .from('notification_preferences')
       .select()
-      .eq('user_id', user.id);
+      .eq('user_id', userId);
   return (rows as List)
       .map((r) => NotificationPreference.fromMap(r as Map<String, dynamic>))
       .toList(growable: false);

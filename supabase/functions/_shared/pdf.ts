@@ -39,16 +39,19 @@ export function drawHeader(
   ctx: PdfContext,
   opts: { title: string; subtitle?: string; right?: string },
 ): void {
-  ctx.page.drawText(opts.title, {
+  const title = winAnsi(opts.title);
+  const right = opts.right ? winAnsi(opts.right) : undefined;
+  const subtitle = opts.subtitle ? winAnsi(opts.subtitle) : undefined;
+  ctx.page.drawText(title, {
     x: MARGIN,
     y: ctx.cursorY - 20,
     size: 22,
     font: ctx.bold,
     color: INK,
   });
-  if (opts.right) {
-    const w = ctx.bold.widthOfTextAtSize(opts.right, 11);
-    ctx.page.drawText(opts.right, {
+  if (right) {
+    const w = ctx.bold.widthOfTextAtSize(right, 11);
+    ctx.page.drawText(right, {
       x: A4.width - MARGIN - w,
       y: ctx.cursorY - 16,
       size: 11,
@@ -57,8 +60,8 @@ export function drawHeader(
     });
   }
   ctx.cursorY -= 28;
-  if (opts.subtitle) {
-    ctx.page.drawText(opts.subtitle, {
+  if (subtitle) {
+    ctx.page.drawText(subtitle, {
       x: MARGIN,
       y: ctx.cursorY - 14,
       size: 10,
@@ -204,18 +207,20 @@ export function drawTotals(
 ): void {
   const right = A4.width - MARGIN;
   for (const row of rows) {
+    const label = winAnsi(row.label);
+    const value = winAnsi(row.value);
     const font = row.bold ? ctx.bold : ctx.font;
     const size = row.bold ? 11 : 10;
-    const labelW = font.widthOfTextAtSize(row.label, size);
-    const valueW = font.widthOfTextAtSize(row.value, size);
-    ctx.page.drawText(row.label, {
+    const labelW = font.widthOfTextAtSize(label, size);
+    const valueW = font.widthOfTextAtSize(value, size);
+    ctx.page.drawText(label, {
       x: right - 140 - labelW + 80,
       y: ctx.cursorY,
       size,
       font,
       color: row.bold ? INK : MUTED,
     });
-    ctx.page.drawText(row.value, {
+    ctx.page.drawText(value, {
       x: right - valueW,
       y: ctx.cursorY,
       size,
@@ -231,12 +236,13 @@ export function drawCenteredBlock(
   lines: Array<{ text: string; size: number; bold?: boolean; color?: 'ink' | 'accent' | 'muted'; gap?: number }>,
 ): void {
   for (const line of lines) {
+    const text = winAnsi(line.text);
     const font = line.bold ? ctx.bold : ctx.font;
-    const w = font.widthOfTextAtSize(line.text, line.size);
+    const w = font.widthOfTextAtSize(text, line.size);
     const color = line.color === 'accent'
       ? ACCENT
       : line.color === 'muted' ? MUTED : INK;
-    ctx.page.drawText(line.text, {
+    ctx.page.drawText(text, {
       x: (A4.width - w) / 2,
       y: ctx.cursorY,
       size: line.size,
@@ -262,7 +268,37 @@ export async function finalizePdf(ctx: PdfContext): Promise<Uint8Array> {
   return await ctx.doc.save();
 }
 
+// pdf-lib's StandardFonts (Helvetica) use WinAnsi encoding, which can only
+// represent Latin-1 + a few extras. Drawing ANY other code point (Devanagari
+// names, emoji, the ₹ sign, …) throws and 500s the whole request. Replace
+// anything unencodable with '?' so a PDF always renders. (Full non-Latin
+// rendering would need an embedded Unicode TTF via fontkit — see the note in
+// generate-invoice-pdf.)
+const _winAnsiExtras =
+  '€‚ƒ„…†‡ˆ‰Š‹Œ'
+  + 'Ž‘’“”•–—˜™š›'
+  + 'œžŸ';
+
+export function winAnsi(s: string): string {
+  if (!s) return s;
+  let out = '';
+  for (const ch of s) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (
+      code <= 0x7f ||
+      (code >= 0xa0 && code <= 0xff) ||
+      _winAnsiExtras.includes(ch)
+    ) {
+      out += ch;
+    } else {
+      out += '?';
+    }
+  }
+  return out;
+}
+
 function truncate(text: string, font: PDFFont, size: number, maxWidth: number): string {
+  text = winAnsi(text);
   if (!text) return '';
   if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
   const ellipsis = '…';

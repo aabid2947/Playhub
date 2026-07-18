@@ -7,6 +7,7 @@ environment:
   sdk: ^3.11.5
 
 dependencies:
+  app_links: ^7.0.0
   cached_network_image: ^3.4.1
   csv: ^6.0.0
   cupertino_icons: ^1.0.8
@@ -32,6 +33,7 @@ dependencies:
   supabase_flutter: ^2.8.0
   url_launcher: ^6.3.1
   uuid: ^4.5.1
+  webview_flutter: ^4.4.2
 
 dev_dependencies:
   build_runner: ^2.4.13
@@ -45,7 +47,24 @@ dev_dependencies:
   riverpod_generator: ^2.6.3
   riverpod_lint: ^2.6.3
   very_good_analysis: ^7.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
   generate: true
+
+# App launcher icons. Run after changing the source art:
+#   dart run flutter_launcher_icons
+# The full-colour brand mark is the launcher icon; the Android notification
+# (status-bar) icon is a separate white silhouette in res/drawable-*/ic_stat_logo
+# (Android tints small icons to a flat colour, so the colour logo can't be used
+# there). assets/icon.png = navy square master; icon_foreground.png = adaptive fg.
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
+  background_color_ios: "#0F2540"
+  adaptive_icon_background: "#0F2540"
+  adaptive_icon_foreground: "assets/icon_foreground.png"

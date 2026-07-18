@@ -1,130 +1,382 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/core/supabase_providers.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
 import 'package:playhub/features/coaches/presentation/coach_bulk_import_page.dart';
 import 'package:playhub/features/coaches/presentation/coach_form_page.dart';
+import 'package:playhub/features/subscription/data/trial_limits.dart';
+import 'package:playhub/features/subscription/presentation/upgrade_prompt.dart';
 import 'package:playhub/shared/widgets/avatar_picker.dart';
-import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
-class CoachesTab extends ConsumerWidget {
+/// Local active/inactive filter for the coaches list. `null` = all.
+enum _CoachStatusFilter { all, active, inactive }
+
+/// Body tab under `owner_home_shell`'s single AppBar — stays app-bar-less with
+/// an in-body header row instead (archetype B). v1 "Sports-Light" list.
+class CoachesTab extends ConsumerStatefulWidget {
   const CoachesTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CoachesTab> createState() => _CoachesTabState();
+}
+
+class _CoachesTabState extends ConsumerState<CoachesTab> {
+  final _search = TextEditingController();
+  _CoachStatusFilter _status = _CoachStatusFilter.all;
+  // Which staff section: 'coach' (default) or 'trainer'. Both are coaches rows,
+  // discriminated by `kind`; toggled via the pill tabs in the filter bar.
+  String _kind = 'coach';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _openForm({Coach? existing}) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CoachFormPage(existing: existing, kind: _kind),
+      ),
+    );
+  }
+
+  void _openImport() {
+    Navigator.of(context).push<void>(
+      // Carry the active section's kind so a Trainers-tab import creates
+      // trainers (not coaches via the DB default).
+      MaterialPageRoute(builder: (_) => CoachBulkImportPage(kind: _kind)),
+    );
+  }
+
+  // Reaching a free-trial cap opens the upgrade prompt (RLS is the hard gate).
+  Future<void> _showTrialLimit(String message) =>
+      showUpgradePrompt(context, message: message);
+
+  /// Client-side search + status filter over the already-fetched list. The
+  /// coaches provider returns the full tenant-scoped set; we narrow it here so
+  /// the data layer stays untouched.
+  List<Coach> _filter(List<Coach> coaches) {
+    final query = _search.text.trim().toLowerCase();
+    // A head_coach's OWN coach record is readable (the app derives their sports
+    // + batches from it via myCoachRecordProvider) but they don't manage
+    // themselves, so hide it from the list. Peer head coaches are already
+    // excluded by RLS; this drops the only head_coach row a head_coach can see.
+    final isHeadCoach = ref.read(capabilitiesProvider).role == 'head_coach';
+    final myUserId = isHeadCoach ? ref.read(currentUserIdProvider) : null;
+    return coaches.where((c) {
+      if (c.kind != _kind) return false;
+      if (myUserId != null && c.userId == myUserId) return false;
+      switch (_status) {
+        case _CoachStatusFilter.active:
+          if (!c.isActive) return false;
+        case _CoachStatusFilter.inactive:
+          if (c.isActive) return false;
+        case _CoachStatusFilter.all:
+          break;
+      }
+      if (query.isEmpty) return true;
+      final haystack = [
+        c.fullName,
+        ...c.specialization,
+        if (c.email != null) c.email!,
+        if (c.phone != null) c.phone!,
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final coachesAsync = ref.watch(coachesProvider);
     final caps = ref.watch(capabilitiesProvider);
 
+    // Free-trial cap: once at the coach limit, create entry points prompt to
+    // upgrade instead of opening the form (RLS is the hard backstop).
+    final limits = ref.watch(trialLimitsProvider).valueOrNull;
+    final coachesBlocked = limits?.coachesReached ?? false;
+
+    // Header count reflects the filtered view (null until data lands).
+    final loaded = coachesAsync.valueOrNull;
+    final headerCount = loaded == null ? null : _filter(loaded).length;
+
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(0),
-        child: SizedBox.shrink(
-          child: Material(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: 'Import CSV',
-                    icon: const Icon(Icons.upload_file_outlined),
-                    onPressed: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => const CoachBulkImportPage(),
-                      ),
+      body: Column(
+        children: [
+          _FilterBar(
+            controller: _search,
+            status: _status,
+            count: headerCount,
+            kind: _kind,
+            onKindChanged: (k) => setState(() => _kind = k),
+            onSearch: () => setState(() {}),
+            onStatusChanged: (v) => setState(() => _status = v),
+            // Bulk import creates NEW coaches — onboarding, so it follows the
+            // same gate as the New-coach FAB. RLS rejects it regardless.
+            onImport: !caps.manageCoaches
+                ? null
+                : coachesBlocked
+                    ? () => _showTrialLimit(limits!.coachesMessage)
+                    : _openImport,
+          ),
+          Expanded(
+            child: coachesAsync.when(
+              loading: () => const AppSkeletonList(),
+              error: (e, _) => AppErrorView(
+                message: friendlyError(e),
+                onRetry: () => ref.invalidate(coachesProvider),
+              ),
+              data: (coaches) {
+                final results = _filter(coaches);
+                if (results.isEmpty) {
+                  // Distinguish "no records of this kind" from "search/filter
+                  // hid them all", scoped to the active Coaches/Trainers tab.
+                  final filtering = _search.text.trim().isNotEmpty ||
+                      _status != _CoachStatusFilter.all;
+                  return filtering
+                      ? const AppEmptyState(
+                          icon: Icons.search_off_outlined,
+                          title: 'No matches',
+                          subtitle:
+                              'Try a different name or clear the filters.',
+                        )
+                      : _EmptyState(kind: _kind);
+                }
+                return RefreshIndicator(
+                  onRefresh: () async => ref.invalidate(coachesProvider),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.xxl,
+                    ),
+                    itemCount: results.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.md),
+                    itemBuilder: (context, i) => _CoachTile(
+                      coach: results[i],
+                      onTap: () => _openForm(existing: results[i]),
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
-        ),
-      ),
-      body: coachesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text(friendlyError(e))),
-        data: (coaches) {
-          if (coaches.isEmpty) {
-            return const _EmptyState();
-          }
-          return RefreshIndicator(
-            onRefresh: () async => ref.invalidate(coachesProvider),
-            child: ListView.separated(
-              itemCount: coaches.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, i) => _CoachTile(coach: coaches[i]),
-            ),
-          );
-        },
+        ],
       ),
       floatingActionButton: caps.manageCoaches
           ? FloatingActionButton.extended(
-              onPressed: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(builder: (_) => const CoachFormPage()),
-              ),
-              icon: const Icon(Icons.add),
-              label: const Text('New coach'),
+              heroTag: 'fab-coaches',
+              onPressed: coachesBlocked
+                  ? () => _showTrialLimit(limits!.coachesMessage)
+                  : _openForm,
+              icon: Icon(coachesBlocked ? Icons.lock_outline : Icons.add),
+              label: Text(_kind == 'trainer' ? 'New trainer' : 'New coach'),
             )
           : null,
     );
   }
 }
 
-class _CoachTile extends StatelessWidget {
-  const _CoachTile({required this.coach});
-  final Coach coach;
+/// In-body header (no AppBar here — this is a shell body tab): a navy
+/// `headlineSmall` title with a live count badge, the search field, then a
+/// segmented status pill bar — one coherent control surface, v1-style.
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.controller,
+    required this.status,
+    required this.count,
+    required this.kind,
+    required this.onKindChanged,
+    required this.onSearch,
+    required this.onStatusChanged,
+    required this.onImport,
+  });
+
+  final TextEditingController controller;
+  final _CoachStatusFilter status;
+  // Live count of the filtered results, shown in the header badge.
+  final int? count;
+  // 'coach' | 'trainer' — the active staff section (the pill toggle).
+  final String kind;
+  final ValueChanged<String> onKindChanged;
+  final VoidCallback onSearch;
+  final ValueChanged<_CoachStatusFilter> onStatusChanged;
+  // Null hides the CSV-import action (roles that can't manage coaches).
+  final VoidCallback? onImport;
+
+  static const _tabs = ['All', 'Active', 'Inactive'];
 
   @override
   Widget build(BuildContext context) {
-    final initials = (coach.firstName.isNotEmpty
-            ? coach.firstName[0]
-            : '?') +
-        (coach.lastName.isNotEmpty ? coach.lastName[0] : '');
-    final subtitle = [
-      if (coach.specialization.isNotEmpty) coach.specialization.first,
-      if (coach.experienceYears != null) '${coach.experienceYears} yrs',
-      if (coach.phone != null) coach.phone,
-    ].whereType<String>().join(' • ');
-    return ListTile(
-      leading: AvatarView(url: coach.photo, fallbackInitials: initials),
-      title: Text(coach.fullName),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => CoachFormPage(existing: coach),
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.lg,
+          AppSpacing.sm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Coaches vs Trainers — both are coaches rows (kind); this toggles
+            // the section, and is reachable everywhere CoachesTab is shown.
+            Row(
+              children: [
+                Expanded(
+                  child: AppPillTabs(
+                    tabs: const ['Coaches', 'Trainers'],
+                    index: kind == 'trainer' ? 1 : 0,
+                    onChanged: (i) =>
+                        onKindChanged(i == 1 ? 'trainer' : 'coach'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                if (count != null)
+                  AppBadge(text: '$count', tone: AppBadgeTone.brand),
+                if (onImport != null)
+                  IconButton(
+                    tooltip: 'Import CSV',
+                    icon: const Icon(Icons.upload_file_outlined),
+                    onPressed: onImport,
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: controller,
+              onSubmitted: (_) => onSearch(),
+              onChanged: (_) => onSearch(),
+              decoration: InputDecoration(
+                hintText: 'Search name, specialization…',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                isDense: true,
+                suffixIcon: controller.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          controller.clear();
+                          onSearch();
+                        },
+                      ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppPillTabs(
+              tabs: _tabs,
+              index: status.index,
+              onChanged: (i) =>
+                  onStatusChanged(_CoachStatusFilter.values[i]),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+/// A coach row as a soft-shadow [AppCard]: photo (or gradient-initials)
+/// avatar → name → one tight fact line (specialization • experience) →
+/// trailing active/inactive [AppBadge].
+class _CoachTile extends StatelessWidget {
+  const _CoachTile({required this.coach, required this.onTap});
+  final Coach coach;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.sports_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              'No coaches yet',
-              style: Theme.of(context).textTheme.titleMedium,
+    final theme = Theme.of(context);
+    final initials =
+        (coach.firstName.isNotEmpty ? coach.firstName[0] : '?') +
+            (coach.lastName.isNotEmpty ? coach.lastName[0] : '');
+    // Two facts that matter on a people list: what they coach and how senior.
+    // Phone/email live on the detail page so the subtitle stays one tight line.
+    final facts = <String>[
+      if (coach.specialization.isNotEmpty) coach.specialization.first,
+      if (coach.experienceYears != null) '${coach.experienceYears} yrs',
+    ];
+    final hasPhoto = coach.photo != null && coach.photo!.isNotEmpty;
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      onTap: onTap,
+      child: Row(
+        children: [
+          if (hasPhoto)
+            AvatarView(url: coach.photo, fallbackInitials: initials)
+          else
+            AppAvatar(coach.fullName),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  coach.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  facts.isEmpty
+                      ? (coach.isTrainer ? 'Trainer' : 'Coach')
+                      : facts.join(' • '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Tap "New coach" to onboard your first one.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          _StatusBadge(isActive: coach.isActive),
+        ],
       ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.isActive});
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBadge(
+      text: isActive ? 'Active' : 'Inactive',
+      tone: isActive ? AppBadgeTone.success : AppBadgeTone.neutral,
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.kind});
+  final String kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final trainer = kind == 'trainer';
+    return AppEmptyState(
+      icon: Icons.sports_outlined,
+      title: trainer ? 'No trainers yet' : 'No coaches yet',
+      subtitle: trainer
+          ? 'Tap "New trainer" to add your first one.'
+          : 'Tap "New coach" to onboard your first one.',
     );
   }
 }

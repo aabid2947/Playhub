@@ -98,6 +98,54 @@ class InventoryItem {
   bool get lowStock => reorderThreshold > 0 && onHand <= reorderThreshold;
 }
 
+/// Business-facing labels for the four movement `kind`s. The DB stores the
+/// neutral `in/out/adjustment/return` tokens (see the inventory migration); the
+/// UI speaks the academy's language — **Purchase / Sale / Return / Adjust** —
+/// so staff recognise the entry they want. Single source of truth: relabel here,
+/// not in each screen.
+const Map<String, String> kInventoryKindLabels = {
+  'in': 'Purchase',
+  'out': 'Sale',
+  'return': 'Return',
+  'adjustment': 'Adjust',
+  'transfer': 'Transfer',
+};
+
+/// One-line explanation of what each movement kind does to stock, shown under
+/// the type selector so "where is the sale entry?" is never a question.
+const Map<String, String> kInventoryKindHints = {
+  'in': 'Stock bought in from a vendor — increases on-hand.',
+  'out': 'Stock sold or issued to a student or coach — decreases on-hand.',
+  'return': 'Stock returned back into inventory — increases on-hand.',
+  'adjustment': 'Manual count correction — signed (negative reduces stock).',
+  'transfer': 'Move stock between locations (HO ↔ center) — total unchanged.',
+};
+
+String inventoryKindLabel(String kind) => kInventoryKindLabels[kind] ?? kind;
+
+/// On-hand balance of one item at one location. `centerId == null` is the head
+/// office (HO) / academy pool. Maintained server-side by the movement triggers
+/// (see migration 20260614000100); the client never writes it directly.
+class InventoryStock {
+  const InventoryStock({
+    required this.itemId,
+    required this.centerId,
+    required this.onHand,
+  });
+
+  factory InventoryStock.fromMap(Map<String, dynamic> m) => InventoryStock(
+        itemId: m['item_id'] as String,
+        centerId: m['center_id'] as String?,
+        onHand: (m['on_hand'] as num?)?.toDouble() ?? 0.0,
+      );
+
+  final String itemId;
+  final String? centerId; // null = head office
+  final double onHand;
+
+  bool get isHeadOffice => centerId == null;
+}
+
 class InventoryMovement {
   const InventoryMovement({
     required this.id,
@@ -105,6 +153,8 @@ class InventoryMovement {
     required this.kind,
     required this.qty,
     required this.performedAt,
+    this.centerId,
+    this.toCenterId,
     this.studentId,
     this.coachId,
     this.vendorId,
@@ -120,6 +170,8 @@ class InventoryMovement {
         itemId: m['item_id'] as String,
         kind: m['kind'] as String,
         qty: (m['qty'] as num).toDouble(),
+        centerId: m['center_id'] as String?,
+        toCenterId: m['to_center_id'] as String?,
         studentId: m['student_id'] as String?,
         coachId: m['coach_id'] as String?,
         vendorId: m['vendor_id'] as String?,
@@ -135,6 +187,8 @@ class InventoryMovement {
   final String itemId;
   final String kind;
   final double qty;
+  final String? centerId; // location affected (source for a transfer); null = HO
+  final String? toCenterId; // transfer destination; null = HO (only for transfer)
   final String? studentId;
   final String? coachId;
   final String? vendorId;

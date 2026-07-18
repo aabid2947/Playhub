@@ -46,6 +46,32 @@ final mediaForAssessmentProvider = FutureProvider.family<
       .toList();
 });
 
+/// All media for one student across every assessment (newest first).
+/// RLS narrows this to the student's own parent/self, so the parent and
+/// student dashboards can render a single media gallery without an N+1
+/// per-assessment fetch.
+final mediaForStudentProvider = FutureProvider.family<
+    List<PerformanceMedia>, String>((ref, studentId) async {
+  final client = ref.read(supabaseClientProvider);
+  final rows = await client
+      .from('performance_media')
+      .select()
+      .eq('student_id', studentId)
+      .order('uploaded_at', ascending: false);
+  return (rows as List)
+      .map((r) => PerformanceMedia.fromMap(r as Map<String, dynamic>))
+      .toList();
+});
+
+/// Short-lived signed URL for a performance-media object, cached by path so
+/// a gallery doesn't re-sign on every rebuild. URLs expire (~5 min); a
+/// pull-to-refresh re-issues them.
+final performanceMediaUrlProvider =
+    FutureProvider.family<String, String>((ref, filePath) async {
+  final storage = ref.read(storageServiceProvider);
+  return storage.signedPerformanceMediaUrl(filePath);
+});
+
 /// Per-student trend row from the materialized view.
 final performanceTrendProvider = FutureProvider.family<
     Map<String, dynamic>?, String>((ref, studentId) async {
@@ -154,4 +180,34 @@ Future<void> attachMedia(
     'uploaded_by': profile?.id,
   });
   ref.invalidate(mediaForAssessmentProvider(assessmentId));
+}
+
+/// Attach standalone media (no scored assessment) straight to a student — the
+/// trainer/coach "Add photo/video" action on the student page. Inserts a
+/// performance_media row with a null assessment_id; RLS gates this through
+/// can_upload_student_media(student_id).
+Future<void> addStudentMedia(
+  WidgetRef ref, {
+  required String studentId,
+  required String mediaType, // 'photo' | 'video'
+  required String filePath,
+  String? originalFilename,
+  String? mimeType,
+  int? sizeBytes,
+}) async {
+  final client = ref.read(supabaseClientProvider);
+  final profile = await ref.read(currentProfileProvider.future);
+  final academyId = profile?.academyId;
+  if (academyId == null) return;
+  await client.from('performance_media').insert({
+    'academy_id': academyId,
+    'student_id': studentId,
+    'media_type': mediaType,
+    'file_path': filePath,
+    if (originalFilename != null) 'original_filename': originalFilename,
+    if (mimeType != null) 'mime_type': mimeType,
+    if (sizeBytes != null) 'size_bytes': sizeBytes,
+    'uploaded_by': profile?.id,
+  });
+  ref.invalidate(mediaForStudentProvider(studentId));
 }

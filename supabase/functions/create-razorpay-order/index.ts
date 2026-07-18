@@ -9,6 +9,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
 import { createRazorpayOrder } from '../_shared/razorpay.ts';
+import { resolveRazorpayCreds } from '../_shared/payment_gateway.ts';
 import { toPaise } from '../_shared/billing.ts';
 
 interface Body { invoice_id: string }
@@ -61,6 +62,15 @@ Deno.serve(async (req) => {
     return j({ error: 'max 3 attempts reached for this invoice' }, 409);
   }
 
+  // Use the academy's own Razorpay merchant keys when configured + enabled;
+  // otherwise fall back to the platform-wide keys. Secrets stay server-side.
+  let creds: Awaited<ReturnType<typeof resolveRazorpayCreds>>;
+  try {
+    creds = await resolveRazorpayCreds(admin, invoice.academy_id);
+  } catch (e) {
+    return j({ error: (e as Error).message }, 500);
+  }
+
   let order: Awaited<ReturnType<typeof createRazorpayOrder>>;
   try {
     order = await createRazorpayOrder({
@@ -73,7 +83,7 @@ Deno.serve(async (req) => {
         student_id: invoice.student_id,
         attempt: String(attemptNumber),
       },
-    });
+    }, creds);
   } catch (e) {
     return j({ error: (e as Error).message }, 502);
   }
@@ -90,7 +100,7 @@ Deno.serve(async (req) => {
 
   return j({
     order_id: order.id,
-    key_id: Deno.env.get('RAZORPAY_KEY_ID'),
+    key_id: creds.keyId,
     amount_paise: order.amount,
     currency: order.currency,
     invoice_number: invoice.invoice_number,

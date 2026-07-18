@@ -1,4 +1,8 @@
-// Cron daily ~03:30 IST: walks past-due saas_invoices.
+// Cron daily ~03:30 IST: expires lapsed trials + walks past-due saas_invoices.
+//   - trial past trial_ends_at → suspend (the trial never converted to paid).
+//     The RLS gate academy_writes_allowed() already blocks writes the moment
+//     the trial lapses; this just flips the persisted status so the UI/paywall
+//     + reports agree.
 //   - 7+ days past due  → flag invoice as 'past_due', subscription stays
 //                          past_due (still has read access, no charge yet)
 //   - 14+ days past due → suspend the academy_subscription + flip
@@ -33,6 +37,28 @@ Deno.serve(async (req) => {
   softThreshold.setUTCDate(softThreshold.getUTCDate() - SOFT_GRACE_DAYS);
   const hardThreshold = new Date(today0);
   hardThreshold.setUTCDate(hardThreshold.getUTCDate() - HARD_GRACE_DAYS);
+
+  // Step 0: trials whose window elapsed without converting → suspend. (Trials
+  // never get a saas_invoice, so the invoice-based steps below never catch them.)
+  const { data: expiredTrials } = await admin
+    .from('academies')
+    .select('id')
+    .eq('subscription_status', 'trial')
+    .lt('trial_ends_at', today.toISOString());
+
+  let trialsSuspended = 0;
+  for (const a of (expiredTrials ?? []) as Array<{ id: string }>) {
+    await admin
+      .from('academies')
+      .update({ subscription_status: 'suspended', is_active: false })
+      .eq('id', a.id);
+    await admin
+      .from('academy_subscriptions')
+      .update({ status: 'suspended' })
+      .eq('academy_id', a.id)
+      .eq('status', 'trial');
+    trialsSuspended++;
+  }
 
   // Step 1: flag past-due invoices that have crossed the soft grace.
   const { data: dueInvoices } = await admin
@@ -81,6 +107,7 @@ Deno.serve(async (req) => {
 
   return j({
     ok: true,
+    trials_suspended: trialsSuspended,
     flagged_past_due: flaggedCount,
     suspended: suspendedCount,
   });

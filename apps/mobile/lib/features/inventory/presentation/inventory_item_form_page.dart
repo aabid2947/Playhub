@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:playhub/core/design_tokens.dart';
+import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
 import 'package:playhub/features/inventory/data/inventory.dart';
 import 'package:playhub/features/inventory/data/inventory_providers.dart';
+import 'package:playhub/shared/widgets/widgets.dart';
 
 class InventoryItemFormPage extends ConsumerStatefulWidget {
   const InventoryItemFormPage({this.existing, super.key});
@@ -25,6 +29,10 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
       text: widget.existing?.unitCost.toString() ?? '0');
   late final _reorder = TextEditingController(
       text: widget.existing?.reorderThreshold.toString() ?? '0');
+  // Opening stock — only on CREATE. on_hand is otherwise driven entirely by
+  // movements (the sync_item_on_hand trigger), so editing it here would desync
+  // the ledger; existing items change stock via the movement sheet instead.
+  final _openingStock = TextEditingController(text: '0');
   String? _categoryId;
   String? _vendorId;
   String? _centerId;
@@ -40,7 +48,15 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
 
   @override
   void dispose() {
-    for (final c in [_name, _sku, _desc, _unit, _unitCost, _reorder]) {
+    for (final c in [
+      _name,
+      _sku,
+      _desc,
+      _unit,
+      _unitCost,
+      _reorder,
+      _openingStock,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -52,7 +68,7 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
     try {
       final repo = await ref.read(inventoryRepoProvider.future);
       if (repo == null) throw StateError('no academy');
-      await repo.upsertItem(
+      final item = await repo.upsertItem(
         id: widget.existing?.id,
         name: _name.text.trim(),
         sku: _sku.text.trim().isEmpty ? null : _sku.text.trim(),
@@ -64,13 +80,28 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
         vendorId: _vendorId,
         centerId: _centerId,
       );
-      ref.invalidate(inventoryItemsProvider);
-      if (mounted) Navigator.of(context).pop();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+      // On create, seed the opening stock as an "in" movement — on_hand is
+      // trigger-driven from the ledger, so a new item starts at 0 unless we
+      // record the starting quantity the user entered.
+      if (widget.existing == null) {
+        final opening = double.tryParse(_openingStock.text.trim()) ?? 0;
+        if (opening > 0) {
+          await repo.recordMovement(
+            itemId: item.id,
+            kind: 'in',
+            qty: opening,
+            centerId: item.centerId, // opening stock lands at the item's location
+            reference: 'Opening stock',
+          );
+        }
       }
+      ref.invalidate(inventoryItemsProvider);
+      if (!mounted) return;
+      AppSnackbar.success(
+          context, widget.existing == null ? 'Item created.' : 'Item updated.');
+      Navigator.of(context).pop();
+    } on Object catch (e) {
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -81,96 +112,187 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
     final categories = ref.watch(inventoryCategoriesProvider).valueOrNull ?? [];
     final vendors = ref.watch(vendorsProvider).valueOrNull ?? [];
     final centers = ref.watch(centersProvider).valueOrNull ?? [];
+    final isEditing = widget.existing != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'New item' : 'Edit item'),
+        title: Text(isEditing ? 'Edit item' : 'New item'),
       ),
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            TextFormField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Name *'),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            const AppSectionHeader(
+              title: 'Details',
+              icon: Icons.inventory_2_outlined,
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _sku,
-              decoration: const InputDecoration(labelText: 'SKU (optional)'),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _desc,
-              decoration: const InputDecoration(labelText: 'Description'),
-              minLines: 2,
-              maxLines: 4,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _unit,
-                    decoration: const InputDecoration(labelText: 'Unit'),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppFormField(
+                    controller: _name,
+                    label: 'Name *',
+                    enabled: !_saving,
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'Required' : null,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _unitCost,
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _sku,
+                    label: 'SKU (optional)',
+                    enabled: !_saving,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _desc,
+                    label: 'Description (optional)',
+                    enabled: !_saving,
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(
+              title: 'Stock & cost',
+              icon: Icons.inventory_outlined,
+            ),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final unitField = AppFormField(
+                        controller: _unit,
+                        label: 'Unit',
+                        enabled: !_saving,
+                      );
+                      final costField = AppFormField(
+                        controller: _unitCost,
+                        label: 'Unit cost (₹)',
+                        enabled: !_saving,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        // Numeric only — digits + a single decimal point.
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp('[0-9.]')),
+                        ],
+                      );
+                      // Stack the paired fields on narrow screens so the
+                      // inputs never crush to unusable widths.
+                      if (constraints.maxWidth < _kStackBelowWidth) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            unitField,
+                            const SizedBox(height: AppSpacing.md),
+                            costField,
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: unitField),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(child: costField),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppFormField(
+                    controller: _reorder,
+                    label: 'Low-stock threshold',
+                    enabled: !_saving,
                     keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Unit cost (₹)'),
+                    // Whole count only — no letters / decimals.
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
-                ),
-              ],
+                  // Opening stock only on create. Existing items change stock
+                  // through the movement sheet (purchase / issue / return), so
+                  // there's no editable on-hand field here.
+                  if (!isEditing) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    AppFormField(
+                      controller: _openingStock,
+                      label: 'Opening stock',
+                      hint: 'Quantity on hand now, e.g. 30',
+                      enabled: !_saving,
+                      keyboardType: TextInputType.number,
+                      // Whole count only — what you type is what stock shows.
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _reorder,
-              keyboardType: TextInputType.number,
-              decoration:
-                  const InputDecoration(labelText: 'Low-stock threshold'),
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(
+              title: 'Categorisation',
+              icon: Icons.category_outlined,
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _categoryId,
-              decoration: const InputDecoration(labelText: 'Category'),
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final c in categories)
-                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setState(() => _categoryId = v),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppDropdownField<String?>(
+                    label: 'Category',
+                    value: _categoryId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final c in categories)
+                        DropdownMenuItem<String?>(
+                            value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _categoryId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppDropdownField<String?>(
+                    label: 'Default vendor',
+                    value: _vendorId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final v in vendors)
+                        DropdownMenuItem<String?>(
+                            value: v.id, child: Text(v.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _vendorId = v),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppDropdownField<String?>(
+                    label: 'Held at center (optional)',
+                    value: _centerId,
+                    items: [
+                      const DropdownMenuItem<String?>(child: Text('— None —')),
+                      for (final c in centers)
+                        DropdownMenuItem<String?>(
+                            value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged:
+                        _saving ? null : (v) => setState(() => _centerId = v),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _vendorId,
-              decoration: const InputDecoration(labelText: 'Default vendor'),
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final v in vendors)
-                  DropdownMenuItem<String?>(value: v.id, child: Text(v.name)),
-              ],
-              onChanged: (v) => setState(() => _vendorId = v),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String?>(
-              initialValue: _centerId,
-              decoration:
-                  const InputDecoration(labelText: 'Held at center (optional)'),
-              items: [
-                const DropdownMenuItem<String?>(child: Text('— None —')),
-                for (final c in centers)
-                  DropdownMenuItem<String?>(value: c.id, child: Text(c.name)),
-              ],
-              onChanged: (v) => setState(() => _centerId = v),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
+          ],
+        ),
+      ),
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving
                   ? const SizedBox(
@@ -178,11 +300,14 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
                       width: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Save'),
+                  : Text(isEditing ? 'Save changes' : 'Create item'),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
+
+/// Below this width the paired Unit / Unit cost row stacks vertically.
+const double _kStackBelowWidth = 360;

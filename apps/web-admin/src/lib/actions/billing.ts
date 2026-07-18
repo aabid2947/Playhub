@@ -39,3 +39,33 @@ export async function recordSaasPayment(input: {
   revalidatePath("/health");
   return { ok: true };
 }
+
+/**
+ * Manually reactivate a suspended/past-due academy: flips the subscription and
+ * the academy back to 'active' + is_active=true. The recovery lever for a
+ * trial-expired academy (which has no invoice to pay against) or a super-admin
+ * override. A paid invoice reactivates automatically via the
+ * reactivate_paid_subscription DB trigger. RLS (is_super_admin branch) gates it.
+ */
+export async function reactivateSubscription(
+  academyId: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { error: subErr } = await supabase
+    .from("academy_subscriptions")
+    .update({ status: "active" })
+    .eq("academy_id", academyId);
+  if (subErr) return { ok: false, error: subErr.message };
+
+  const { error: acErr } = await supabase
+    .from("academies")
+    .update({ subscription_status: "active", is_active: true })
+    .eq("id", academyId);
+  if (acErr) return { ok: false, error: acErr.message };
+
+  revalidatePath(`/academies/${academyId}`);
+  revalidatePath("/academies");
+  revalidatePath("/health");
+  return { ok: true };
+}

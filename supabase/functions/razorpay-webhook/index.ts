@@ -3,13 +3,19 @@
 // records payment.captured / payment.failed events.
 //
 // Configure on Razorpay Dashboard → Webhooks:
-//   URL:    https://<project-ref>.supabase.co/functions/v1/razorpay-webhook
+//   Platform account:
+//     URL:    https://<project-ref>.supabase.co/functions/v1/razorpay-webhook
+//   Per-academy merchant account (bring-your-own-gateway):
+//     URL:    https://<project-ref>.supabase.co/functions/v1/razorpay-webhook?academy=<academy_id>
 //   Events: payment.captured, payment.failed
-//   Secret: same value as RAZORPAY_WEBHOOK_SECRET in Supabase secrets
+//   Secret: the webhook secret the owner saved for that academy (platform URL
+//           uses RAZORPAY_WEBHOOK_SECRET). The `academy` param is only a routing
+//           hint — a forged one simply fails signature verification.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { corsHeaders, preflight } from '../_shared/cors.ts';
 import { verifyWebhookSignature } from '../_shared/razorpay.ts';
+import { resolveRazorpayWebhookSecret } from '../_shared/payment_gateway.ts';
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -20,11 +26,19 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !serviceKey) return j({ error: 'missing env' }, 500);
 
+  const admin = createClient(url, serviceKey);
+
+  // Per-academy webhooks include ?academy=<id>; the platform webhook omits it.
+  // We pick the matching webhook secret BEFORE trusting the body — a wrong
+  // academy id just yields a non-matching secret and fails verification.
+  const academyParam = new URL(req.url).searchParams.get('academy');
+
   const rawBody = await req.text();
   const sig = req.headers.get('x-razorpay-signature') ?? '';
   let valid = false;
   try {
-    valid = await verifyWebhookSignature(rawBody, sig);
+    const webhookSecret = await resolveRazorpayWebhookSecret(admin, academyParam);
+    valid = await verifyWebhookSignature(rawBody, sig, webhookSecret);
   } catch (e) {
     return j({ error: (e as Error).message }, 500);
   }
@@ -37,7 +51,6 @@ Deno.serve(async (req) => {
     return j({ error: 'invalid json' }, 400);
   }
 
-  const admin = createClient(url, serviceKey);
   const eventId = event.id;
   const payload = event.payload?.payment?.entity;
   if (!eventId || !payload) {
@@ -48,6 +61,34 @@ Deno.serve(async (req) => {
   const invoiceId = payload.notes?.invoice_id;
   const academyId = payload.notes?.academy_id;
   const studentId = payload.notes?.student_id;
+  const invoiceType = payload.notes?.invoice_type ?? 'student';
+
+  // SaaS subscription payments (PlayHub billing the academy) record into
+  // saas_payments — no student. The apply_saas_payment + reactivate triggers
+  // then mark the invoice paid and activate the academy.
+  if (invoiceType === 'saas') {
+    if (!invoiceId || !academyId) {
+      return j({ ok: true, ignored: 'missing saas notes' });
+    }
+    if (event.event !== 'payment.captured') {
+      return j({ ok: true, ignored: event.event });
+    }
+    const { error } = await admin.from('saas_payments').insert({
+      academy_id: academyId,
+      saas_invoice_id: invoiceId,
+      amount: (payload.amount ?? 0) / 100,
+      method: 'razorpay',
+      razorpay_order_id: payload.order_id,
+      razorpay_payment_id: payload.id,
+      unique_event_id: eventId,
+    });
+    // 23505 = unique_violation → duplicate webhook delivery, already recorded.
+    if (error && error.code !== '23505') {
+      return j({ error: error.message }, 500);
+    }
+    return j({ ok: true, event: 'payment.captured', saas_invoice_id: invoiceId });
+  }
+
   if (!invoiceId || !academyId || !studentId) {
     return j({ ok: true, ignored: 'missing notes — likely external order' });
   }

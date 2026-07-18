@@ -3,11 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/batches/data/batch.dart';
 import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/batches/presentation/schedule_picker.dart';
+import 'package:playhub/features/centers/data/center.dart';
 import 'package:playhub/features/centers/data/center_providers.dart';
+import 'package:playhub/features/coach/data/coach_home_providers.dart';
+import 'package:playhub/features/coaches/data/coach.dart';
 import 'package:playhub/features/coaches/data/coach_providers.dart';
+import 'package:playhub/features/sports/data/sport_providers.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -37,7 +42,6 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
-  String? _error;
 
   bool get isEdit => widget.existing != null;
 
@@ -49,6 +53,20 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
     _sportId = widget.existing?.sportId;
     _skillLevel = widget.existing?.skillLevel;
     _schedule = widget.existing?.schedule ?? const BatchSchedule();
+    // New batch by a center-scoped role (center_admin / head_coach): pre-select
+    // their primary center (the dropdown is also restricted to their centers in
+    // build). Owner / academy_admin choose from every center.
+    if (widget.existing == null) {
+      Future.microtask(() async {
+        final profile = await ref.read(currentProfileProvider.future);
+        if (!mounted || profile == null) return;
+        final scoped =
+            profile.role == 'center_admin' || profile.role == 'head_coach';
+        if (scoped && profile.centerId != null) {
+          setState(() => _centerId = profile.centerId);
+        }
+      });
+    }
   }
 
   @override
@@ -61,10 +79,46 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    // A batch must belong to a center (batches.center_id is NOT NULL). The
+    // picker's validator covers the data state; this backstops loading/error/
+    // empty, where the picker renders a placeholder rather than a field.
+    if (_centerId == null) {
+      AppSnackbar.error(
+        context,
+        'Pick a center for this batch — add one in Settings → Centers first.',
+      );
+      return;
+    }
+    // A batch must have a sport — head_coach/coach RLS (batch_in_my_sport), the
+    // performance rubric and sport filtering all key off it. The picker's
+    // validator covers "sports exist but none picked"; this backstops the "no
+    // sports configured" empty state, where the picker renders a hint (not a
+    // field) so the validator can't run.
+    if (_sportId == null) {
+      // Coaches/head_coaches can't enable sports themselves (that's admin /
+      // center_admin), so point them at an admin instead of Settings → Sports.
+      final role = ref.read(currentProfileProvider).valueOrNull?.role;
+      final scoped = role == 'head_coach' || role == 'coach';
+      AppSnackbar.error(
+        context,
+        scoped
+            ? 'Pick a sport for this batch — ask an admin to enable a sport you can coach first.'
+            : 'Pick a sport for this batch — enable one in Settings → Sports first.',
+      );
+      return;
+    }
+    // A batch must have a coach — the coach app only shows batches its user
+    // staffs, so a coachless batch is invisible and can't have attendance
+    // marked. The picker's validator covers the data state; this backstops
+    // loading/error (and reminds where to add one if the academy has none).
+    if (_coachId == null) {
+      AppSnackbar.error(
+        context,
+        'Assign a coach for this batch — add one in the Coaches tab first if you have none.',
+      );
+      return;
+    }
+    setState(() => _busy = true);
     try {
       final patch = <String, dynamic>{
         'name': _name.text.trim(),
@@ -85,9 +139,11 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
       } else {
         await createBatch(ref, patch);
       }
-      if (mounted) context.pop();
+      if (!mounted) return;
+      AppSnackbar.success(context, isEdit ? 'Batch updated.' : 'Batch created.');
+      context.pop();
     } on Object catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) AppSnackbar.error(context, friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -97,121 +153,401 @@ class _BatchFormPageState extends ConsumerState<BatchFormPage> {
   Widget build(BuildContext context) {
     final centresAsync = ref.watch(centersProvider);
     final coachesAsync = ref.watch(coachesProvider);
+    // A head_coach / coach may only tag a batch with one of their own sports
+    // (RLS rejects the rest), so restrict the picker for them. Other roles see
+    // the full center/academy list (null = no restriction). Empty-while-loading
+    // is safe — it just shows the "no sports" hint until the future resolves.
+    final role = ref.watch(currentProfileProvider).valueOrNull?.role;
+    final sportScoped = role == 'head_coach' || role == 'coach';
+    final restrictSports = sportScoped
+        ? (ref.watch(mySportIdsProvider).valueOrNull ?? const <String>[]).toSet()
+        : null;
+    // A center-scoped role (center_admin / head_coach) assigns only into their
+    // own center(s) — RLS 42501s the rest — so restrict the center picker to
+    // them (their primary is auto-selected in initState).
+    final centerScoped = role == 'center_admin' || role == 'head_coach';
+    final myCenters =
+        centerScoped ? ref.watch(myCenterIdsProvider).valueOrNull : null;
+    // The coach picker is scoped to the chosen center, then (once a sport is
+    // picked) to the coaches who teach that sport. Null while the sport's
+    // coaches load → the picker stays center-only until it resolves.
+    final sportCoachIds = _sportId == null
+        ? null
+        : ref.watch(coachIdsForSportProvider(_sportId!)).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(title: Text(isEdit ? 'Edit batch' : 'New batch')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AppFormField(
-                controller: _name,
-                label: 'Batch name *',
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
+      // Pinned, full-width primary action (archetype D) — inline spinner while
+      // saving. A floating shadow lifts the bar off the scrolling form below it.
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          boxShadow: AppShadows.floating,
+        ),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(AppSpacing.lg),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save_outlined),
+              label: Text(
+                _busy
+                    ? 'Saving…'
+                    : (isEdit ? 'Save changes' : 'Create batch'),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: SportPicker(
-                      value: _sportId,
-                      onChanged: (v) => setState(() => _sportId = v),
-                      centerId: _centerId,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppFormField(
-                      controller: _ageGroup,
-                      label: 'Age group',
-                      hint: '6-10, U-15',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              centresAsync.when(
-                loading: () => const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text(friendlyError(e)),
-                data: (centres) => DropdownButtonFormField<String>(
-                  initialValue: _centerId,
-                  decoration: const InputDecoration(labelText: 'Center'),
-                  items: [
-                    const DropdownMenuItem<String>(child: Text('— none —')),
-                    for (final c in centres.where((c) => c.isActive))
-                      DropdownMenuItem(value: c.id, child: Text(c.name)),
-                  ],
-                  onChanged: (v) => setState(() => _centerId = v),
-                ),
-              ),
-              const SizedBox(height: 12),
-              coachesAsync.when(
-                loading: () => const LinearProgressIndicator(minHeight: 2),
-                error: (e, _) => Text(friendlyError(e)),
-                data: (coaches) => DropdownButtonFormField<String>(
-                  initialValue: _coachId,
-                  decoration: const InputDecoration(labelText: 'Coach'),
-                  items: [
-                    const DropdownMenuItem<String>(
-                      child: Text('— unassigned —'),
-                    ),
-                    for (final c in coaches)
-                      DropdownMenuItem(value: c.id, child: Text(c.fullName)),
-                  ],
-                  onChanged: (v) => setState(() => _coachId = v),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _skillLevel,
-                decoration: const InputDecoration(labelText: 'Skill level'),
-                items: const [
-                  DropdownMenuItem(value: 'beginner', child: Text('Beginner')),
-                  DropdownMenuItem(
-                    value: 'intermediate',
-                    child: Text('Intermediate'),
-                  ),
-                  DropdownMenuItem(value: 'advanced', child: Text('Advanced')),
-                  DropdownMenuItem(value: 'mixed', child: Text('Mixed')),
-                ],
-                onChanged: (v) => setState(() => _skillLevel = v),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const AppSectionHeader(title: 'Schedule'),
-              const SizedBox(height: AppSpacing.sm),
-              SchedulePicker(value: _schedule, onChanged: (s) => _schedule = s),
-              const SizedBox(height: 24),
-              AppFormField(
-                controller: _capacity,
-                label: 'Capacity',
-                keyboardType: TextInputType.number,
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(isEdit ? 'Save changes' : 'Create batch'),
-              ),
-            ],
+              onPressed: _busy ? null : _save,
+            ),
           ),
         ),
       ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            // Details -------------------------------------------------------
+            const AppSectionHeader(
+              title: 'Details',
+              icon: Icons.groups_outlined,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
+              controller: _name,
+              label: 'Batch name *',
+              hint: 'e.g. U-15 Evening',
+              prefixIcon: const Icon(Icons.groups_outlined),
+              enabled: !_busy,
+              textInputAction: TextInputAction.next,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            // Center FIRST — the Sport picker below scopes to it (centerId), so
+            // picking/changing a center can't leave a stale sport the center
+            // doesn't offer (which would trip the dropdown's value-in-items
+            // assert in debug, or save a batch tagged with a mismatched sport).
+            _AsyncDropdownField<Centre>(
+              label: 'Center *',
+              value: _centerId,
+              async: centresAsync,
+              emptyOptionLabel: '— select a center —',
+              // Inactive centers can't take new assignments; hide them.
+              optionsOf: (centres) {
+                var active = centres.where((c) => c.isActive).toList();
+                if (centerScoped && myCenters != null) {
+                  active =
+                      active.where((c) => myCenters.contains(c.id)).toList();
+                }
+                return active;
+              },
+              idOf: (c) => c.id,
+              labelOf: (c) => c.name,
+              onChanged: (v) => setState(() {
+                _centerId = v;
+                // Sport + coach are scoped to the center below — clear them so a
+                // stale value can't persist across a center change.
+                _sportId = null;
+                _coachId = null;
+              }),
+              onRetry: () => ref.invalidate(centersProvider),
+              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            // Sport + age group stack gracefully on narrow widths.
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final sport = SportPicker(
+                  label: 'Sport *',
+                  value: _sportId,
+                  onChanged: (v) => setState(() {
+                    _sportId = v;
+                    // The coach list narrows to this sport's coaches — clear a
+                    // coach who may not teach the newly chosen sport.
+                    _coachId = null;
+                  }),
+                  centerId: _centerId,
+                  restrictToSportIds: restrictSports,
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Required' : null,
+                );
+                final ageGroup = AppFormField(
+                  controller: _ageGroup,
+                  label: 'Age group',
+                  hint: '6-10, U-15',
+                  enabled: !_busy,
+                  textInputAction: TextInputAction.next,
+                );
+                if (constraints.maxWidth < 360) {
+                  return Column(
+                    children: [
+                      sport,
+                      const SizedBox(height: AppSpacing.md),
+                      ageGroup,
+                    ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: sport),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(child: ageGroup),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _AsyncDropdownField<Coach>(
+              label: 'Coach *',
+              value: _coachId,
+              async: coachesAsync,
+              emptyOptionLabel: '— select a coach —',
+              // Scope to the chosen center, then (once a sport is picked) to
+              // coaches who teach that sport (coach_sports).
+              optionsOf: (coaches) {
+                // Only 'coach'-kind records can be a batch's PRIMARY coach;
+                // trainers assist via batch_staff, not batches.coach_id.
+                Iterable<Coach> list = coaches.where((c) => c.kind == 'coach');
+                if (_centerId != null) {
+                  list = list.where((c) => c.centerId == _centerId);
+                }
+                if (_sportId != null && sportCoachIds != null) {
+                  list = list.where((c) => sportCoachIds.contains(c.id));
+                }
+                final result = list.toList();
+                // Keep the currently-selected coach selectable even if they fall
+                // outside the center/sport narrowing — e.g. editing a batch whose
+                // saved coach no longer teaches its sport. Without this the
+                // value-guard blanks the field and the required validator blocks
+                // re-saving an unrelated edit. Changing the center/sport clears
+                // _coachId, so this only preserves an intentional selection; and
+                // coach↔sport isn't RLS-gated, so it can't cause a 42501.
+                if (_coachId != null && !result.any((c) => c.id == _coachId)) {
+                  final current =
+                      coaches.where((c) => c.id == _coachId).toList();
+                  if (current.isNotEmpty) result.insert(0, current.first);
+                }
+                return result;
+              },
+              idOf: (c) => c.id,
+              labelOf: (c) => c.fullName,
+              onChanged: (v) => setState(() => _coachId = v),
+              onRetry: () => ref.invalidate(coachesProvider),
+              validator: (v) =>
+                  (v == null || v.isEmpty) ? 'Required' : null,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppDropdownField<String>(
+              label: 'Skill level',
+              value: _skillLevel,
+              items: const [
+                DropdownMenuItem(value: 'beginner', child: Text('Beginner')),
+                DropdownMenuItem(
+                  value: 'intermediate',
+                  child: Text('Intermediate'),
+                ),
+                DropdownMenuItem(value: 'advanced', child: Text('Advanced')),
+                DropdownMenuItem(value: 'mixed', child: Text('Mixed')),
+              ],
+              onChanged: _busy ? null : (v) => setState(() => _skillLevel = v),
+            ),
+
+            // Schedule ------------------------------------------------------
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(
+              title: 'Schedule',
+              icon: Icons.event_repeat_outlined,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SchedulePicker(value: _schedule, onChanged: (s) => _schedule = s),
+
+            // Capacity ------------------------------------------------------
+            const SizedBox(height: AppSpacing.xl),
+            const AppSectionHeader(
+              title: 'Capacity',
+              icon: Icons.event_seat_outlined,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppFormField(
+              controller: _capacity,
+              label: 'Maximum students',
+              hint: 'Leave blank for no limit',
+              prefixIcon: const Icon(Icons.event_seat_outlined),
+              enabled: !_busy,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _busy ? null : _save(),
+            ),
+            // Tail spacing so the last field clears the pinned save bar.
+            const SizedBox(height: AppSpacing.xl),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A labeled select backed by an [AsyncValue] list. Keeps a **stable field
+/// shape** across loading / error / data so the form never jumps: loading
+/// shows a calm skeleton bar and error a retry row, both inside an
+/// [InputDecorator] sized like the real dropdown — no separate spinner that
+/// flickers in and out as the future resolves.
+class _AsyncDropdownField<T> extends StatelessWidget {
+  const _AsyncDropdownField({
+    required this.label,
+    required this.value,
+    required this.async,
+    required this.emptyOptionLabel,
+    required this.optionsOf,
+    required this.idOf,
+    required this.labelOf,
+    required this.onChanged,
+    required this.onRetry,
+    this.validator,
+  });
+
+  final String label;
+  final String? value;
+  final AsyncValue<List<T>> async;
+
+  /// Label for the leading "clear selection" item (e.g. "— none —").
+  final String emptyOptionLabel;
+
+  /// Maps the loaded list to the selectable options (e.g. active-only).
+  final List<T> Function(List<T>) optionsOf;
+  final String Function(T) idOf;
+  final String Function(T) labelOf;
+  final ValueChanged<String?> onChanged;
+  final VoidCallback onRetry;
+
+  /// Optional validator (runs only in the data state; loading/error render a
+  /// placeholder, so callers requiring a value must backstop at save time).
+  final String? Function(String?)? validator;
+
+  @override
+  Widget build(BuildContext context) {
+    return async.when(
+      loading: () => _FieldShell(
+        label: label,
+        child: const _LoadingRow(),
+      ),
+      error: (e, _) => _FieldShell(
+        label: label,
+        child: _ErrorRow(message: friendlyError(e), onRetry: onRetry),
+      ),
+      data: (rows) {
+        final options = optionsOf(rows);
+        // Guard a stored value that's been filtered out of the options — e.g.
+        // editing a record whose center was later deactivated. DropdownButton-
+        // FormField asserts on a value absent from its items; fall back to the
+        // empty option (null) so the validator flags it instead of crashing.
+        final safeValue = options.any((r) => idOf(r) == value) ? value : null;
+        return AppDropdownField<String>(
+          label: label,
+          value: safeValue,
+          validator: validator,
+          items: [
+            DropdownMenuItem<String>(child: Text(emptyOptionLabel)),
+            for (final r in options)
+              DropdownMenuItem<String>(value: idOf(r), child: Text(labelOf(r))),
+          ],
+          onChanged: onChanged,
+        );
+      },
+    );
+  }
+}
+
+/// Label-above + framed [InputDecorator] body, matching [AppDropdownField]'s
+/// shape so the loading/error placeholder occupies the same vertical space.
+class _FieldShell extends StatelessWidget {
+  const _FieldShell({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            fontWeight: AppType.semibold,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        InputDecorator(
+          decoration: const InputDecoration(),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
+/// A calm skeleton placeholder occupying the field's body — a single muted bar
+/// the height of the dropdown's text. Steadier than a spinner (which pops in
+/// and out), so the field doesn't flicker while the options load.
+class _LoadingRow extends StatelessWidget {
+  const _LoadingRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Icon(
+          Icons.arrow_drop_down,
+          color: scheme.onSurfaceVariant,
+        ),
+      ],
+    );
+  }
+}
+
+class _ErrorRow extends StatelessWidget {
+  const _ErrorRow({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final danger = AppSemanticColors.of(context).danger;
+    return Row(
+      children: [
+        Icon(Icons.error_outline, size: 18, color: danger),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: danger),
+          ),
+        ),
+        TextButton(onPressed: onRetry, child: const Text('Retry')),
+      ],
     );
   }
 }

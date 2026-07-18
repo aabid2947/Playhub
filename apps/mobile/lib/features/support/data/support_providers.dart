@@ -45,6 +45,21 @@ class SupportRepo {
     return SupportTicketRow.fromMap(r);
   }
 
+  /// Mark a ticket's status (owner/admin only — RLS rejects other roles, so the
+  /// UI hides the action for center_admin). Stamps resolved_at / closed_at to
+  /// match the status. Used by the academy-side "Mark resolved" action.
+  Future<void> setStatus({
+    required String ticketId,
+    required String status,
+  }) async {
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    await _client.from('support_tickets').update({
+      'status': status,
+      if (status == 'resolved') 'resolved_at': nowIso,
+      if (status == 'closed') 'closed_at': nowIso,
+    }).eq('id', ticketId);
+  }
+
   Future<TicketMessage> postReply({
     required String ticketId,
     required String body,
