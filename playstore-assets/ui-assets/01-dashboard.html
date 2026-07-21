@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlayHub — Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="screen">
+
+  <!-- Orange hero with status bar -->
+  <div class="hero" style="padding:0 0 42px">
+    <div class="statusbar on-dark">
+      <span>9:41</span>
+      <span class="sb-icons">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 22h4V12H2v10zm7 0h4V8H9v14zm7 0h4V2h-4v20z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21l3-3a4 4 0 00-6 0l3 3zm0-8a9 9 0 00-6.4 2.6l1.4 1.4a7 7 0 019.9 0l1.4-1.4A9 9 0 0012 13zm0-5C8 8 4.6 9.5 2 12l1.4 1.4A13 13 0 0112 10c3.3 0 6.3 1.2 8.6 3.4L22 12a17 17 0 00-10-4z"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="7" width="18" height="10" rx="2"/><rect x="21" y="10" width="2.5" height="4" rx="1"/></svg>
+      </span>
+    </div>
+    <div style="padding:10px 44px 0">
+      <div class="hero-top">
+        <div>
+          <div class="hero-hello">Good morning 👋</div>
+          <div class="hero-name">Rahul Mehta</div>
+          <div class="hero-sub">PlayHub Sports Academy · 3 centers</div>
+        </div>
+        <div class="avatar av-1" style="border:3px solid rgba(255,255,255,.5)">RM</div>
+      </div>
+      <div class="chips">
+        <div class="glass"><div class="g-val">248</div><div class="g-lbl">Students</div></div>
+        <div class="glass"><div class="g-val">₹3.2L</div><div class="g-lbl">This month</div></div>
+        <div class="glass"><div class="g-val">92%</div><div class="g-lbl">Collected</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content tight">
+    <div class="section-title">Overview</div>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="k-top">
+          <div class="k-ico ico-orange"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M16 11a3 3 0 000-6M18 20c0-2.4-1-4-3-4.6"/></svg></div>
+          <span class="k-trend trend-up">↑ 12%</span>
+        </div>
+        <div class="k-val">248</div><div class="k-lbl">Active students</div>
+      </div>
+      <div class="kpi">
+        <div class="k-top">
+          <div class="k-ico ico-blue"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9 5.5-.8z"/></svg></div>
+          <span class="k-trend trend-up">↑ 3</span>
+        </div>
+        <div class="k-val">18</div><div class="k-lbl">Coaches & trainers</div>
+      </div>
+      <div class="kpi">
+        <div class="k-top">
+          <div class="k-ico ico-green"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></div>
+          <span class="k-trend trend-up">↑ 4%</span>
+        </div>
+        <div class="k-val">87%</div><div class="k-lbl">Avg. attendance</div>
+      </div>
+      <div class="kpi">
+        <div class="k-top">
+          <div class="k-ico ico-purple"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg></div>
+          <span class="k-trend muted" style="color:var(--text-3)">3</span>
+        </div>
+        <div class="k-val">3</div><div class="k-lbl">Centers</div>
+      </div>
+    </div>
+
+    <div class="section-title mt">Revenue · last 6 months</div>
+    <div class="card">
+      <div class="row between" style="align-items:flex-end">
+        <div><div class="big-num" style="font-size:72px">₹3.2L</div><div class="muted" style="font-size:27px;margin-top:6px">March collections</div></div>
+        <span class="badge b-success"><span class="dot" style="background:var(--success)"></span>+18% vs Feb</span>
+      </div>
+      <div class="barchart">
+        <div class="bcol"><div class="bar" style="height:44%"></div><div class="blabel">Oct</div></div>
+        <div class="bcol"><div class="bar" style="height:56%"></div><div class="blabel">Nov</div></div>
+        <div class="bcol"><div class="bar" style="height:52%"></div><div class="blabel">Dec</div></div>
+        <div class="bcol"><div class="bar" style="height:70%"></div><div class="blabel">Jan</div></div>
+        <div class="bcol"><div class="bar" style="height:78%"></div><div class="blabel">Feb</div></div>
+        <div class="bcol peak"><div class="bar" style="height:100%"></div><div class="blabel">Mar</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <div class="nav-item active"><svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg><span>Home</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5M16 11a3 3 0 000-6M18 20c0-2.4-1-4-3-4.6"/></svg><span>Students</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Batches</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>Billing</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg><span>More</span></div>
+  </div>
+</div>
+</body>
+</html>

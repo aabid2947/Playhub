@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlayHub — Feature Graphic</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { background:#333; }
+  .fg {
+    width:1024px; height:500px; position:relative; overflow:hidden;
+    background: linear-gradient(120deg, #FF8A4C 0%, #FF6A2C 45%, #F4511E 100%);
+    color:#fff; display:flex; align-items:center; padding:0 70px; gap:56px;
+    font-family:'Inter','Segoe UI',sans-serif;
+  }
+  .fg::before { content:''; position:absolute; right:-80px; bottom:-160px; width:520px; height:520px; border-radius:50%; background:rgba(255,255,255,.10); }
+  .fg::after  { content:''; position:absolute; right:180px; top:-120px; width:260px; height:260px; border-radius:50%; background:rgba(255,255,255,.08); }
+  .fg .txt { position:relative; z-index:2; max-width:620px; }
+  .fg .brand { display:flex; align-items:center; gap:20px; margin-bottom:26px; }
+  .fg .mark { width:84px; height:84px; border-radius:22px; background:rgba(255,255,255,.18); border:2px solid rgba(255,255,255,.5); display:flex; align-items:center; justify-content:center; font-size:52px; font-weight:800; }
+  .fg .brand b { font-size:52px; font-weight:800; letter-spacing:-1px; }
+  .fg h2 { font-size:62px; font-weight:800; line-height:1.05; letter-spacing:-1.5px; }
+  .fg p { font-size:30px; opacity:.95; margin-top:20px; font-weight:500; line-height:1.35; }
+  .fg .chips { display:flex; gap:14px; margin-top:30px; flex-wrap:wrap; }
+  .fg .c { background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.32); border-radius:999px; padding:12px 26px; font-size:25px; font-weight:600; }
+  .device { position:relative; z-index:2; width:250px; height:430px; border-radius:44px; background:#0F2540; border:8px solid rgba(255,255,255,.85); box-shadow:0 30px 60px rgba(0,0,0,.25); padding:16px; }
+  .device .scr { width:100%; height:100%; border-radius:28px; background:linear-gradient(160deg,#173B62,#0F2540); overflow:hidden; position:relative; }
+  .device .band { height:120px; background:linear-gradient(120deg,#FF8A4C,#F4511E); border-radius:0 0 22px 22px; }
+  .device .n { position:absolute; top:14px; left:50%; transform:translateX(-50%); width:70px; height:12px; border-radius:999px; background:rgba(255,255,255,.5); }
+  .device .b { margin:16px; height:52px; border-radius:14px; background:rgba(255,255,255,.14); }
+  .device .b.o { background:#FF6A2C; }
+</style>
+</head>
+<body>
+<div class="fg">
+  <div class="txt">
+    <div class="brand"><div class="mark">P</div><b>PlayHub</b></div>
+    <h2>Run your sports academy.</h2>
+    <p>Students, batches, attendance, performance &amp; online fee payments — all in one app.</p>
+    <div class="chips"><span class="c">Attendance</span><span class="c">Fees &amp; UPI</span><span class="c">Performance</span></div>
+  </div>
+  <div class="device">
+    <div class="scr">
+      <div class="band"></div>
+      <div class="n"></div>
+      <div class="b o"></div>
+      <div class="b"></div>
+      <div class="b"></div>
+      <div class="b"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

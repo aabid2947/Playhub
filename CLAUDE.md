@@ -223,6 +223,21 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-20 — parent/student dashboard FEE-LOCK (pay-to-unlock when fee pending 3+ days)
+Owner decision: a parent/student now gets their whole dashboard replaced by a pay-to-unlock screen when a
+linked student has an unpaid invoice (`issued`/`partial`/`overdue`, balance>0) whose `due_date` is
+≥ `kFeeLockGraceDays` (**3**) days in the past. New `feeLockProvider` + `FeeLockState` +
+`kFeeLockGraceDays` in [parent_providers.dart](apps/mobile/lib/features/parent/data/parent_providers.dart)
+(queries invoices across `myLinkedStudentIdsProvider` — works for student role too, RPC returns own id);
+new [fee_overdue_lock_page.dart](apps/mobile/lib/features/parent/presentation/fee_overdue_lock_page.dart)
+(mirrors owner `PaywallPage`, reuses `PaymentCheckout.payInvoice`); wired into the parent+student branches of
+[role_dashboard.dart](apps/mobile/lib/features/dashboards/role_dashboard.dart) (optimistic — shows shell
+while lock loads). **Keyed off `due_date`, NOT invoice `status='overdue'`** — so the 3-day lock fires
+independently of the `mark-overdue` cron (which flips status only after `due_date + late_fee_grace_days`,
+default 5). **This is a UX GATE, not RLS** — an old build/raw API still reads the data; it only forces
+payment before the shell renders. To change the threshold, edit `kFeeLockGraceDays`. Not yet
+academy-configurable (hardcoded 3). `flutter analyze` not run (standing preference).
+
 ### 2026-07-15 — FIX: head_coach attendance list was center-only (42501 on cross-sport save) + review log
 `todaysBatchesProvider` ([attendance_providers.dart](apps/mobile/lib/features/attendance/data/attendance_providers.dart))
 scoped a head_coach by CENTER only, but `can_mark_attendance` for head_coach = `batch_in_my_center` AND
