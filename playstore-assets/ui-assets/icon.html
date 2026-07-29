@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlayHub — App Icon</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { background:#333; }
+  /* Full-bleed 512x512 — Play applies its own rounded mask, so no transparency/rounding here. */
+  .app-icon {
+    width:512px; height:512px; position:relative; overflow:hidden;
+    background: linear-gradient(135deg, #FF8A4C 0%, #FF6A2C 50%, #F4511E 100%);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Inter','Segoe UI',sans-serif;
+  }
+  .app-icon::before { content:''; position:absolute; right:-90px; top:-90px; width:280px; height:280px; border-radius:50%; background:rgba(255,255,255,.12); }
+  .app-icon::after  { content:''; position:absolute; left:-70px; bottom:-90px; width:240px; height:240px; border-radius:50%; background:rgba(0,0,0,.06); }
+  .glyph { position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; }
+  .glyph .p { font-size:300px; font-weight:800; color:#fff; line-height:1; letter-spacing:-8px; text-shadow:0 10px 30px rgba(0,0,0,.18); }
+  .glyph .u { position:absolute; right:120px; bottom:120px; width:70px; height:70px; border-radius:50%; background:#fff; box-shadow:0 6px 16px rgba(0,0,0,.2); }
+  .glyph .u::before { content:''; position:absolute; inset:14px; border-radius:50%; border:5px solid #FF6A2C; border-top-color:transparent; border-right-color:transparent; transform:rotate(45deg); }
+</style>
+</head>
+<body>
+<div class="app-icon">
+  <div class="glyph">
+    <div class="p">P</div>
+  </div>
+</div>
+</body>
+</html>

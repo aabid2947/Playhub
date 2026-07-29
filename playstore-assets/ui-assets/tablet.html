@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PlayHub — Tablet</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Framed tablet screenshot: the real app screen (via iframe) shown in a
+     device frame on a branded background with a caption. Size + scale are set
+     by the ?size=7|10 param; the app screen by ?screen=NN-name. */
+  html, body { width:100%; height:100%; overflow:hidden; }
+  body { background:#333; }
+
+  .stage {
+    width:100vw; height:100vh; box-sizing:border-box;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    background: radial-gradient(120% 80% at 50% -10%, #FFE7DA 0%, #FBEFE8 22%, #EEF3FA 60%, #F4F7FB 100%);
+    font-family:'Inter','Segoe UI',sans-serif; text-align:center;
+  }
+  .cap { padding: var(--cap-pad-top) 8% var(--cap-pad-bot); }
+  .cap .kicker {
+    display:inline-flex; align-items:center; gap:12px; margin-bottom:20px;
+    font-size: var(--kick-fs); font-weight:700; letter-spacing:.5px; text-transform:uppercase;
+    color:#F4511E; background:#FFF1EA; border:1px solid #FFD9C7; border-radius:999px; padding:12px 26px;
+  }
+  .cap .kicker .m { width: var(--kick-m); height: var(--kick-m); border-radius:8px;
+    background:linear-gradient(135deg,#FF8A4C,#F4511E); color:#fff; display:flex; align-items:center;
+    justify-content:center; font-weight:800; font-size: calc(var(--kick-m) * 0.62); }
+  .cap h2 { font-size: var(--cap-fs); font-weight:800; letter-spacing:-1px; color:#0F2540; line-height:1.1; }
+
+  .device {
+    background:#0F2540; border-radius: var(--dev-radius); padding: var(--dev-pad);
+    box-shadow: 0 40px 90px rgba(15,37,64,.28), 0 8px 20px rgba(15,37,64,.16);
+  }
+  .vp {
+    width: calc(1080px * var(--s)); height: calc(1920px * var(--s));
+    border-radius: calc(var(--dev-radius) - var(--dev-pad)); overflow:hidden; background:#fff;
+  }
+  .vp iframe {
+    width:1080px; height:1920px; border:0; display:block;
+    transform: scale(var(--s)); transform-origin: top left;
+  }
+
+  /* 7-inch (1200 x 1920) */
+  body.size-7 { --s:0.74; --cap-fs:50px; --kick-fs:24px; --kick-m:44px;
+    --cap-pad-top:64px; --cap-pad-bot:34px; --dev-radius:52px; --dev-pad:20px; }
+  /* 10-inch (1600 x 2560) */
+  body.size-10 { --s:1.0; --cap-fs:70px; --kick-fs:30px; --kick-m:58px;
+    --cap-pad-top:120px; --cap-pad-bot:56px; --dev-radius:60px; --dev-pad:24px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cap">
+    <span class="kicker"><span class="m">P</span>PlayHub</span>
+    <h2 id="cap"></h2>
+  </div>
+  <div class="device"><div class="vp"><iframe id="frame" scrolling="no"></iframe></div></div>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var screen = q.get('screen') || '01-dashboard';
+  var size = q.get('size') || '10';
+  document.body.className = 'size-' + size;
+  document.getElementById('frame').src = screen + '.html';
+  var caps = {
+    '01-dashboard': 'Run your whole academy from one dashboard',
+    '02-students': 'Every student, batch and sport — organised',
+    '03-batches': 'Schedule batches and assign coaches',
+    '04-attendance': 'Mark attendance in seconds',
+    '05-performance': 'Track performance and share progress',
+    '06-billing': 'Invoicing and online fee collection',
+    '07-parent': 'Parents follow progress and pay fees',
+    '08-announcements': 'Keep parents and staff in the loop'
+  };
+  document.getElementById('cap').textContent = caps[screen] || '';
+</script>
+</body>
+</html>

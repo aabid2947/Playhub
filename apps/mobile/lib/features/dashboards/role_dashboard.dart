@@ -10,6 +10,8 @@ import 'package:playhub/features/coach/presentation/coach_home_shell.dart';
 import 'package:playhub/features/dashboards/setup_academy_page.dart';
 import 'package:playhub/features/home/center_admin_home_tab.dart';
 import 'package:playhub/features/home/owner_home_shell.dart';
+import 'package:playhub/features/parent/data/parent_providers.dart';
+import 'package:playhub/features/parent/presentation/fee_overdue_lock_page.dart';
 import 'package:playhub/features/parent/presentation/parent_home_shell.dart';
 import 'package:playhub/features/student/presentation/student_home_shell.dart';
 import 'package:playhub/features/subscription/data/subscription_providers.dart';
@@ -66,8 +68,18 @@ class RoleDashboard extends ConsumerWidget {
         if (profile.role == 'center_admin') {
           return const OwnerHomeShell(home: CenterAdminHomeTab());
         }
-        if (profile.role == 'parent') return const ParentHomeShell();
-        if (profile.role == 'student') return const StudentHomeShell();
+        // Parents + students are locked out of their dashboard when a linked
+        // student has a fee pending past the grace window — they see only the
+        // pay-to-unlock screen until it clears. While the lock state loads we
+        // optimistically show the shell (this is a UX gate, not RLS); it
+        // rebuilds to the lock once the status resolves.
+        if (profile.role == 'parent' || profile.role == 'student') {
+          final locked = ref.watch(feeLockProvider).valueOrNull?.locked ?? false;
+          if (locked) return const FeeOverdueLockPage();
+          return profile.role == 'parent'
+              ? const ParentHomeShell()
+              : const StudentHomeShell();
+        }
         // Coach, head_coach, and trainer share the same shell — the
         // queries are scoped via coaches.user_id = auth.uid().
         if (profile.role == 'coach' ||

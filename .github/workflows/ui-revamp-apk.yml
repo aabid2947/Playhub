@@ -1,11 +1,13 @@
 name: ui-revamp-apk
 
-# Builds an installable Android APK on every push to the `ui-revamp` branch
-# (or via manual run), and uploads it as a downloadable artifact — so the UI
-# revamp can be tried on a real device without a local Flutter toolchain.
+# DISABLED on push — superseded by ui-revamp-aab.yml (which builds the .aab that
+# Google Play requires). This APK build no longer runs automatically; it is kept
+# for manual, on-demand device testing only. Trigger it from the Actions tab via
+# "Run workflow" when you need a sideloadable APK.
+#
+# Builds an installable Android APK and uploads it as a downloadable artifact —
+# so the UI revamp can be tried on a real device without a local Flutter toolchain.
 on:
-  push:
-    branches: [ui-revamo]
   workflow_dispatch:
 
 # A newer push to the branch cancels an in-flight build.

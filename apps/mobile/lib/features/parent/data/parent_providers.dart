@@ -330,3 +330,78 @@ final studentOutstandingDuesProvider =
     }).toList(growable: false);
   },
 );
+
+/// Days after an invoice's due date before the parent/student dashboard is
+/// locked behind [FeeOverdueLockPage]. "Pending for 3 days" = due date is at
+/// least this many days in the past and the invoice is still unpaid.
+const int kFeeLockGraceDays = 3;
+
+/// Dashboard fee-lock state for the calling parent/student across ALL their
+/// linked students. Purely a UX gate (RLS does not restrict reads on unpaid
+/// fees) — it forces payment before the normal shell is shown.
+class FeeLockState {
+  const FeeLockState({
+    required this.locked,
+    required this.overdueBalance,
+    required this.dues,
+  });
+
+  /// True when at least one linked student has an unpaid invoice past the
+  /// [kFeeLockGraceDays] grace window.
+  final bool locked;
+
+  /// Sum of the outstanding balance across the locking invoices.
+  final double overdueBalance;
+
+  /// The invoices that triggered the lock (oldest due date first).
+  final List<OutstandingDues> dues;
+
+  static const empty =
+      FeeLockState(locked: false, overdueBalance: 0, dues: []);
+}
+
+/// Computes [FeeLockState] for the current parent/student. Locks the dashboard
+/// when any linked student has an unpaid invoice whose due date is at least
+/// [kFeeLockGraceDays] days in the past. Returns [FeeLockState.empty] for
+/// callers with no linked students (staff never lock here).
+final feeLockProvider = FutureProvider<FeeLockState>((ref) async {
+  final ids = await ref.watch(myLinkedStudentIdsProvider.future);
+  if (ids.isEmpty) return FeeLockState.empty;
+  final client = ref.watch(supabaseClientProvider);
+  final rows = await client
+      .from('invoices')
+      .select('id, invoice_number, amount, amount_paid, due_date, status')
+      .inFilter('student_id', ids)
+      .inFilter('status', ['issued', 'partial', 'overdue'])
+      .order('due_date');
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  // Due date on or before this day (>= kFeeLockGraceDays days ago) locks.
+  final cutoff = today.subtract(const Duration(days: kFeeLockGraceDays));
+
+  final overdue = <OutstandingDues>[];
+  var balance = 0.0;
+  for (final r in rows as List) {
+    final m = r as Map<String, dynamic>;
+    final due = DateTime.parse(m['due_date'] as String);
+    final dueDay = DateTime(due.year, due.month, due.day);
+    final d = OutstandingDues(
+      invoiceId: m['id'] as String,
+      invoiceNumber: m['invoice_number'] as String,
+      amount: (m['amount'] as num).toDouble(),
+      amountPaid: (m['amount_paid'] as num).toDouble(),
+      dueDate: due,
+      status: m['status'] as String,
+    );
+    if (d.balance > 0 && !dueDay.isAfter(cutoff)) {
+      overdue.add(d);
+      balance += d.balance;
+    }
+  }
+  return FeeLockState(
+    locked: overdue.isNotEmpty,
+    overdueBalance: balance,
+    dues: overdue,
+  );
+});

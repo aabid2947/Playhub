@@ -258,15 +258,35 @@ silently falls back to Site URL, which looks like "link works but doesn't open t
 package = new listing, existing installs can't upgrade across it. `flutter analyze` not run (standing
 preference); needs a clean rebuild (`flutter clean`) since the Gradle namespace changed.
 
-### 2026-07-29 — release-aab workflow (push to main → Play-format AAB artifact)
-New [release-aab.yml](.github/workflows/release-aab.yml) mirrors the proven `ui-revamp-apk.yml` (same runner/JDK
-17/Flutter 3.41.7/dart-define secrets), but targets `main`, builds `appbundle`, and pins **versionName 1.1 /
-versionCode 2** via `--build-name`/`--build-number` (pubspec stays `0.1.0+1`; build.gradle.kts reads
-`flutter.versionName`/`flutter.versionCode`, which those flags override). **TWO GOTCHAS:** (1) versionCode is
-**hardcoded 2**, so every push to main emits the same code — Play rejects a repeat versionCode; bump it per
-release or switch to `github.run_number`. (2) `release` is still **debug-signed** (build.gradle.kts
-`signingConfig = signingConfigs.getByName("debug")`), so **this AAB cannot be uploaded to Play** — it's
-device-testable via bundletool only. Real uploads need an upload keystore wired in via secrets.
+### 2026-07-29 — AAB build on main via ui-revamp-aab.yml (merged `ui-revamo`; my release-aab.yml deleted)
+**GOTCHA for future agents: check the other branches before doing platform/CI work.** `ui-revamo` carried an
+unmerged [ui-revamp-aab.yml](.github/workflows/ui-revamp-aab.yml) (signed AAB, `ANDROID_KEYSTORE_*` secrets →
+`android/key.properties`) **and had already done the `ai.playhub` rename**; a duplicate `release-aab.yml` was
+written on main in ignorance of it and is now **deleted**. `ui-revamo` is merged into main; the surviving AAB
+workflow triggers on **`ui-revamo` AND `main`** and pins **versionName 1.1 / versionCode 2** via
+`--build-name`/`--build-number` (pubspec stays `0.1.0+1`). Conflict resolutions kept: **main's
+`google-services.json`** (the real `playhub-live` download — `ui-revamo`'s was hand-edited to `ai.playhub` while
+still pointing at old project `playhub-348c7`) and **`ui-revamo`'s `build.gradle.kts`** (a superset — same
+`ai.playhub` plus the `key.properties`-driven release signingConfig, falling back to debug when the file is
+absent). **versionCode 2 is hardcoded** → Play rejects a repeat, so bump per release or use `github.run_number`.
+**Signing depends entirely on the `ANDROID_KEYSTORE_*` repo secrets being set** — absent them the build silently
+debug-signs and Play will reject the artifact. The local upload keystore was reported LOST; the base64 secret in
+GitHub is the only known copy (recoverable via an artifact, since log masking doesn't cover artifacts).
+
+### 2026-07-20 — parent/student dashboard FEE-LOCK (pay-to-unlock when fee pending 3+ days)
+Owner decision: a parent/student now gets their whole dashboard replaced by a pay-to-unlock screen when a
+linked student has an unpaid invoice (`issued`/`partial`/`overdue`, balance>0) whose `due_date` is
+≥ `kFeeLockGraceDays` (**3**) days in the past. New `feeLockProvider` + `FeeLockState` +
+`kFeeLockGraceDays` in [parent_providers.dart](apps/mobile/lib/features/parent/data/parent_providers.dart)
+(queries invoices across `myLinkedStudentIdsProvider` — works for student role too, RPC returns own id);
+new [fee_overdue_lock_page.dart](apps/mobile/lib/features/parent/presentation/fee_overdue_lock_page.dart)
+(mirrors owner `PaywallPage`, reuses `PaymentCheckout.payInvoice`); wired into the parent+student branches of
+[role_dashboard.dart](apps/mobile/lib/features/dashboards/role_dashboard.dart) (optimistic — shows shell
+while lock loads). **Keyed off `due_date`, NOT invoice `status='overdue'`** — so the 3-day lock fires
+independently of the `mark-overdue` cron (which flips status only after `due_date + late_fee_grace_days`,
+default 5). **This is a UX GATE, not RLS** — an old build/raw API still reads the data; it only forces
+payment before the shell renders. To change the threshold, edit `kFeeLockGraceDays`. Not yet
+academy-configurable (hardcoded 3). `flutter analyze` not run (standing preference).
 
 ### 2026-07-15 — FIX: head_coach attendance list was center-only (42501 on cross-sport save) + review log
 `todaysBatchesProvider` ([attendance_providers.dart](apps/mobile/lib/features/attendance/data/attendance_providers.dart))
