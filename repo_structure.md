@@ -113,7 +113,7 @@ Barrel-exported via [widgets.dart](apps/mobile/lib/shared/widgets/widgets.dart).
 | [integration_test/](apps/mobile/integration_test/) | `app_boot_test.dart` (boot smoke), `login_flows_test.dart`. |
 | [pubspec.yaml](apps/mobile/pubspec.yaml) | Deps + Flutter config. |
 | [analysis_options.yaml](apps/mobile/analysis_options.yaml) | `very_good_analysis` + strict casts/inference/raw-types. |
-| `android/` · `ios/` · `web/` | Platform projects (org `ai.hammad.playhub`); includes `google-services.json` / `GoogleService-Info.plist` for FCM. |
+| `android/` · `ios/` · `web/` | Platform projects (package/bundle id `ai.playhub`); includes `google-services.json` / `GoogleService-Info.plist` for FCM. |
 
 ---
 

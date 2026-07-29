@@ -223,6 +223,51 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-07-29 — email.ts: deliverability headers + CRLF-injection & lone-dot fixes (still Gmail SMTP)
+Owner decision: **stay on Gmail SMTP, no new provider.** [_shared/email.ts](supabase/functions/_shared/email.ts)
+now emits `Date`, `Message-ID`, `Reply-To` (+ optional `List-Unsubscribe` via a new `unsubscribe_url` field) and
+sends HTML as **multipart/alternative** with a plaintext part — the previous header set (From/To/Subject/MIME/
+Content-Type only) was missing signals receivers weight heavily. Subjects are **RFC 2047** encoded when non-ASCII
+(Hindi/Marathi names were going out as raw UTF-8, which is invalid). **Two bugs fixed in passing:** every
+caller-supplied header value now goes through `headerSafe()` — announcement subjects are user-composed, so a CRLF
+could **inject a `Bcc:`** — and bodies are **base64** with 76-char wrapping, which kills both the 998-octet line
+limit and the lone-`.` line that would end SMTP DATA early (base64 has no "."). Pure helpers are exported +
+covered by [email.test.ts](supabase/functions/_shared/email.test.ts) (runs in CI: `deno test _shared/`; `email.ts`
+added to the `deno check` list). **NOT fixed — the dominant spam cause is DNS, not code:** SPF/DKIM authenticate
+the Gmail account's domain while `From:` claims `SMTP_FROM`'s, so **DMARC never aligns** until Workspace DKIM +
+`include:_spf.google.com` are published for the SMTP_FROM domain. **OWED: redeploy `send-announcement`** (the only
+`sendEmail` caller) — it bundles its own copy of `_shared/`. Deno not installed locally; helper logic was
+validated in Node (17 assertions), `deno test` itself not run here.
+
+### 2026-07-29 — package/bundle id renamed `ai.hammad.playhub` → `ai.playhub`
+Renamed everywhere: Android `namespace`/`applicationId`, manifest deep-link `android:scheme`, Kotlin package +
+its directory (`kotlin/ai/playhub/`), iOS `PRODUCT_BUNDLE_IDENTIFIER` (+ `.RunnerTests`) and `CFBundleURLTypes`,
+and the **two hardcoded Dart deep links** (`invite_repo.sendPasswordReset`, `forgot_password_page`) — those are the
+ones that silently break invites/resets if they drift from the manifest, so keep all four scheme sites in sync.
+**Edge functions reference no package name** (`invite-user` only forwards a caller-supplied `redirect_to`) — no
+redeploy needed. Android `google-services.json` was replaced with a freshly downloaded one; note it points at a
+**NEW Firebase project `playhub-live`** (was `playhub-348c7`), not just a new app in the old project.
+**CRITICAL/OWED — replace the `FCM_SERVICE_ACCOUNT` Supabase secret with a service account from `playhub-live`**:
+[_shared/fcm.ts](supabase/functions/_shared/fcm.ts) sends to `/v1/projects/${sa.project_id}/messages:send`, so
+while that secret holds the old project's key, every push fails (FCM tokens are project-scoped). Secret-only —
+no code change or redeploy. **STILL STALE: `ios/Runner/GoogleService-Info.plist`** (`ai.hammad.playhub`,
+old project) — register an iOS app in `playhub-live` and re-download; don't hand-edit it.
+**OWED: add `ai.playhub://login-callback` to the Supabase Auth redirect allow-list** — password reset uses it
+(hardcoded client-side); **invites do NOT** (mobile never passes `redirect_to`, so they use Site URL). A miss
+silently falls back to Site URL, which looks like "link works but doesn't open the app". Play Console: new
+package = new listing, existing installs can't upgrade across it. `flutter analyze` not run (standing
+preference); needs a clean rebuild (`flutter clean`) since the Gradle namespace changed.
+
+### 2026-07-29 — release-aab workflow (push to main → Play-format AAB artifact)
+New [release-aab.yml](.github/workflows/release-aab.yml) mirrors the proven `ui-revamp-apk.yml` (same runner/JDK
+17/Flutter 3.41.7/dart-define secrets), but targets `main`, builds `appbundle`, and pins **versionName 1.1 /
+versionCode 2** via `--build-name`/`--build-number` (pubspec stays `0.1.0+1`; build.gradle.kts reads
+`flutter.versionName`/`flutter.versionCode`, which those flags override). **TWO GOTCHAS:** (1) versionCode is
+**hardcoded 2**, so every push to main emits the same code — Play rejects a repeat versionCode; bump it per
+release or switch to `github.run_number`. (2) `release` is still **debug-signed** (build.gradle.kts
+`signingConfig = signingConfigs.getByName("debug")`), so **this AAB cannot be uploaded to Play** — it's
+device-testable via bundletool only. Real uploads need an upload keystore wired in via secrets.
+
 ### 2026-07-15 — FIX: head_coach attendance list was center-only (42501 on cross-sport save) + review log
 `todaysBatchesProvider` ([attendance_providers.dart](apps/mobile/lib/features/attendance/data/attendance_providers.dart))
 scoped a head_coach by CENTER only, but `can_mark_attendance` for head_coach = `batch_in_my_center` AND

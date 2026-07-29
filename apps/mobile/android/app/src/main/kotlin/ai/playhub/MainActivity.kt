@@ -1,4 +1,4 @@
-package ai.hammad.playhub
+package ai.playhub
 
 import io.flutter.embedding.android.FlutterActivity
 

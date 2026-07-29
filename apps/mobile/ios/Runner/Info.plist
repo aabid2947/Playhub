@@ -19,10 +19,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>ai.hammad.playhub</string>
+			<string>ai.playhub</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>ai.hammad.playhub</string>
+				<string>ai.playhub</string>
 			</array>
 		</dict>
 	</array>

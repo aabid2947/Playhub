@@ -105,7 +105,7 @@ class InviteRepo {
   /// was dispatched.
   Future<void> sendPasswordReset(String email) async {
     final redirectTo =
-        kIsWeb ? Uri.base.origin : 'ai.hammad.playhub://login-callback';
+        kIsWeb ? Uri.base.origin : 'ai.playhub://login-callback';
     await _client.auth.resetPasswordForEmail(email, redirectTo: redirectTo);
   }
 }

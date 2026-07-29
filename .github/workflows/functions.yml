@@ -19,7 +19,7 @@ jobs:
         with:
           deno-version: v2.x
       # Type-check the pure shared modules (no network imports).
-      - run: deno check supabase/functions/_shared/billing.ts supabase/functions/_shared/schedule.ts
+      - run: deno check supabase/functions/_shared/billing.ts supabase/functions/_shared/schedule.ts supabase/functions/_shared/email.ts
       # Unit tests for the extracted billing/schedule math + cron auth + webhook
       # signature verification. --allow-env for CRON_SECRET / webhook secret.
       - run: deno test --allow-env supabase/functions/_shared/
