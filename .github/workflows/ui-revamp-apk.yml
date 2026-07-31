@@ -1,13 +1,18 @@
 name: ui-revamp-apk
 
-# DISABLED on push — superseded by ui-revamp-aab.yml (which builds the .aab that
-# Google Play requires). This APK build no longer runs automatically; it is kept
-# for manual, on-demand device testing only. Trigger it from the Actions tab via
-# "Run workflow" when you need a sideloadable APK.
+# Builds an installable Android APK on every push to `main` or the `ui-revamo`
+# branch (or via manual run) and uploads it as a downloadable artifact — so a
+# build can be sideloaded onto a real device without a local Flutter toolchain.
+# Mirror of ui-revamp-aab.yml; that one emits the .aab Google Play requires,
+# this one the .apk you can actually install. Both run on the same pushes.
 #
-# Builds an installable Android APK and uploads it as a downloadable artifact —
-# so the UI revamp can be tried on a real device without a local Flutter toolchain.
+# SIGNING: when the ANDROID_KEYSTORE_* repo secrets are set, the build is signed
+# with your stable upload key (decoded below into android/key.properties, which
+# build.gradle.kts reads). If the secrets are absent the release build falls back
+# to debug signing — fine for sideloaded device testing.
 on:
+  push:
+    branches: [main, ui-revamo]
   workflow_dispatch:
 
 # A newer push to the branch cancels an in-flight build.
@@ -22,6 +27,11 @@ defaults:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,14 +48,35 @@ jobs:
 
       - run: flutter pub get
 
-      # The `release` build type is debug-signed (see android/app/build.gradle.kts),
-      # so no keystore is needed — the APK installs for internal testing. Supabase
-      # config rides in via repo secrets so the app boots past the config guard to
-      # the login screen (instead of the "Missing configuration" screen). If the
-      # secrets are unset the APK still builds; it just can't reach the backend.
-      - name: Build release APK
+      # Decode the upload keystore from secrets and write key.properties so the
+      # release signingConfig in build.gradle.kts uses it. Skipped (debug-signed
+      # fallback) when the secret isn't set.
+      - name: Configure release signing
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload-keystore.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/upload-keystore.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
+          echo "Release signing configured with upload keystore."
+
+      # Supabase config rides in via repo secrets so the app boots past the
+      # config guard to the login screen (instead of "Missing configuration").
+      # If the secrets are unset the APK still builds; it just can't reach the
+      # backend.
+      # versionName 1.1 / versionCode 2 are pinned here rather than in
+      # pubspec.yaml (still 0.1.0+1) — build.gradle.kts reads
+      # flutter.versionName/versionCode, which these flags override. Unlike the
+      # .aab there is no Play-side uniqueness check, so a repeated versionCode
+      # is harmless here; it just installs over the previous build.
+      - name: Build release APK (versionName 1.1, versionCode 2)
         run: >
           flutter build apk --release
+          --build-name=1.1
+          --build-number=2
           --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
