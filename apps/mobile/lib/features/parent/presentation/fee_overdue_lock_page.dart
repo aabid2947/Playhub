@@ -7,6 +7,7 @@ import 'package:playhub/features/academy/data/academy_providers.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/payment_checkout.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
+import 'package:playhub/features/billing/presentation/payment_offline_dialog.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
@@ -44,13 +45,26 @@ class _FeeOverdueLockPageState extends ConsumerState<FeeOverdueLockPage> {
     final academy = ref.read(myAcademyProvider).valueOrNull;
     final checkout = PaymentCheckout(client);
     try {
-      final result = await checkout.payInvoice(
-        context: context,
-        invoiceId: r.invoiceId,
-        academyName: academy?.name ?? 'PlayHub',
-        prefillEmail: profile?.email,
-        prefillContact: profile?.phone,
-      );
+      Future<CheckoutResult> start() => checkout.payInvoice(
+            context: context,
+            invoiceId: r.invoiceId,
+            academyName: academy?.name ?? 'PlayHub',
+            prefillEmail: profile?.email,
+            prefillContact: profile?.phone,
+          );
+      var result = await start();
+      // Offline before the charge could start — this screen is the only thing
+      // the family can use, so a dead-end error would strand them. Offer a
+      // retry loop right here instead.
+      while (result is CheckoutFailure && result.isNetwork) {
+        if (!mounted) return;
+        final retry = await showPaymentOfflineDialog(
+          context,
+          message: result.message,
+        );
+        if (!retry) break;
+        result = await start();
+      }
       if (!mounted) return;
       switch (result) {
         case CheckoutSuccess():

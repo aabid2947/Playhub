@@ -23,16 +23,46 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
   late final _sku = TextEditingController(text: widget.existing?.sku ?? '');
   late final _desc =
       TextEditingController(text: widget.existing?.description ?? '');
-  late final _unit =
-      TextEditingController(text: widget.existing?.unit ?? 'piece');
+  // Unit is a MEASURE (piece, pair, kg), never a quantity. It used to be a free
+  // text box pre-filled "piece", and owners typed the quantity into it ("20
+  // piece") — which left stock at 0 and rendered as "0 20 piece" in the list.
+  // A picker makes that mistake impossible; "Other" still allows a custom
+  // measure, validated to contain no digits.
+  late String _unitChoice = _initialUnitChoice();
+  late final _unitOther = TextEditingController(
+    text: _kCommonUnits.contains(widget.existing?.unit)
+        ? ''
+        : (widget.existing?.unit ?? ''),
+  );
   late final _unitCost = TextEditingController(
       text: widget.existing?.unitCost.toString() ?? '0');
   late final _reorder = TextEditingController(
       text: widget.existing?.reorderThreshold.toString() ?? '0');
-  // Opening stock — only on CREATE. on_hand is otherwise driven entirely by
-  // movements (the sync_item_on_hand trigger), so editing it here would desync
-  // the ledger; existing items change stock via the movement sheet instead.
-  final _openingStock = TextEditingController(text: '0');
+  // Quantity in stock. on_hand is driven entirely by movements (the
+  // sync_item_on_hand trigger), so this never writes the column directly — it
+  // records an opening "in" movement. Offered on create, and on edit while the
+  // item is still at zero, so an item saved without stock can be corrected
+  // without hunting for the movement sheet.
+  final _openingStock = TextEditingController();
+
+  String _initialUnitChoice() {
+    final existing = widget.existing?.unit;
+    if (existing == null || existing.isEmpty) return 'piece';
+    return _kCommonUnits.contains(existing) ? existing : _kUnitOther;
+  }
+
+  /// The measure to save: the picked one, or the typed custom (falling back to
+  /// 'piece' so the column is never blank).
+  String get _resolvedUnit {
+    if (_unitChoice != _kUnitOther) return _unitChoice;
+    final custom = _unitOther.text.trim();
+    return custom.isEmpty ? 'piece' : custom;
+  }
+
+  /// True while the item has no stock — the only state where an opening entry
+  /// makes sense on an existing item.
+  bool get _canSeedStock =>
+      widget.existing == null || widget.existing!.onHand == 0;
   String? _categoryId;
   String? _vendorId;
   String? _centerId;
@@ -52,7 +82,7 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
       _name,
       _sku,
       _desc,
-      _unit,
+      _unitOther,
       _unitCost,
       _reorder,
       _openingStock,
@@ -73,17 +103,18 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
         name: _name.text.trim(),
         sku: _sku.text.trim().isEmpty ? null : _sku.text.trim(),
         description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-        unit: _unit.text.trim().isEmpty ? 'piece' : _unit.text.trim(),
+        unit: _resolvedUnit,
         unitCost: double.tryParse(_unitCost.text.trim()) ?? 0,
         reorderThreshold: double.tryParse(_reorder.text.trim()) ?? 0,
         categoryId: _categoryId,
         vendorId: _vendorId,
         centerId: _centerId,
       );
-      // On create, seed the opening stock as an "in" movement — on_hand is
-      // trigger-driven from the ledger, so a new item starts at 0 unless we
-      // record the starting quantity the user entered.
-      if (widget.existing == null) {
+      // Seed the opening stock as an "in" movement — on_hand is trigger-driven
+      // from the ledger, so an item stays at 0 unless the starting quantity is
+      // recorded as an entry. Also offered when editing an item still at zero,
+      // so one saved without stock can be fixed here.
+      if (_canSeedStock) {
         final opening = double.tryParse(_openingStock.text.trim()) ?? 0;
         if (opening > 0) {
           await repo.recordMovement(
@@ -162,12 +193,38 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Quantity FIRST — it's the number owners come here to set,
+                  // and putting it above the measure stops "20 piece" being
+                  // typed into the unit box.
+                  if (_canSeedStock) ...[
+                    AppFormField(
+                      controller: _openingStock,
+                      label: isEditing ? 'Stock in hand' : 'Opening stock',
+                      hint: 'How many you have right now, e.g. 30',
+                      enabled: !_saving,
+                      keyboardType: TextInputType.number,
+                      // Whole count only — what you type is what stock shows.
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final unitField = AppFormField(
-                        controller: _unit,
-                        label: 'Unit',
-                        enabled: !_saving,
+                      final unitField = AppDropdownField<String>(
+                        label: 'Unit (how it is counted)',
+                        value: _unitChoice,
+                        items: [
+                          for (final u in _kCommonUnits)
+                            DropdownMenuItem(value: u, child: Text(u)),
+                          const DropdownMenuItem(
+                            value: _kUnitOther,
+                            child: Text('Other…'),
+                          ),
+                        ],
+                        onChanged: _saving
+                            ? null
+                            : (v) =>
+                                setState(() => _unitChoice = v ?? 'piece'),
                       );
                       final costField = AppFormField(
                         controller: _unitCost,
@@ -203,28 +260,48 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
                       );
                     },
                   ),
+                  // The custom measure, only when "Other…" is picked. Digits are
+                  // rejected: a unit is "pair", never "20 pair".
+                  if (_unitChoice == _kUnitOther) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    AppFormField(
+                      controller: _unitOther,
+                      label: 'Unit name *',
+                      hint: 'e.g. bundle, crate',
+                      enabled: !_saving,
+                      validator: (v) {
+                        final t = v?.trim() ?? '';
+                        if (t.isEmpty) return 'Required';
+                        if (RegExp(r'\d').hasMatch(t)) {
+                          return 'No numbers here — put the quantity in '
+                              '${isEditing ? 'Stock in hand' : 'Opening stock'}';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   AppFormField(
                     controller: _reorder,
                     label: 'Low-stock threshold',
+                    hint: 'Warn me when stock falls to this',
                     enabled: !_saving,
                     keyboardType: TextInputType.number,
                     // Whole count only — no letters / decimals.
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   ),
-                  // Opening stock only on create. Existing items change stock
-                  // through the movement sheet (purchase / issue / return), so
-                  // there's no editable on-hand field here.
-                  if (!isEditing) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    AppFormField(
-                      controller: _openingStock,
-                      label: 'Opening stock',
-                      hint: 'Quantity on hand now, e.g. 30',
-                      enabled: !_saving,
-                      keyboardType: TextInputType.number,
-                      // Whole count only — what you type is what stock shows.
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  // An item already holding stock changes it through the
+                  // movement sheet (purchase / sale / return), so the ledger
+                  // stays the single source of truth.
+                  if (isEditing && !_canSeedStock) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      'To change the stock count, use Purchase / Sale on the '
+                      "item's page — that keeps the stock history correct.",
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ],
@@ -311,3 +388,21 @@ class _InventoryItemFormPageState extends ConsumerState<InventoryItemFormPage> {
 
 /// Below this width the paired Unit / Unit cost row stacks vertically.
 const double _kStackBelowWidth = 360;
+
+/// Sentinel for the "Other…" option in the unit picker.
+const String _kUnitOther = '__other__';
+
+/// The measures offered in the unit picker. Anything else goes through
+/// "Other…" — the point is that the field can't be mistaken for a quantity.
+const List<String> _kCommonUnits = [
+  'piece',
+  'pair',
+  'set',
+  'box',
+  'packet',
+  'dozen',
+  'kg',
+  'gram',
+  'litre',
+  'metre',
+];

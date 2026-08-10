@@ -19,9 +19,20 @@ class CheckoutSuccess extends CheckoutResult {
 }
 
 class CheckoutFailure extends CheckoutResult {
-  const CheckoutFailure({required this.code, required this.message});
+  const CheckoutFailure({
+    required this.code,
+    required this.message,
+    this.isNetwork = false,
+  });
   final int code;
   final String message;
+
+  /// True only when the failure was connectivity (no internet / DNS / timeout)
+  /// **before any charge could have been made** — i.e. creating the order or
+  /// opening the sheet. Callers use this to offer a retry instead of a dead
+  /// end. A failure while CONFIRMING a charge is never flagged here: the money
+  /// may already have moved, so retrying payment would be wrong.
+  final bool isNetwork;
 }
 
 class CheckoutExternalWallet extends CheckoutResult {
@@ -123,6 +134,23 @@ class RazorpayCheckout {
       razorpay.clear();
     }
   }
+}
+
+/// Whether [text] (an exception, or a gateway's failure message) reads as a
+/// connectivity problem rather than a declined/cancelled payment. Shared by
+/// both checkout paths so "no internet" is recognised identically everywhere.
+bool looksLikeNetworkError(String text) {
+  final s = text.toLowerCase();
+  return s.contains('socketexception') ||
+      s.contains('failed host lookup') ||
+      s.contains('no address associated') ||
+      s.contains('connection refused') ||
+      s.contains('connection closed') ||
+      s.contains('network') ||
+      s.contains('offline') ||
+      s.contains('unreachable') ||
+      s.contains('timed out') ||
+      s.contains('timeout');
 }
 
 String _humanizeOrderError(Object e) {

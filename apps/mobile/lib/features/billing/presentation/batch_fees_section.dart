@@ -50,6 +50,10 @@ class BatchFeesSection extends ConsumerWidget {
                         MaterialPageRoute(
                           builder: (_) => FeeStructureFormPage(
                             prefilledDaysPerWeek: daysPerWeek,
+                            // Creating a price from inside a batch means a
+                            // price FOR that batch — pre-tag it so it lands
+                            // scoped (still changeable in the form).
+                            prefilledBatchId: batchId,
                           ),
                         ),
                       ),
@@ -129,7 +133,19 @@ class BatchFeesSection extends ConsumerWidget {
     WidgetRef ref,
     List<FeeStructure> fees,
   ) async {
-    final active = fees.where((f) => f.isActive).toList();
+    // Offer this batch's own prices + the untagged academy-wide ones. A fee
+    // tagged to a DIFFERENT batch is somebody else's price and would only be
+    // picked by mistake.
+    final active = fees
+        .where((f) => f.isActive)
+        .where((f) => f.batchId == null || f.batchId == batchId)
+        .toList()
+      ..sort((a, b) {
+        // This batch's own prices first — they're the likely pick.
+        final mine = (b.batchId == batchId ? 1 : 0) -
+            (a.batchId == batchId ? 1 : 0);
+        return mine != 0 ? mine : a.name.compareTo(b.name);
+      });
     if (active.isEmpty) {
       AppSnackbar.info(context, 'No active fee structures. Create one first.');
       return;

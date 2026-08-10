@@ -42,7 +42,13 @@ class PaymentCheckout {
       }
       body = data;
     } on Object catch (e) {
-      return CheckoutFailure(code: -3, message: _humanizeOrderError(e));
+      // Order creation failed — nothing has been charged, so a connectivity
+      // failure here is safely retryable (see [CheckoutFailure.isNetwork]).
+      return CheckoutFailure(
+        code: -3,
+        message: _humanizeOrderError(e),
+        isNetwork: looksLikeNetworkError(e.toString()),
+      );
     }
 
     if (body['order_id'] == null) {
@@ -137,7 +143,13 @@ class PaymentCheckout {
       }
       body = data;
     } on Object catch (e) {
-      return CheckoutFailure(code: -3, message: _humanizeOrderError(e));
+      // Order creation failed — nothing has been charged, so a connectivity
+      // failure here is safely retryable (see [CheckoutFailure.isNetwork]).
+      return CheckoutFailure(
+        code: -3,
+        message: _humanizeOrderError(e),
+        isNetwork: looksLikeNetworkError(e.toString()),
+      );
     }
 
     if (body['order_id'] == null) {
@@ -230,9 +242,13 @@ class PaymentCheckout {
       ));
     });
     razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse r) {
+      final message = r.message ?? 'Payment failed';
       resolve(CheckoutFailure(
         code: r.code ?? -1,
-        message: r.message ?? 'Payment failed',
+        // The sheet couldn't reach the gateway — the user was never charged,
+        // so this is retryable like an order-creation failure.
+        isNetwork: looksLikeNetworkError(message),
+        message: message,
       ));
     });
     razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse r) {

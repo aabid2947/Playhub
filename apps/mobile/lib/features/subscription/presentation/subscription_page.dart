@@ -8,6 +8,7 @@ import 'package:playhub/features/auth/data/capabilities.dart';
 import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/payment_checkout.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
+import 'package:playhub/features/billing/presentation/payment_offline_dialog.dart';
 import 'package:playhub/features/subscription/data/subscription_providers.dart';
 import 'package:playhub/features/subscription/data/trial_limits.dart';
 import 'package:playhub/features/super_admin/data/super_admin_providers.dart'
@@ -547,11 +548,26 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
     setState(() => _busy = true);
     try {
       final client = ref.read(supabaseClientProvider);
-      final result = await PaymentCheckout(client).paySaasSubscription(
+      var result = await PaymentCheckout(client).paySaasSubscription(
         academyName: 'PlayHub',
         planCode: plan.code,
         prefillEmail: client.auth.currentUser?.email,
       );
+      // Offline before any charge could happen → offer a retry loop instead of
+      // a dead-end snackbar. Stays on this page, which is the plans page.
+      while (result is CheckoutFailure && result.isNetwork) {
+        if (!mounted) return;
+        final retry = await showPaymentOfflineDialog(
+          context,
+          message: result.message,
+        );
+        if (!retry) break;
+        result = await PaymentCheckout(client).paySaasSubscription(
+          academyName: 'PlayHub',
+          planCode: plan.code,
+          prefillEmail: client.auth.currentUser?.email,
+        );
+      }
       if (!mounted) return;
       switch (result) {
         case CheckoutSuccess():

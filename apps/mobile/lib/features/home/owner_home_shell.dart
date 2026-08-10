@@ -141,9 +141,10 @@ class _DismissibleBanner extends ConsumerWidget {
   }
 }
 
-/// Subscription status strip: warns when a trial is about to lapse, and (for
-/// the center_admin who shares this shell — owners/admins are paywalled) flags
-/// a frozen academy. Renders nothing while active or still loading.
+/// Subscription status strip: offers an Upgrade action for the whole free
+/// trial (amber once it's about to lapse), and (for the center_admin who shares
+/// this shell — owners/admins are paywalled) flags a frozen academy. Renders
+/// nothing on a paid plan or while still loading.
 class _SubscriptionBanner extends ConsumerWidget {
   const _SubscriptionBanner();
 
@@ -161,15 +162,21 @@ class _SubscriptionBanner extends ConsumerWidget {
             'Contact your academy owner to renew.',
       );
     }
-    if (sub.isTrialEndingSoon) {
+    // Visible for the WHOLE trial, not just the last few days — an owner on a
+    // trial always has a one-tap way to upgrade. It turns amber in the final
+    // stretch ([AcademySubscription.isTrialEndingSoon]) to add urgency.
+    if (sub.isTrial && sub.writesAllowed) {
       final d = sub.trialDaysLeft ?? 0;
+      final endingSoon = sub.isTrialEndingSoon;
       return _SubBannerStrip(
-        color: const Color(0xFFB45309), // amber-700
-        icon: Icons.schedule,
+        color: endingSoon
+            ? const Color(0xFFB45309) // amber-700
+            : AppPalette.brandPrimary,
+        icon: endingSoon ? Icons.schedule : Icons.workspace_premium_outlined,
         text: d <= 0
             ? 'Your free trial ends today.'
-            : 'Your free trial ends in $d day${d == 1 ? '' : 's'}.',
-        actionLabel: 'View plans',
+            : 'Free trial — $d day${d == 1 ? '' : 's'} left.',
+        actionLabel: 'Upgrade',
         onAction: () => Navigator.of(context).push<void>(
           MaterialPageRoute(builder: (_) => const SubscriptionPage()),
         ),

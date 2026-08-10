@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
 import 'package:playhub/features/auth/data/capabilities.dart';
+import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/billing/presentation/fee_structure_form_page.dart';
@@ -207,13 +209,21 @@ class _FeeTile extends ConsumerWidget {
     final scheme = theme.colorScheme;
     final sportLabel = ref.watch(sportDisplayProvider((sportId: fee.sportId)));
     final tint = colorFromName(fee.name);
+    // A batch-tagged fee is a price for one batch — name it, so several
+    // same-named fees at different prices are tellable apart at a glance.
+    final batchName = fee.batchId == null
+        ? null
+        : (ref.watch(batchesProvider).valueOrNull ?? const <Batch>[])
+            .where((b) => b.id == fee.batchId)
+            .firstOrNull
+            ?.name;
 
     final subtitle = <String>[
       fee.type.label,
       if (fee.pricePerDay != null)
         '₹${fee.pricePerDay!.toStringAsFixed(0)}/day'
         '${fee.daysPerWeek != null ? ' × ${fee.daysPerWeek}d/wk' : ''}',
-      if (sportLabel != '—') sportLabel,
+      if (batchName != null) batchName else if (sportLabel != '—') sportLabel,
       if (fee.taxPct > 0) '+${fee.taxPct.toStringAsFixed(0)}% tax',
     ].join('  •  ');
 

@@ -8,6 +8,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/centers/presentation/centers_page.dart';
 import 'package:playhub/features/payment_gateways/presentation/payment_gateways_page.dart';
 import 'package:playhub/features/sports/presentation/sports_settings_page.dart';
+import 'package:playhub/features/subscription/presentation/subscription_page.dart';
 import 'package:playhub/features/support/presentation/support_page.dart';
 import 'package:playhub/features/users/presentation/team_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
@@ -19,7 +20,8 @@ import 'package:playhub/shared/widgets/widgets.dart';
 /// leading icons under [AppSectionHeader]s. Every entry point keeps its exact
 /// role gate (RLS is the real gate; these flags only hide the entry):
 /// * Academy settings → owner only.
-/// * Team / Subscription / Support → owner + admin.
+/// * Team / Support → owner + admin; Plans & subscription → owner only
+///   (`manageSubscription`), since only an owner can complete a checkout.
 /// * Centers / Sports / Activity log → all three (visible to every role).
 ///
 /// Sign out lives in the shell's account sheet, so this surface holds settings
@@ -130,13 +132,13 @@ class SettingsTab extends ConsumerWidget {
                 if (isOwnerOrAdmin) ...[
                   const SizedBox(height: AppSpacing.lg),
                   const AppSectionHeader(
-                    title: 'Team & support',
+                    title: 'Team & billing',
                     icon: Icons.group_outlined,
                   ),
-                  // Subscription is intentionally NOT surfaced here — the SaaS
-                  // plan/billing is managed by PlayHub (super_admin), not the
-                  // academy. (Per-student fees/invoices live under Billing on
-                  // the home dashboard, which is separate.)
+                  // The SaaS plan is owner-managed self-serve: the owner can
+                  // compare plans, upgrade (platform Razorpay checkout) and see
+                  // past SaaS invoices. Per-student fees/invoices are separate
+                  // and live under Billing on the home dashboard.
                   _SettingsGroup(
                     tiles: [
                       const _SettingsDestination(
@@ -146,6 +148,14 @@ class SettingsTab extends ConsumerWidget {
                         subtitle: 'Invite admins, coaches, and trainers',
                         builder: _teamPageBuilder,
                       ),
+                      if (caps.manageSubscription)
+                        const _SettingsDestination(
+                          icon: Icons.workspace_premium_outlined,
+                          tint: AppPalette.brandPrimary,
+                          title: 'Plans & subscription',
+                          subtitle: 'Compare plans, upgrade, past invoices',
+                          builder: _subscriptionPageBuilder,
+                        ),
                       _SettingsDestination(
                         icon: Icons.support_agent_outlined,
                         tint: AppPalette.categorySwatch[3],
@@ -243,6 +253,7 @@ Widget _paymentGatewaysPageBuilder(BuildContext _) => const PaymentGatewaysPage(
 Widget _centersPageBuilder(BuildContext _) => const CentersPage();
 Widget _sportsPageBuilder(BuildContext _) => const SportsSettingsPage();
 Widget _teamPageBuilder(BuildContext _) => const TeamPage();
+Widget _subscriptionPageBuilder(BuildContext _) => const SubscriptionPage();
 Widget _supportPageBuilder(BuildContext _) => const SupportPage();
 Widget _auditLogPageBuilder(BuildContext _) => const AuditLogPage();
 

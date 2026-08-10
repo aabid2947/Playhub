@@ -51,6 +51,11 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   late final _parentEmail = TextEditingController(
     text: widget.existing?.parentEmail ?? '',
   );
+  // Edit-only: the student's OWN email column. On create this address is
+  // captured by the toggled invite field above instead.
+  late final _studentEmail = TextEditingController(
+    text: widget.existing?.email ?? '',
+  );
   late final _city = TextEditingController(text: widget.existing?.city ?? '');
   late final _medical = TextEditingController(
     text: widget.existing?.medicalNotes ?? '',
@@ -60,7 +65,9 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
   String? _skillLevel;
   String? _centerId;
   String? _sportId;
-  String _status = 'active';
+  // New students start PENDING — they turn active on their first completed
+  // payment (DB trigger), or when an admin picks Active here by hand.
+  String _status = 'pending';
   DateTime? _dob;
   String? _photo;
   // Create-only: whether the single email field is the parent's or the
@@ -80,7 +87,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     _skillLevel = widget.existing?.skillLevel;
     _centerId = widget.existing?.centerId;
     _sportId = widget.existing?.sportId;
-    _status = widget.existing?.status ?? 'active';
+    _status = widget.existing?.status ?? 'pending';
     _dob = widget.existing?.dateOfBirth;
     _photo = widget.existing?.photo;
     // New student by a center-scoped role (center_admin / head_coach):
@@ -105,6 +112,7 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
     _parentName.dispose();
     _parentPhone.dispose();
     _parentEmail.dispose();
+    _studentEmail.dispose();
     _city.dispose();
     _medical.dispose();
     super.dispose();
@@ -185,6 +193,11 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
         patch['email'] = email;
       } else {
         patch['parent_email'] = email;
+      }
+      // Edit mode has its own field for the student's address (create routes
+      // it through the toggle above, so don't clobber that path).
+      if (isEdit) {
+        patch['email'] = _emptyToNull(_studentEmail);
       }
 
       if (isEdit) {
@@ -472,9 +485,22 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
                       controller: _parentEmail,
                       label: 'Parent email',
                       keyboardType: TextInputType.emailAddress,
+                      validator: _optionalEmail,
                     ),
                   ),
                 ],
+              ),
+            ],
+            // The student's own address. On create it's captured by the invite
+            // field above; in edit it had NO surface at all, so a student
+            // invited with their own login showed no email anywhere.
+            if (isEdit) ...[
+              const SizedBox(height: AppSpacing.md),
+              AppFormField(
+                controller: _studentEmail,
+                label: 'Student email',
+                keyboardType: TextInputType.emailAddress,
+                validator: _optionalEmail,
               ),
             ],
             const SizedBox(height: AppSpacing.md),
@@ -562,13 +588,27 @@ class _StudentFormPageState extends ConsumerState<StudentFormPage> {
               label: 'Status',
               value: _status,
               items: const [
+                DropdownMenuItem(
+                  value: 'pending',
+                  child: Text('Pending (awaiting first payment)'),
+                ),
                 DropdownMenuItem(value: 'active', child: Text('Active')),
                 DropdownMenuItem(value: 'paused', child: Text('Paused')),
                 DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
                 DropdownMenuItem(value: 'graduated', child: Text('Graduated')),
               ],
-              onChanged: (v) => setState(() => _status = v ?? 'active'),
+              onChanged: (v) => setState(() => _status = v ?? 'pending'),
             ),
+            if (_status == 'pending') ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Turns Active automatically on the first payment received. '
+                'Pick Active here to activate them now without one.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.xl),
 
             // ----- Health & notes ----------------------------------------
