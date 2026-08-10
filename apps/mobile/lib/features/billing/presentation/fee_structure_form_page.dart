@@ -233,8 +233,12 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
                   SportPicker(
                     value: _sportId,
                     // Changing the sport can strand a batch from the old sport,
-                    // so clear it (same rule as the batch/student forms).
+                    // so clear it (same rule as the batch/student forms). The
+                    // equality guard matters: the dropdown fires onChanged even
+                    // when the same item is re-picked, which would otherwise
+                    // wipe the batch tag of anyone tidying up the sport field.
                     onChanged: (v) => setState(() {
+                      if (v == _sportId) return;
                       _sportId = v;
                       _batchId = null;
                     }),
