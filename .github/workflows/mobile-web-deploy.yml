@@ -1,0 +1,59 @@
+name: mobile-web-deploy
+
+# Builds the Flutter WEB version of the mobile app (apps/mobile) and publishes
+# it to Vercel, on every push to `main`/`ui-revamo` (or a manual run). This is
+# the same app as the Android build in ui-revamp-aab.yml — just compiled for a
+# browser instead of a phone.
+#
+# HOSTING: Vercel's own build containers don't have Flutter, so this workflow
+# does the real `flutter build web` here in CI (same Flutter version as the
+# other mobile workflows) and pushes the finished static files to Vercel with
+# the Vercel CLI, rather than relying on Vercel's dashboard Git integration to
+# build it.
+#
+# One-time setup needed before this will succeed (see the accompanying setup
+# notes) — three repo secrets:
+#   VERCEL_TOKEN      — a personal API token from the Vercel account
+#   VERCEL_ORG_ID     — the team/account ID that owns the project
+#   VERCEL_PROJECT_ID — the specific Vercel project to deploy into
+# (SUPABASE_URL / SUPABASE_ANON_KEY already exist as repo secrets — reused
+# as-is, same as the AAB build.)
+on:
+  push:
+    branches: [main, ui-revamo]
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-web-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: apps/mobile
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.41.7'
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build release web bundle
+        run: >
+          flutter build web --release
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Deploy to Vercel
+        working-directory: apps/mobile/build/web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest deploy --prod --yes --token="${{ secrets.VERCEL_TOKEN }}"

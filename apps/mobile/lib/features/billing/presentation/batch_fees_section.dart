@@ -50,6 +50,10 @@ class BatchFeesSection extends ConsumerWidget {
                         MaterialPageRoute(
                           builder: (_) => FeeStructureFormPage(
                             prefilledDaysPerWeek: daysPerWeek,
+                            // Creating a price from inside a batch means a
+                            // price FOR that batch — pre-tag it so it lands
+                            // scoped (still changeable in the form).
+                            prefilledBatchId: batchId,
                           ),
                         ),
                       ),
@@ -129,9 +133,32 @@ class BatchFeesSection extends ConsumerWidget {
     WidgetRef ref,
     List<FeeStructure> fees,
   ) async {
-    final active = fees.where((f) => f.isActive).toList();
+    // Offer this batch's own prices + the untagged academy-wide ones. A fee
+    // tagged to a DIFFERENT batch is somebody else's price and would only be
+    // picked by mistake.
+    final activeFees = fees.where((f) => f.isActive).toList();
+    final active = activeFees
+        .where((f) => f.batchId == null || f.batchId == batchId)
+        .toList()
+      ..sort((a, b) {
+        // This batch's own prices first — they're the likely pick.
+        final mine = (b.batchId == batchId ? 1 : 0) -
+            (a.batchId == batchId ? 1 : 0);
+        return mine != 0
+            ? mine
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
     if (active.isEmpty) {
-      AppSnackbar.info(context, 'No active fee structures. Create one first.');
+      // Distinguish "you have no prices" from "they all belong to other
+      // batches" — the second is a state this feature actively creates, and
+      // the old wording sent owners off to make duplicates.
+      AppSnackbar.info(
+        context,
+        activeFees.isEmpty
+            ? 'No active fee structures. Create one first.'
+            : 'Every active fee is tagged to another batch. Create a price for '
+                'this batch, or clear a fee\'s batch tag to share it.',
+      );
       return;
     }
     await showModalBottomSheet<void>(
@@ -307,7 +334,10 @@ class _AssignSheetState extends State<_AssignSheet> {
   @override
   void initState() {
     super.initState();
-    _feeId = widget.fees.first.id;
+    // Deliberately NO pre-selected fee. Assigning bills every enrolled student
+    // immediately, so a positional default (it used to be `fees.first`) means
+    // one stray tap can issue real invoices for a fee nobody chose — and the
+    // meaning of "first" shifts whenever the list's ordering changes.
     _billingDay.text = DateTime.now().day.clamp(1, 28).toString();
     // Keep the invoice-generation explainer in sync as the billing day changes.
     _billingDay.addListener(_onBillingDayChanged);
@@ -374,10 +404,7 @@ class _AssignSheetState extends State<_AssignSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selected = widget.fees.firstWhere(
-      (f) => f.id == _feeId,
-      orElse: () => widget.fees.first,
-    );
+    final selected = widget.fees.where((f) => f.id == _feeId).firstOrNull;
     final billingDay = int.tryParse(_billingDay.text.trim());
     return Padding(
       padding: EdgeInsets.only(
@@ -398,7 +425,10 @@ class _AssignSheetState extends State<_AssignSheet> {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            _invoiceExplainer(selected.type, billingDay),
+            selected == null
+                ? 'Pick the fee to bill this batch by. Every active enrollment '
+                    'is invoiced for it.'
+                : _invoiceExplainer(selected.type, billingDay),
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -406,16 +436,20 @@ class _AssignSheetState extends State<_AssignSheet> {
           const SizedBox(height: AppSpacing.lg),
           AppDropdownField<String>(
             label: 'Fee structure',
+            hint: 'Select a fee',
             value: _feeId,
             items: widget.fees
                 .map(
                   (f) => DropdownMenuItem(
                     value: f.id,
                     child: Text(
-                      f.pricePerDay != null
-                          ? '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}'
-                              ' (₹${f.pricePerDay!.toStringAsFixed(0)}/day)'
-                          : '${f.name} · ${f.type.label} · ₹${f.baseAmount.toStringAsFixed(0)}',
+                      // Mark this batch's OWN price: same-named fees at
+                      // different amounts are otherwise told apart only by
+                      // sort order, which nobody can see.
+                      '${f.name} · ${f.type.label} · '
+                      '₹${f.baseAmount.toStringAsFixed(0)}'
+                      '${f.pricePerDay != null ? ' (₹${f.pricePerDay!.toStringAsFixed(0)}/day)' : ''}'
+                      '${f.batchId == widget.batchId ? ' · this batch' : ''}',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -446,7 +480,7 @@ class _AssignSheetState extends State<_AssignSheet> {
           ),
           const SizedBox(height: AppSpacing.lg),
           FilledButton(
-            onPressed: _saving ? null : _save,
+            onPressed: (_saving || _feeId == null) ? null : _save,
             child: _saving
                 ? const SizedBox(
                     width: 18,

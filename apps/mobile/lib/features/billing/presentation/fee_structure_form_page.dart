@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:playhub/core/design_tokens.dart';
 import 'package:playhub/core/error_messages.dart';
+import 'package:playhub/features/batches/data/batch.dart';
+import 'package:playhub/features/batches/data/batch_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/fee_structure.dart';
 import 'package:playhub/features/sports/presentation/sport_picker.dart';
@@ -14,10 +16,14 @@ class FeeStructureFormPage extends ConsumerStatefulWidget {
     /// Pre-seed the per-day calculator with the batch's days/week when
     /// navigating here from a batch detail page.
     this.prefilledDaysPerWeek,
+    /// Tag the new fee to this batch when coming from a batch detail page, so
+    /// "New fee" there creates a price for THAT batch in one step.
+    this.prefilledBatchId,
   });
 
   final FeeStructure? existing;
   final int? prefilledDaysPerWeek;
+  final String? prefilledBatchId;
 
   @override
   ConsumerState<FeeStructureFormPage> createState() =>
@@ -53,6 +59,11 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
   late String _latePolicy = widget.existing?.lateFeePolicy ?? 'one_time';
   late bool _isActive = widget.existing?.isActive ?? true;
   late String? _sportId = widget.existing?.sportId;
+  // Optional scope tags. A fee tagged to a batch is a price for THAT batch;
+  // untagged fees stay academy-wide templates. Assignment (who actually gets
+  // billed) is still batch_fee_assignments / student fee assignments — this
+  // narrows what's offered and what the list shows.
+  late String? _batchId = widget.existing?.batchId ?? widget.prefilledBatchId;
 
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
@@ -140,6 +151,7 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
             ? null
             : _description.text.trim(),
         'sport_id': _sportId,
+        'batch_id': _batchId,
         'type': _type.dbValue,
         'base_amount': double.parse(_base.text.trim()),
         'tax_pct': double.tryParse(_tax.text.trim()) ?? 0,
@@ -220,8 +232,29 @@ class _FeeStructureFormPageState extends ConsumerState<FeeStructureFormPage> {
                   const SizedBox(height: AppSpacing.md),
                   SportPicker(
                     value: _sportId,
-                    onChanged: (v) => setState(() => _sportId = v),
+                    // Changing the sport can strand a batch from the old sport,
+                    // so clear it (same rule as the batch/student forms). The
+                    // equality guard matters: the dropdown fires onChanged even
+                    // when the same item is re-picked, which would otherwise
+                    // wipe the batch tag of anyone tidying up the sport field.
+                    onChanged: (v) => setState(() {
+                      if (v == _sportId) return;
+                      _sportId = v;
+                      _batchId = null;
+                    }),
                     label: 'Sport (optional)',
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _BatchPicker(
+                    value: _batchId,
+                    sportId: _sportId,
+                    enabled: !_busy,
+                    onChanged: (batch) => setState(() {
+                      _batchId = batch?.id;
+                      // Tagging a batch implies its sport — fill it in so the
+                      // fee reads consistently in the list and pickers.
+                      if (batch?.sportId != null) _sportId = batch!.sportId;
+                    }),
                   ),
                 ],
               ),
@@ -751,6 +784,58 @@ class _PreviewRow extends StatelessWidget {
         const SizedBox(width: AppSpacing.md),
         Text(value, style: theme.textTheme.bodyMedium),
       ],
+    );
+  }
+}
+
+/// Optional "this price is for one batch" picker.
+///
+/// Scoped to the chosen sport when one is set (a batch from another sport can't
+/// be the target of a sport-tagged fee), and falls back to "— any batch —" when
+/// the stored value isn't in the current options — an archived batch, or a sport
+/// change — instead of tripping DropdownButtonFormField's value-in-items assert.
+class _BatchPicker extends ConsumerWidget {
+  const _BatchPicker({
+    required this.value,
+    required this.sportId,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String? value;
+  final String? sportId;
+  final bool enabled;
+
+  /// Passes the whole batch (not just its id) so the caller can adopt its sport.
+  final ValueChanged<Batch?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final batchesAsync = ref.watch(batchesProvider);
+    final all = batchesAsync.valueOrNull ?? const <Batch>[];
+    // A sport-tagged fee only offers that sport's batches; batches with no
+    // sport stay available either way (same NULL-sport relaxation used
+    // elsewhere for batch scoping).
+    final options = sportId == null
+        ? all
+        : all.where((b) => b.sportId == null || b.sportId == sportId).toList();
+    final safeValue =
+        options.any((b) => b.id == value) ? value : null;
+
+    return AppDropdownField<String?>(
+      label: 'Batch (optional)',
+      value: safeValue,
+      hint: batchesAsync.isLoading ? 'Loading batches…' : null,
+      items: [
+        const DropdownMenuItem<String?>(child: Text('— any batch —')),
+        for (final b in options)
+          DropdownMenuItem<String?>(value: b.id, child: Text(b.name)),
+      ],
+      onChanged: enabled
+          ? (v) => onChanged(
+                v == null ? null : options.where((b) => b.id == v).firstOrNull,
+              )
+          : null,
     );
   }
 }

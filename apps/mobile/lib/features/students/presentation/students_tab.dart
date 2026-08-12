@@ -233,6 +233,7 @@ class _FilterBar extends ConsumerWidget {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem<String?>(child: Text('All')),
+                        PopupMenuItem(value: 'pending', child: Text('Pending')),
                         PopupMenuItem(value: 'active', child: Text('Active')),
                         PopupMenuItem(value: 'paused', child: Text('Paused')),
                         PopupMenuItem(
@@ -364,6 +365,8 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final tone = switch (status) {
       'active' => AppBadgeTone.success,
+      // Awaiting a first payment — not a problem, but not active either.
+      'pending' => AppBadgeTone.warning,
       'paused' => AppBadgeTone.warning,
       'inactive' => AppBadgeTone.neutral,
       'graduated' => AppBadgeTone.info,

@@ -26,6 +26,10 @@ defaults:
 jobs:
   build-aab:
     runs-on: ubuntu-latest
+    # Opt-out for device-test pushes: put "[skip aab]" in the commit message and
+    # only the APK gets built (Play uploads need a fresh versionCode anyway, so
+    # an .aab per test push is wasted CI). Manual runs always build.
+    if: ${{ !contains(github.event.head_commit.message, '[skip aab]') }}
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

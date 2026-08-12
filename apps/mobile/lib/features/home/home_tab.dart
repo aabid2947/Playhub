@@ -30,6 +30,8 @@ import 'package:playhub/features/notifications/presentation/notification_center_
 import 'package:playhub/features/reports/presentation/report_builder_page.dart';
 import 'package:playhub/features/students/data/student.dart';
 import 'package:playhub/features/students/data/student_providers.dart';
+import 'package:playhub/features/subscription/data/subscription_providers.dart';
+import 'package:playhub/features/subscription/presentation/subscription_page.dart';
 import 'package:playhub/shared/widgets/widgets.dart';
 
 /// Owner-shell Home-tab body — v1 "Sports-Light" dashboard (archetype A).
@@ -261,6 +263,12 @@ class HomeTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Free-trial upgrade card — the dashboard's own always-on
+                  // route to plans while on trial (the shell strip above is a
+                  // one-line nudge; this is the persuasive one). Owner-only:
+                  // admins can't buy, so they'd hit a dead end.
+                  if (caps.manageSubscription) const _TrialUpgradeCard(),
+
                   // Today's snapshot — new joins, money in, classes, dues.
                   _TodaysOverviewCard(
                     newStudentsToday: _joinedToday(students),
@@ -510,6 +518,92 @@ String _auditVerb(String action) {
 
 /// "Today" snapshot card — new joins, money in, classes running, dues. Finance
 /// cells (revenue / pending) only render when [showFinance] is true.
+/// Free-trial → paid nudge pinned to the top of the owner dashboard for the
+/// WHOLE trial (not just its last days). Renders nothing once the academy is on
+/// a paid plan, or while the subscription is still loading. A frozen academy
+/// never reaches this body — RoleDashboard routes the owner to the paywall.
+class _TrialUpgradeCard extends ConsumerWidget {
+  const _TrialUpgradeCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sub = ref.watch(mySubscriptionProvider).valueOrNull;
+    if (sub == null || !sub.isTrial || !sub.writesAllowed) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    final d = sub.trialDaysLeft ?? 0;
+
+    return Column(
+      children: [
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppPalette.brandPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_outlined,
+                      color: AppPalette.brandPrimary,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          d <= 0
+                              ? 'Your free trial ends today'
+                              : '$d day${d == 1 ? '' : 's'} left on your '
+                                  'free trial',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: AppType.heavy),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Upgrade to lift the trial limits on students, '
+                          'coaches, batches and sports.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) => const SubscriptionPage(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                  label: const Text('View plans & upgrade'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+      ],
+    );
+  }
+}
+
 class _TodaysOverviewCard extends ConsumerWidget {
   const _TodaysOverviewCard({
     required this.newStudentsToday,

@@ -10,6 +10,7 @@ import 'package:playhub/features/auth/data/profile_providers.dart';
 import 'package:playhub/features/billing/data/billing_providers.dart';
 import 'package:playhub/features/billing/data/payment_checkout.dart';
 import 'package:playhub/features/billing/data/razorpay_checkout.dart';
+import 'package:playhub/features/billing/presentation/payment_offline_dialog.dart';
 import 'package:playhub/features/events/presentation/events_page.dart';
 import 'package:playhub/features/insights/presentation/student_insights_page.dart';
 import 'package:playhub/features/parent/data/parent_providers.dart';
@@ -199,6 +200,16 @@ class _ParentDashboardTabState extends ConsumerState<ParentDashboardTab> {
 /// linked, and a headline stat strip (attendance % + dues) derived from data
 /// the body cards already load — no extra queries. Rendered for a single
 /// student too, so the layout never appears/disappears by count.
+/// The address to show for a student: their own login email when they have one,
+/// otherwise the parent's. Null when neither is on file (nothing is rendered).
+String? _contactEmail(Student s) {
+  final own = s.email?.trim();
+  if (own != null && own.isNotEmpty) return own;
+  final parent = s.parentEmail?.trim();
+  if (parent != null && parent.isNotEmpty) return parent;
+  return null;
+}
+
 class _StudentHero extends ConsumerWidget {
   const _StudentHero({
     required this.students,
@@ -268,6 +279,32 @@ class _StudentHero extends ConsumerWidget {
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.white.withValues(alpha: 0.85),
                         ),
+                      ),
+                    ],
+                    // Contact line: the student's own address when they have a
+                    // login, else the parent's. It was shown nowhere on this
+                    // dashboard, which read as "the app lost my email".
+                    if (_contactEmail(selected) case final email?) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.mail_outline_rounded,
+                            size: 14,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              email,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -1139,13 +1176,25 @@ class _OutstandingCardState extends ConsumerState<_OutstandingCard> {
     final academy = ref.read(myAcademyProvider).valueOrNull;
     final checkout = PaymentCheckout(client);
     try {
-      final result = await checkout.payInvoice(
-        context: context,
-        invoiceId: r.invoiceId,
-        academyName: academy?.name ?? 'PlayHub',
-        prefillEmail: profile?.email,
-        prefillContact: profile?.phone,
-      );
+      Future<CheckoutResult> start() => checkout.payInvoice(
+            context: context,
+            invoiceId: r.invoiceId,
+            academyName: academy?.name ?? 'PlayHub',
+            prefillEmail: profile?.email,
+            prefillContact: profile?.phone,
+          );
+      var result = await start();
+      // Offline before the charge could start → retry dialog, not a snackbar
+      // the parent can't act on. Nothing was charged, so retrying is safe.
+      while (result is CheckoutFailure && result.isNetwork) {
+        if (!context.mounted) return;
+        final retry = await showPaymentOfflineDialog(
+          context,
+          message: result.message,
+        );
+        if (!retry) break;
+        result = await start();
+      }
       if (!context.mounted) return;
       switch (result) {
         case CheckoutSuccess():

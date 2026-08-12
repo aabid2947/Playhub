@@ -223,6 +223,77 @@ path-filtered so each app's workflow only fires on its own changes.
 > decisions and gotchas — not routine edits). Format: `### YYYY-MM-DD — title`
 > then 1–3 lines.
 
+### 2026-08-09 — inventory "0 20 piece": Unit is a PICKER now, quantity comes first
+Diagnosed from a client screenshot ([ISSUES_2026-08-06.md](ISSUES_2026-08-06.md) #7): not a counting bug
+— `inventory_items.unit` was free text pre-filled 'piece', so owners typed the QUANTITY into it (saved
+unit = `"20 piece"`) and left the `0`-prefilled Opening stock alone; the list prints `qty + unit` = "0 20
+piece". [inventory_item_form_page](apps/mobile/lib/features/inventory/presentation/inventory_item_form_page.dart)
+now renders **quantity first** (no prefilled 0), and Unit is an `AppDropdownField` over `_kCommonUnits`
++ an "Other…" custom field whose validator **rejects digits**. The opening-stock field is also shown
+**when editing an item whose `onHand == 0`** (still recorded as an `in` movement — never a direct
+`on_hand` write, per the 2026-06-14 rule) so the already-broken rows can be repaired in-app; items
+holding stock keep pointing at the movement sheet. Mobile-only, no migration. `flutter analyze` NOT run
+(no SDK).
+
+### 2026-08-08 — fee_structures.batch_id is now UI-reachable (batch-wise pricing)
+[ISSUES_2026-08-06.md](ISSUES_2026-08-06.md) #8. `fee_structures.batch_id` existed since
+[20260504000000](supabase/migrations/20260504000000_fees.sql) but was a **dead column** — never written,
+shown or filtered. The fee form now has a Batch picker (`_BatchPicker`, sport-scoped + value-guarded)
+that writes `batch_id` and adopts the batch's sport;
+[batch_fees_section](apps/mobile/lib/features/billing/presentation/batch_fees_section.dart) passes
+`prefilledBatchId` into "New fee" and its Assign sheet now offers **only `batch_id == this batch || null`**
+(own first); the fee list shows the batch name in place of the sport when tagged. **Semantics: the tag
+SCOPES/labels a price — it does NOT bill anyone.** Billing is still `batch_fee_assignments` /
+student assignments, and the invoice cron never reads `fee_structures.batch_id` — don't "wire it up"
+there without redesigning assignment. Mobile-only, no migration/RLS. `flutter analyze` NOT run (no SDK).
+
+### 2026-08-08 — students start `pending`, auto-activate on first payment (+ student email surfaced)
+Client decision ([ISSUES_2026-08-06.md](ISSUES_2026-08-06.md) #6): a new student is no longer `active` on
+save. [20260808000000](supabase/migrations/20260808000000_student_pending_until_paid.sql) — **NOT yet
+applied to the hosted DB** — widens the `students_status_check` to include **`pending`**, moves the column
+DEFAULT `'active'` → `'pending'` (so CSV/raw-API inserts follow too), and adds
+`activate_student_on_payment()` on **`payments`** (AFTER INSERT/UPDATE OF status): a `completed` payment
+flips `pending` → `active` and touches **nothing else** (paused/inactive/graduated are deliberate admin
+states). Covers online + manually-recorded receipts since both write `payments`. **GOTCHA: invoice
+generation keys off `batch_enrollments.enrollment_status`, NOT `students.status`** — never add a
+students.status filter there or a pending student can't be billed, can't pay, and can never activate.
+Admins still set Active by hand (form dropdown, now listing Pending first). Mobile mirror: form default +
+`_StatusBadge` (pending = warning) + list status filter. Same pass, #5: the student's own `email` column
+had **no edit-mode surface** (only `parent_email` showed) — added a "Student email" field, and the
+parent/student dashboard hero now shows student-email-else-parent-email.
+pgTAP [student_pending_activation.sql](supabase/tests/student_pending_activation.sql) written, **not run**
+(no local Supabase). `gen:types` NOT needed (text column, check-only). `flutter analyze` NOT run (no SDK).
+
+### 2026-08-06 — payments: connectivity failures are now retryable, never a dead-end snackbar
+Client ask ([ISSUES_2026-08-06.md](ISSUES_2026-08-06.md) #2). `CheckoutFailure` gained **`isNetwork`**
+([razorpay_checkout.dart](apps/mobile/lib/features/billing/data/razorpay_checkout.dart), + shared
+`looksLikeNetworkError(String)`), set ONLY where no charge can have happened — order creation
+(`create-payment-order` / `create-saas-order`) and a Razorpay-sheet error whose message reads as
+connectivity. **Deliberately NOT set on a verify failure** (`verify-*-payment`): the money may already
+have moved, so those keep "payment is being confirmed…" and let the webhook reconcile — do not "fix"
+that into a retry. All four checkout call sites (subscription page, setup/signup, parent dues, fee-lock)
+now loop on a shared [payment_offline_dialog.dart](apps/mobile/lib/features/billing/presentation/payment_offline_dialog.dart)
+("No internet connection · you haven't been charged" → Try again / Close). Signup extra: bootstrap is
+tracked by `academyCreated`, and on a failed bootstrap the `finally` **no longer invalidates
+`currentProfileProvider`** (re-fetching over the dead connection replaced the retry message with an
+error page). Mobile-only. `flutter analyze` NOT run — Flutter SDK is absent on this machine.
+
+### 2026-08-06 — REVERSES "Subscription removed from owner UI": plans are owner-facing again
+Client decision (SANGEETA SYSTEMS review, [ISSUES_2026-08-06.md](ISSUES_2026-08-06.md) #1/#3/#4) —
+**supersedes the 2026-06-14 entry that pulled Subscription out of Settings.** Three surfaces now expose
+the SaaS plan to the owner: (1) a **"Plans & subscription"** tile is back in Settings → *Team & billing*
+([settings_tab.dart](apps/mobile/lib/features/settings/settings_tab.dart)), gated on
+`caps.manageSubscription` (owner-only, so admins don't reach a checkout they can't complete); (2) the
+owner-shell trial strip + a new `_TrialUpgradeCard` at the top of
+[home_tab.dart](apps/mobile/lib/features/home/home_tab.dart) show for the **WHOLE trial**, not just
+`isTrialEndingSoon` (which now only picks the amber/urgent styling); (3)
+[setup_academy_page.dart](apps/mobile/lib/features/dashboards/setup_academy_page.dart) replaced its two
+hardcoded buttons (trial / "₹100 starter") with a **radio list of every active plan from
+`availablePlansProvider` plus the free trial**, passing the chosen `plan_code` into
+`paySaasSubscription` — so adding/repricing a plan in `subscription_plans` now changes the signup screen
+with no code edit. Mobile-only, no migration/RLS/deploy. **Don't re-hide Subscription from Settings.**
+`flutter analyze` NOT run — Flutter is not installed on this machine (not a preference; the SDK is absent).
+
 ### 2026-07-29 — email.ts: deliverability headers + CRLF-injection & lone-dot fixes (still Gmail SMTP)
 Owner decision: **stay on Gmail SMTP, no new provider.** [_shared/email.ts](supabase/functions/_shared/email.ts)
 now emits `Date`, `Message-ID`, `Reply-To` (+ optional `List-Unsubscribe` via a new `unsubscribe_url` field) and

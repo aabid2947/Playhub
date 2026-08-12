@@ -1,11 +1,11 @@
 {
-    "name": "playhub",
-    "short_name": "playhub",
+    "name": "PlayHub",
+    "short_name": "PlayHub",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F7FB",
+    "theme_color": "#FF6A2C",
+    "description": "PlayHub — manage your sports academy: students, batches, attendance, billing and more, all in one place.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

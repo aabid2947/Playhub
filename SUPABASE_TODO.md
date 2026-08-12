@@ -42,8 +42,9 @@ The shared email helper was fixed (spam-related headers + two bugs). Edge
 functions bundle their own copy of `_shared/`, so the fix isn't live until this
 one function is redeployed. It's the only function that sends email.
 
-- [ ] `npx supabase functions deploy send-announcement --project-ref <ref>`
-      (keep JWT verification **on** — this is a caller-authorised function)
+- [x] **DONE 2026-07-31.** `npx supabase functions deploy send-announcement`
+      — deployed to project `hrawgduftgslwsdgzliy`; the upload included
+      `_shared/email.ts`, so the header/spam fixes are live.
 
 *Verify:* send a test announcement with email enabled; the received mail should
 now have a `Date` and `Message-ID` header (check "Show original" in Gmail).
