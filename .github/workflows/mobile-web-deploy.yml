@@ -1,21 +1,19 @@
 name: mobile-web-deploy
 
 # Builds the Flutter WEB version of the mobile app (apps/mobile) and publishes
-# it to Vercel, on every push to `main`/`ui-revamo` (or a manual run). This is
-# the same app as the Android build in ui-revamp-aab.yml — just compiled for a
-# browser instead of a phone.
+# it to GitHub Pages, on every push to `main`/`ui-revamo` (or a manual run).
+# This is the same app as the Android build in ui-revamp-aab.yml — just
+# compiled for a browser instead of a phone.
 #
-# HOSTING: Vercel's own build containers don't have Flutter, so this workflow
-# does the real `flutter build web` here in CI (same Flutter version as the
-# other mobile workflows) and pushes the finished static files to Vercel with
-# the Vercel CLI, rather than relying on Vercel's dashboard Git integration to
-# build it.
+# HOSTING: GitHub Pages serves static files only, so this workflow does the
+# real `flutter build web` here in CI (same Flutter version as the other
+# mobile workflows) and hands the finished static output straight to Pages —
+# no external host, no extra secrets beyond the two already reused below.
 #
-# One-time setup needed before this will succeed (see the accompanying setup
-# notes) — three repo secrets:
-#   VERCEL_TOKEN      — a personal API token from the Vercel account
-#   VERCEL_ORG_ID     — the team/account ID that owns the project
-#   VERCEL_PROJECT_ID — the specific Vercel project to deploy into
+# Custom domain: served at playhub.co.in via the CNAME file written below.
+# One-time setup this repo's owner must do at the DNS registrar: point
+# playhub.co.in's A records at GitHub Pages (185.199.108/109/110/111.153).
+#
 # (SUPABASE_URL / SUPABASE_ANON_KEY already exist as repo secrets — reused
 # as-is, same as the AAB build.)
 on:
@@ -24,16 +22,23 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: mobile-web-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: apps/mobile
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    defaults:
+      run:
+        working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
 
@@ -51,9 +56,14 @@ jobs:
           --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Deploy to Vercel
-        working-directory: apps/mobile/build/web
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: npx --yes vercel@latest deploy --prod --yes --token="${{ secrets.VERCEL_TOKEN }}"
+      - name: Add custom domain marker
+        run: echo "playhub.co.in" > build/web/CNAME
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/mobile/build/web
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
