@@ -67,16 +67,16 @@ jobs:
       # config guard to the login screen (instead of "Missing configuration").
       # If the secrets are unset the APK still builds; it just can't reach the
       # backend.
-      # versionName 1.1 / versionCode 2 are pinned here rather than in
-      # pubspec.yaml (still 0.1.0+1) — build.gradle.kts reads
+      # versionName 1.2 / versionCode 3 are pinned here rather than in
+      # pubspec.yaml (kept in sync at 1.2.0+3) — build.gradle.kts reads
       # flutter.versionName/versionCode, which these flags override. Unlike the
       # .aab there is no Play-side uniqueness check, so a repeated versionCode
       # is harmless here; it just installs over the previous build.
-      - name: Build release APK (versionName 1.1, versionCode 2)
+      - name: Build release APK (versionName 1.2, versionCode 3)
         run: >
           flutter build apk --release
-          --build-name=1.1
-          --build-number=2
+          --build-name=1.2
+          --build-number=3
           --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 

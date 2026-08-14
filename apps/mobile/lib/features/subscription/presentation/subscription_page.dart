@@ -587,7 +587,7 @@ class _PlanCardState extends ConsumerState<_PlanCard> {
             'Complete the payment in your wallet app, then pull to refresh.',
           );
         case CheckoutFailure(:final message):
-          AppSnackbar.error(context, message);
+          AppSnackbar.error(context, 'Payment failed: $message');
       }
     } on Object catch (e) {
       if (mounted) AppSnackbar.error(context, friendlyError(e));

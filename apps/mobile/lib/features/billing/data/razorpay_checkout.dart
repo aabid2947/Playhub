@@ -101,7 +101,7 @@ class RazorpayCheckout {
     razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse r) {
       resolve(CheckoutFailure(
         code: r.code ?? -1,
-        message: r.message ?? 'Payment failed',
+        message: sanitizeCheckoutMessage(r.message),
       ));
     });
     razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, (ExternalWalletResponse r) {
@@ -151,6 +151,19 @@ bool looksLikeNetworkError(String text) {
       s.contains('unreachable') ||
       s.contains('timed out') ||
       s.contains('timeout');
+}
+
+/// Razorpay's native bridge occasionally hands back the literal string
+/// "undefined" (or "null") instead of a real description — seen on
+/// cancelled/interrupted checkouts where the JS side never populated one.
+/// Treat those the same as a genuinely missing message.
+String sanitizeCheckoutMessage(String? raw) {
+  final trimmed = raw?.trim() ?? '';
+  final lower = trimmed.toLowerCase();
+  if (trimmed.isEmpty || lower == 'undefined' || lower == 'null') {
+    return 'Payment failed. Please try again.';
+  }
+  return trimmed;
 }
 
 String _humanizeOrderError(Object e) {

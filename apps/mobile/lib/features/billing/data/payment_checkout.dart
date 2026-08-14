@@ -242,7 +242,7 @@ class PaymentCheckout {
       ));
     });
     razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, (PaymentFailureResponse r) {
-      final message = r.message ?? 'Payment failed';
+      final message = sanitizeCheckoutMessage(r.message);
       resolve(CheckoutFailure(
         code: r.code ?? -1,
         // The sheet couldn't reach the gateway — the user was never charged,
